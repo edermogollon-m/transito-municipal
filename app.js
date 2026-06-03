@@ -747,15 +747,50 @@ async function submitInfraccion(e) {
   };
   if (payload.fotos === undefined) delete payload.fotos;
 
+  // ── Verificar adeudos antes de registrar infracción nueva ──
+  if (!id) {
+    // Usar cache de checkPlacaHistory si la placa coincide, si no consultar la BD
+    let adeudos = window._placaAdeudos || [];
+    let montoAdeudos = window._placaMontoAdeudos || 0;
+
+    // Si el cache está vacío o puede ser de otra placa, consultar de nuevo
+    if (!adeudos.length) {
+      const { data: adData } = await _sb.from('infracciones')
+        .select('folio,monto,tipo').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
+      adeudos = adData || [];
+      montoAdeudos = adeudos.reduce((a,r)=>a+Number(r.monto),0);
+    }
+
+    if (adeudos.length > 0) {
+      const folios = adeudos.slice(0,3).map(a=>a.folio||'—').join(', ');
+      const confirmMsg =
+        `⚠ ADEUDOS PENDIENTES DE PAGO\n\n` +
+        `La placa ${payload.placa} tiene ${adeudos.length} infracción${adeudos.length>1?'es':''} sin pagar por un total de $${montoAdeudos.toLocaleString('es-MX')} MXN.\n` +
+        `Folios: ${folios}${adeudos.length>3?` y ${adeudos.length-3} más`:''}\n\n` +
+        `El infractor deberá regularizar sus adeudos en Tesorería Municipal.\n\n` +
+        `¿Desea registrar la nueva infracción de todas formas?`;
+
+      const ok = window.confirm(confirmMsg);
+      if (!ok) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+        return;
+      }
+
+      // Auto-anotar en observaciones
+      const adeudoNota = `Reincidente con ${adeudos.length} adeudo${adeudos.length>1?'s':''} previo${adeudos.length>1?'s':''} sin pagar ($${montoAdeudos.toLocaleString('es-MX')} MXN) — Debe regularizar en Tesorería Municipal`;
+      payload.obs = payload.obs ? `${payload.obs} | ${adeudoNota}` : adeudoNota;
+    }
+  }
+
   if (id) {
     const { error } = await _sb.from('infracciones').update(payload).eq('id', id);
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar y guardar'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción actualizada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
   } else {
     const { data, error } = await _sb.from('infracciones').insert(payload).select().single();
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar y guardar'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
@@ -795,6 +830,7 @@ function openNewInfraccion() {
   $('inf-est').value = 'pendiente';
   if ($('inf-est-wrap')) $('inf-est-wrap').style.display = 'none';
   window._infLat = null; window._infLng = null;
+  window._placaAdeudos = []; window._placaMontoAdeudos = 0;
   const geoStatus = document.getElementById('inf-geo-status');
   if (geoStatus) geoStatus.textContent = '';
   const geoBtn = document.getElementById('btn-geolocate');
@@ -1845,11 +1881,11 @@ async function checkPlacaHistory() {
   const placa = ($('inf-placa')||{}).value?.trim().toUpperCase();
   const panel = $('placa-history');
   if (!panel) return;
-  if (!placa || placa.length < 3) { panel.innerHTML = ''; return; }
+  if (!placa || placa.length < 3) { panel.innerHTML = ''; window._placaAdeudos = []; return; }
 
-  // Consultar historial de infracciones y padrón vehicular en paralelo
+  // Consultar historial completo y padrón vehicular en paralelo
   const [{ data }, { data: veh }] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto').eq('placa', placa).order('fecha',{ascending:false}).limit(5),
+    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto').eq('placa', placa).order('fecha',{ascending:false}),
     _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').eq('placa', placa).maybeSingle()
   ]);
 
@@ -1858,39 +1894,75 @@ async function checkPlacaHistory() {
     const infractor = $('inf-infractor');
     if (infractor && !infractor.value) infractor.value = veh.propietario || '';
     const vehiculo = $('inf-vehiculo');
-    if (vehiculo && !vehiculo.value) {
-      vehiculo.value = [veh.marca, veh.modelo].filter(Boolean).join(' ');
-    }
+    if (vehiculo && !vehiculo.value) vehiculo.value = [veh.marca, veh.modelo].filter(Boolean).join(' ');
     const color = $('inf-color');
     if (color && !color.value) color.value = veh.color || '';
     const tel = $('inf-telefono');
     if (tel && !tel.value) tel.value = veh.telefono || '';
   }
 
-  const prevId = $('inf-id')?.value;
-  const prev = (data||[]).filter(r => String(r.id) !== String(prevId));
+  const prevId  = $('inf-id')?.value;
+  const prev    = (data||[]).filter(r => String(r.id) !== String(prevId));
+  const adeudos = prev.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
+  const montoAdeudos = adeudos.reduce((a,r) => a + Number(r.monto), 0);
 
-  const vehBanner = veh ? `
-    <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.6rem 1rem;margin:.4rem 0 .4rem;font-size:.78rem;color:#065F46">
-      ✓ Vehículo encontrado en padrón — <strong>${veh.propietario}</strong>${veh.marca?` · ${[veh.marca,veh.modelo].filter(Boolean).join(' ')}`:''}${veh.color?` · ${veh.color}`:''}
-    </div>` : '';
+  // Guardar adeudos para consultarlos en submitInfraccion sin otra llamada a la BD
+  window._placaAdeudos = adeudos;
+  window._placaMontoAdeudos = montoAdeudos;
 
-  if (!prev.length) { panel.innerHTML = vehBanner; return; }
-  panel.innerHTML = vehBanner + `
-    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:.75rem 1rem;margin:.4rem 0 .6rem">
-      <div style="font-size:.78rem;font-weight:700;color:#DC2626;margin-bottom:.45rem">
-        ⚠ Placa con ${prev.length} infracción${prev.length>1?'es':''} previa${prev.length>1?'s':''} — REINCIDENTE
+  let html = '';
+
+  // Banner verde: vehículo en padrón
+  if (veh) {
+    html += `<div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.55rem .9rem;margin:.35rem 0;font-size:.77rem;color:#065F46">
+      ✓ En padrón: <strong>${veh.propietario}</strong>${veh.marca?` · ${[veh.marca,veh.modelo].filter(Boolean).join(' ')}`:''}${veh.color?` · ${veh.color}`:''}
+    </div>`;
+  }
+
+  // Banner rojo: adeudos sin pagar (más prominente)
+  if (adeudos.length > 0) {
+    html += `
+    <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:8px;padding:.75rem 1rem;margin:.35rem 0">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;flex-wrap:wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span style="font-size:.8rem;font-weight:800;color:#DC2626">
+          ${adeudos.length} ADEUDO${adeudos.length>1?'S':''} SIN PAGAR — Total: ${fmt(montoAdeudos)}
+        </span>
       </div>
-      ${prev.slice(0,3).map(r=>`
-        <div style="font-size:.73rem;color:#374151;display:flex;gap:.6rem;margin-bottom:.2rem;flex-wrap:wrap;align-items:center">
+      ${adeudos.slice(0,3).map(r=>`
+        <div style="font-size:.72rem;color:#991B1B;display:flex;gap:.5rem;margin-bottom:.2rem;flex-wrap:wrap;align-items:center">
           <span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span>
           <span>${fmtDateShort(r.fecha)}</span>
-          <span>${r.tipo}</span>
-          <span style="font-weight:600">${fmt(r.monto)}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</span>
+          <span style="font-weight:700">${fmt(r.monto)}</span>
           ${estadoBadge(r.estado)}
         </div>`).join('')}
-      ${prev.length>3?`<div style="font-size:.7rem;color:#9CA3AF;margin-top:.2rem">+ ${prev.length-3} más</div>`:''}
+      ${adeudos.length>3?`<div style="font-size:.7rem;color:#9CA3AF;margin-top:.2rem">+ ${adeudos.length-3} adeudo${adeudos.length-3>1?'s':''} más</div>`:''}
+      <div style="font-size:.73rem;color:#7F1D1D;margin-top:.5rem;padding-top:.45rem;border-top:1px solid #FECACA;font-weight:600">
+        📌 El infractor debe regularizar sus adeudos en <strong>Tesorería Municipal</strong> (ventanilla de infracciones, Lun–Vie 8:00–15:00 h).
+      </div>
     </div>`;
+  }
+
+  // Banner ámbar: reincidente en general (infracciones anteriores pagadas u otras)
+  const otrasInf = prev.filter(r => r.estado !== 'pendiente' && r.estado !== 'vencida');
+  if (otrasInf.length > 0) {
+    html += `
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:.55rem .9rem;margin:.35rem 0">
+      <div style="font-size:.75rem;font-weight:700;color:#92400E;margin-bottom:.35rem">
+        ⚠ Reincidente — ${prev.length} infracción${prev.length>1?'es':''} previa${prev.length>1?'s':''} en el historial
+      </div>
+      ${otrasInf.slice(0,2).map(r=>`
+        <div style="font-size:.71rem;color:#78350F;display:flex;gap:.5rem;margin-bottom:.15rem;flex-wrap:wrap;align-items:center">
+          <span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span>
+          <span>${fmtDateShort(r.fecha)}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</span>
+          ${estadoBadge(r.estado)}
+        </div>`).join('')}
+    </div>`;
+  }
+
+  panel.innerHTML = html || '';
 }
 
 // ── Pagos / Caja ──────────────────────────────────────────
