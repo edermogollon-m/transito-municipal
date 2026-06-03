@@ -118,7 +118,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','mapa','rendimiento','calendario'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -143,8 +143,8 @@ async function compressPhoto(file, maxPx = 1000) {
   });
 }
 
-function previewFotos(input) {
-  const prev = document.getElementById('inf-fotos-preview');
+function previewFotos(input, containerId) {
+  const prev = document.getElementById(containerId || 'inf-fotos-preview');
   if (!prev) return;
   prev.innerHTML = '';
   const files = Array.from(input.files).slice(0, 3);
@@ -204,8 +204,8 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
@@ -219,6 +219,7 @@ function navigate(view, btn) {
   if (view==='grua')          renderGrua();
   if (view==='mapa')          renderMapa();
   if (view==='rendimiento')   renderRendimiento();
+  if (view==='accidentes')    renderAccidentes();
   if (view==='calendario')    renderCalendario();
   if (window.innerWidth <= 768) closeSidebar();
 }
@@ -346,6 +347,45 @@ async function renderDashboard() {
     }
     alertsEl.innerHTML = html;
   }
+  renderAlertas();
+}
+
+async function renderAlertas() {
+  const panel = $('alertas-panel'); if (!panel) return;
+  const hoy = new Date().toISOString().slice(0,10);
+  const en7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  const hace15 = new Date(Date.now()-15*86400000).toISOString();
+  const hace27 = new Date(Date.now()-27*86400000).toISOString();
+  const hace7  = new Date(Date.now()-7*86400000).toISOString();
+
+  const [
+    { data: permVenc },
+    { data: infProxVenc },
+    { data: gruaLarga },
+    { data: impSinResolver },
+    { data: accProceso }
+  ] = await Promise.all([
+    _sb.from('permisos').select('id').in('estado',['vigente','por-vencer']).lte('vencimiento', en7).gte('vencimiento', hoy),
+    _sb.from('infracciones').select('id').eq('estado','pendiente').lte('fecha', hace27),
+    _sb.from('grua').select('id').eq('estado','retenido').lte('fecha', hace15),
+    _sb.from('infracciones').select('id').eq('estado','impugnada').lte('fecha', hace7),
+    _sb.from('accidentes').select('id').eq('estado','en_proceso').limit(99)
+  ]);
+
+  const alertas = [];
+  if (permVenc?.length)       alertas.push({ color:'amber', icon:'<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>',  title:`${permVenc.length} permiso${permVenc.length>1?'s':''} vencen esta semana`, sub:'Renovar antes de que expiren', view:'permisos', bg:'#FFFBEB', ic:'#D97706' });
+  if (infProxVenc?.length)    alertas.push({ color:'red',   icon:'<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>', title:`${infProxVenc.length} infracción${infProxVenc.length>1?'es':''} próximas a vencer`, sub:'Sin pago, vencen en 3 días o menos', view:'infracciones', bg:'#FEF2F2', ic:'#DC2626' });
+  if (gruaLarga?.length)      alertas.push({ color:'red',   icon:'<path d="M18 8h2a2 2 0 012 2v6h-4M6 8H2v10h2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/>',        title:`${gruaLarga.length} vehículo${gruaLarga.length>1?'s':''} retenido${gruaLarga.length>1?'s':''} +15 días`, sub:'Corralón con retenciones prolongadas', view:'grua', bg:'#FEF2F2', ic:'#DC2626' });
+  if (impSinResolver?.length) alertas.push({ color:'blue',  icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',  title:`${impSinResolver.length} impugnación${impSinResolver.length>1?'es':''} sin resolver +7 días`, sub:'Requieren resolución del supervisor', view:'infracciones', bg:'#EFF6FF', ic:'#2563EB' });
+  if (accProceso?.length)     alertas.push({ color:'amber', icon:'<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/>',  title:`${accProceso.length} accidente${accProceso.length>1?'s':''} en proceso`, sub:'Registros sin cerrar', view:'accidentes', bg:'#FFFBEB', ic:'#D97706' });
+
+  if (!alertas.length) { panel.style.display='none'; return; }
+  panel.style.display='grid';
+  panel.innerHTML = alertas.map(a => `
+    <div class="alerta-card ${a.color}" style="background:${a.bg};border-color:${a.ic}33" onclick="navigate('${a.view}')" title="Ver ${a.view}">
+      <div class="alerta-icon" style="background:${a.ic}18"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${a.ic}" stroke-width="2">${a.icon}</svg></div>
+      <div class="alerta-body"><div class="alerta-title" style="color:${a.ic}">${a.title}</div><div class="alerta-sub" style="color:${a.ic}bb">${a.sub}</div></div>
+    </div>`).join('');
 }
 
 async function renderBarChart(infAll) {
@@ -1645,6 +1685,7 @@ async function renderUsuarios() {
       <td>${u.activo?'<span class="badge-green">Activo</span>':'<span class="badge-muted">Inactivo</span>'}</td>
       <td style="display:flex;gap:.4rem">
         <button class="btn btn-ghost btn-sm" onclick="editUsuario(${u.id})">Editar</button>
+        <button class="btn btn-ghost btn-sm" onclick="printCredencial('${u.id}')" title="Imprimir credencial">🪪</button>
         ${u.usuario!=='admin'?`<button class="btn btn-ghost btn-sm" onclick="toggleUsuario(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>`:''}
       </td>
     </tr>`).join('');
@@ -2687,6 +2728,374 @@ async function showCalDay(y, m, d) {
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════
+// ACCIDENTES VIALES
+// ══════════════════════════════════════════════════════════
+let _accPage=1, _accSearch='', _accTipo='', _accEstado='';
+const ACC_PAGE=20;
+let _accPartes=[];
+
+async function renderAccidentes() {
+  const tbody=$('accidentes-table'); if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  let q=_sb.from('accidentes').select('*');
+  if(_accSearch) q=q.or(`folio.ilike.%${_accSearch}%,ubicacion.ilike.%${_accSearch}%,oficial.ilike.%${_accSearch}%`);
+  if(_accTipo)   q=q.eq('tipo',_accTipo);
+  if(_accEstado) q=q.eq('estado',_accEstado);
+  q=q.order('fecha',{ascending:false});
+  const {data,error}=await q;
+  if(error){tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`;return;}
+  const all=data||[];
+  // stats
+  const enProceso=all.filter(r=>r.estado==='en_proceso').length;
+  const totalLes=all.reduce((s,r)=>s+Number(r.lesionados||0),0);
+  const totalFall=all.reduce((s,r)=>s+Number(r.fallecidos||0),0);
+  if($('acc-stat-total'))     $('acc-stat-total').textContent=all.length;
+  if($('acc-stat-proceso'))   $('acc-stat-proceso').textContent=enProceso;
+  if($('acc-stat-lesionados'))$('acc-stat-lesionados').textContent=totalLes;
+  if($('acc-stat-fallecidos'))$('acc-stat-fallecidos').textContent=totalFall;
+  const badge=$('badge-accidentes'); if(badge){badge.textContent=enProceso;badge.style.display=enProceso?'inline':'none';}
+  const pages=Math.max(1,Math.ceil(all.length/ACC_PAGE));
+  if(_accPage>pages)_accPage=pages;
+  const rows=all.slice((_accPage-1)*ACC_PAGE,_accPage*ACC_PAGE);
+  const tipoLabel={choque:'Choque',atropello:'Atropello',volcadura:'Volcadura',otro:'Otro'};
+  const estadoAcc={en_proceso:'<span class="badge pendiente">En proceso</span>',cerrado:'<span class="badge pagada">Cerrado</span>',derivado:'<span class="badge impugnada">Derivado a MP</span>'};
+  tbody.innerHTML=rows.length?rows.map(r=>`<tr onclick="viewAccidenteDetalle('${r.id}')">
+    <td class="mono" style="font-weight:700">${r.folio||'—'}</td>
+    <td>${fmtDateShort(r.fecha)}</td>
+    <td>${tipoLabel[r.tipo]||r.tipo}</td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.ubicacion||'—'}</td>
+    <td style="text-align:center">${r.lesionados||0}${r.fallecidos>0?` / <span style="color:var(--red);font-weight:700">${r.fallecidos} fall.</span>`:''}</td>
+    <td>${r.oficial||'—'}</td>
+    <td>${estadoAcc[r.estado]||r.estado}</td>
+    <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editAccidente('${r.id}')">Editar</button></td>
+  </tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin accidentes registrados</td></tr>';
+  renderPager('accidentes-pager',_accPage,pages,'goAccPage');
+}
+function filterAccidentes(){
+  _accSearch=($('acc-search')||{}).value||'';
+  _accTipo=($('acc-tipo-fil')||{}).value||'';
+  _accEstado=($('acc-estado-fil')||{}).value||'';
+  _accPage=1;renderAccidentes();
+}
+function goAccPage(p){_accPage=p;renderAccidentes();}
+
+function addParte(data){
+  _accPartes.push(data||{nombre:'',placa:'',licencia:'',aseguradora:''});
+  renderPartesForm();
+}
+function removeParte(i){_accPartes.splice(i,1);renderPartesForm();}
+function renderPartesForm(){
+  const el=$('acc-partes-list'); if(!el) return;
+  el.innerHTML=_accPartes.map((p,i)=>`
+    <div style="border:1px solid var(--border);border-radius:8px;padding:.75rem;margin-bottom:.5rem;background:var(--stone)">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.5rem;font-size:.75rem;font-weight:700;color:var(--muted)">Parte ${i+1} <button type="button" class="btn btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.7rem" onclick="removeParte(${i})">✕</button></div>
+      <div class="form-row">
+        <input class="form-input" placeholder="Nombre" value="${p.nombre}" oninput="_accPartes[${i}].nombre=this.value" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Placa" value="${p.placa}" oninput="_accPartes[${i}].placa=this.value.toUpperCase()" style="font-size:.8rem"/>
+      </div>
+      <div class="form-row" style="margin-top:.4rem">
+        <input class="form-input" placeholder="Núm. licencia" value="${p.licencia}" oninput="_accPartes[${i}].licencia=this.value" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Aseguradora" value="${p.aseguradora}" oninput="_accPartes[${i}].aseguradora=this.value" style="font-size:.8rem"/>
+      </div>
+    </div>`).join('');
+}
+
+function openNewAccidente(){
+  $('acc-id').value='';_accPartes=[];renderPartesForm();
+  $('acc-tipo').value='choque';$('acc-ubicacion').value='';$('acc-descripcion').value='';
+  $('acc-lesionados').value=0;$('acc-fallecidos').value=0;$('acc-obs').value='';
+  $('acc-oficial').value=_session?.name||'';$('acc-estado').value='en_proceso';
+  if($('acc-fotos-preview'))$('acc-fotos-preview').innerHTML='';
+  const now=new Date();now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+  $('acc-fecha').value=now.toISOString().slice(0,16);
+  $('modal-acc-title').textContent='Registrar accidente vial';
+  openModal('modal-accidente');
+}
+
+async function editAccidente(id){
+  const{data,error}=await _sb.from('accidentes').select('*').eq('id',id).single();
+  if(error||!data)return;
+  $('acc-id').value=data.id;
+  _accPartes=[];try{_accPartes=JSON.parse(data.partes||'[]');}catch(e){}
+  renderPartesForm();
+  $('acc-tipo').value=data.tipo||'choque';$('acc-ubicacion').value=data.ubicacion||'';
+  $('acc-descripcion').value=data.descripcion||'';$('acc-lesionados').value=data.lesionados||0;
+  $('acc-fallecidos').value=data.fallecidos||0;$('acc-obs').value=data.obs||'';
+  $('acc-oficial').value=data.oficial||'';$('acc-estado').value=data.estado||'en_proceso';
+  if(data.fecha){const d=new Date(data.fecha);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$('acc-fecha').value=d.toISOString().slice(0,16);}
+  $('modal-acc-title').textContent='Editar accidente vial';
+  openModal('modal-accidente');
+}
+
+async function submitAccidente(e){
+  e.preventDefault();
+  const btn=$('acc-submit-btn');btn.disabled=true;btn.textContent='Guardando…';
+  const id=$('acc-id').value;
+  const fileInput=$('acc-fotos');
+  const fotosArr=[];
+  if(fileInput&&fileInput.files.length>0){
+    for(let i=0;i<Math.min(fileInput.files.length,3);i++) fotosArr.push(await compressPhoto(fileInput.files[i]));
+  }
+  const payload={
+    tipo:$('acc-tipo').value,
+    fecha:$('acc-fecha').value?new Date($('acc-fecha').value).toISOString():new Date().toISOString(),
+    ubicacion:$('acc-ubicacion').value.trim(),
+    descripcion:$('acc-descripcion').value.trim(),
+    lesionados:parseInt($('acc-lesionados').value)||0,
+    fallecidos:parseInt($('acc-fallecidos').value)||0,
+    oficial:$('acc-oficial').value.trim(),
+    estado:$('acc-estado').value,
+    obs:$('acc-obs').value.trim(),
+    partes:JSON.stringify(_accPartes)
+  };
+  if(fotosArr.length) payload.fotos=JSON.stringify(fotosArr);
+  const{error}=id?await _sb.from('accidentes').update(payload).eq('id',id):await _sb.from('accidentes').insert(payload);
+  btn.disabled=false;btn.textContent='Registrar accidente';
+  if(error){alert('Error: '+error.message);return;}
+  closeModal('modal-accidente');
+  logActivity('info',`Accidente ${id?'actualizado':'registrado'} en ${payload.ubicacion}`);
+  renderAccidentes();renderAlertas();
+  showToast(id?'Accidente actualizado':'Accidente registrado');
+}
+
+async function viewAccidenteDetalle(id){
+  const{data:r,error}=await _sb.from('accidentes').select('*').eq('id',id).single();
+  if(error||!r)return;
+  let partes=[];try{partes=JSON.parse(r.partes||'[]');}catch(e){}
+  let fotos=[];try{fotos=JSON.parse(r.fotos||'[]');}catch(e){}
+  const tipoLabel={choque:'Choque',atropello:'Atropello',volcadura:'Volcadura',otro:'Otro'};
+  const estadoAcc={en_proceso:'<span class="badge pendiente">En proceso</span>',cerrado:'<span class="badge pagada">Cerrado</span>',derivado:'<span class="badge impugnada">Derivado a MP</span>'};
+  const dm=$('modal-detail');if(!dm)return;
+  dm.querySelector('.modal-title').textContent=`Accidente ${r.folio||'—'}`;
+  dm.querySelector('.detail-body').innerHTML=`
+    <div class="detail-grid">
+      <div class="detail-field"><label>Folio</label><span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span></div>
+      <div class="detail-field"><label>Fecha</label><span>${fmtDateShort(r.fecha)}</span></div>
+      <div class="detail-field"><label>Tipo</label><span>${tipoLabel[r.tipo]||r.tipo}</span></div>
+      <div class="detail-field"><label>Estado</label><span>${estadoAcc[r.estado]||r.estado}</span></div>
+      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" style="color:var(--ac);font-size:.75rem;margin-left:.4rem">Ver mapa ↗</a>`:''}</span></div>
+      <div class="detail-field"><label>Lesionados</label><span style="font-weight:700;color:var(--amber)">${r.lesionados||0}</span></div>
+      <div class="detail-field"><label>Fallecidos</label><span style="font-weight:700;color:var(--red)">${r.fallecidos||0}</span></div>
+      <div class="detail-field"><label>Oficial</label><span>${r.oficial||'—'}</span></div>
+      ${r.descripcion?`<div class="detail-field full"><label>Descripción</label><span>${r.descripcion}</span></div>`:''}
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
+      ${partes.length?`<div class="detail-field full"><label>Partes involucradas</label>
+        <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.4rem">
+          ${partes.map((p,i)=>`<div style="background:var(--stone);border-radius:6px;padding:.5rem .75rem;font-size:.8rem"><strong>Parte ${i+1}:</strong> ${p.nombre||'—'} · Placa: ${p.placa||'—'} · Lic: ${p.licencia||'—'} · Aseg: ${p.aseguradora||'—'}</div>`).join('')}
+        </div></div>`:''}
+      ${fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')"/>`).join('')}</div></div>`:''}
+    </div>
+    <div class="detail-actions">
+      <button class="btn btn-secondary btn-sm" onclick="editAccidente('${r.id}');closeModal('modal-detail')">Editar</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail')">Cerrar</button>
+    </div>`;
+  openModal('modal-detail');
+}
+
+// ══════════════════════════════════════════════════════════
+// BITÁCORA DE TURNO
+// ══════════════════════════════════════════════════════════
+function checkTurnoActivo() {
+  const turno = JSON.parse(localStorage.getItem('tm_turno')||'null');
+  const btn=$('turno-btn'), dot=$('turno-dot'), label=$('turno-label');
+  if(!btn)return;
+  if(turno && turno.inicio) {
+    const mins=Math.floor((Date.now()-new Date(turno.inicio).getTime())/60000);
+    const hrs=Math.floor(mins/60), m=mins%60;
+    btn.className='turno-chip activo';
+    dot.className='turno-dot on';
+    label.textContent=`Turno activo ${hrs>0?hrs+'h ':''}${m}min`;
+  } else {
+    btn.className='turno-chip inactivo';
+    dot.className='turno-dot off';
+    label.textContent='Iniciar turno';
+  }
+}
+
+async function toggleTurno() {
+  const turno = JSON.parse(localStorage.getItem('tm_turno')||'null');
+  if (turno && turno.inicio) {
+    await cerrarTurno(turno);
+  } else {
+    iniciarTurno();
+  }
+}
+
+function iniciarTurno() {
+  const turno = { inicio: new Date().toISOString(), oficial: _session?.name||'' };
+  localStorage.setItem('tm_turno', JSON.stringify(turno));
+  _sb.from('turnos').insert({ oficial_nombre: turno.oficial, inicio: turno.inicio }).then(()=>{});
+  checkTurnoActivo();
+  showToast('Turno iniciado — ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}));
+}
+
+async function cerrarTurno(turno) {
+  const fin = new Date().toISOString();
+  const [ {data:infs}, {data:gru} ] = await Promise.all([
+    _sb.from('infracciones').select('id,monto,estado').eq('oficial',turno.oficial).gte('fecha',turno.inicio),
+    _sb.from('grua').select('id').eq('oficial',turno.oficial).gte('fecha',turno.inicio)
+  ]);
+  const recaudacion = (infs||[]).filter(r=>r.estado==='pagada').reduce((s,r)=>s+Number(r.monto||0),0);
+  const infCount = (infs||[]).length;
+  const gruaCount = (gru||[]).length;
+  const durMin = Math.floor((new Date(fin)-new Date(turno.inicio))/60000);
+  const durHrs = Math.floor(durMin/60), durM=durMin%60;
+
+  // Actualizar turno en BD
+  await _sb.from('turnos').update({ fin, infracciones_count:infCount, grua_count:gruaCount, recaudacion, estado:'cerrado' })
+    .eq('oficial_nombre', turno.oficial).eq('estado','activo');
+
+  localStorage.removeItem('tm_turno');
+  checkTurnoActivo();
+
+  // Mostrar resumen
+  const body = $('turno-resumen-body');
+  if (body) {
+    body.innerHTML = `
+      <div style="padding:.5rem 0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+          <div class="stat-card" style="text-align:center;padding:.9rem">
+            <div style="font-size:1.6rem;font-weight:800;color:var(--ink)">${infCount}</div>
+            <div style="font-size:.72rem;color:var(--muted)">Infracciones levantadas</div>
+          </div>
+          <div class="stat-card" style="text-align:center;padding:.9rem">
+            <div style="font-size:1.6rem;font-weight:800;color:var(--ink)">${gruaCount}</div>
+            <div style="font-size:.72rem;color:var(--muted)">Retenciones de grúa</div>
+          </div>
+          <div class="stat-card" style="text-align:center;padding:.9rem">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--green)">${fmt(recaudacion)}</div>
+            <div style="font-size:.72rem;color:var(--muted)">Recaudación directa</div>
+          </div>
+          <div class="stat-card" style="text-align:center;padding:.9rem">
+            <div style="font-size:1.6rem;font-weight:800;color:var(--ac)">${durHrs}h ${durM}m</div>
+            <div style="font-size:.72rem;color:var(--muted)">Duración del turno</div>
+          </div>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem">Oficial: <strong>${turno.oficial}</strong></div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:1rem">Periodo: ${new Date(turno.inicio).toLocaleString('es-MX')} → ${new Date(fin).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeModal('modal-turno-resumen')">Cerrar</button>
+          <button class="btn btn-primary" onclick="printTurnoResumen(${JSON.stringify({oficial:turno.oficial,inicio:turno.inicio,fin,infCount,gruaCount,recaudacion,durHrs,durM}).replace(/"/g,'&quot;')})">Imprimir resumen</button>
+        </div>
+      </div>`;
+  }
+  openModal('modal-turno-resumen');
+}
+
+function printTurnoResumen(d) {
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Resumen de Turno</title>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11pt;padding:2cm}@page{size:letter portrait;margin:2cm}
+  h1{font-size:16pt;margin-bottom:.3cm}h2{font-size:11pt;color:#555;margin-bottom:.8cm}.grid{display:grid;grid-template-columns:1fr 1fr;gap:.5cm;margin-bottom:1cm}
+  .box{border:1px solid #ddd;border-radius:6px;padding:.5cm;text-align:center}.num{font-size:22pt;font-weight:800;color:#1A7A82}.lbl{font-size:9pt;color:#888;margin-top:.1cm}
+  .meta{font-size:9pt;color:#555;margin-bottom:.3cm}.firma{margin-top:2cm;display:flex;justify-content:space-between}.firma-line{border-top:1px solid #333;padding-top:.2cm;font-size:9pt;color:#555;text-align:center;width:44%}
+  </style></head><body>
+  <h1>Resumen de Turno</h1><h2>Dirección de Tránsito y Movilidad Municipal</h2>
+  <div class="meta">Oficial: <strong>${d.oficial}</strong></div>
+  <div class="meta">Inicio: ${new Date(d.inicio).toLocaleString('es-MX')} &nbsp;|&nbsp; Fin: ${new Date(d.fin).toLocaleString('es-MX')}</div>
+  <div class="meta" style="margin-bottom:.8cm">Duración: <strong>${d.durHrs}h ${d.durM}m</strong></div>
+  <div class="grid">
+    <div class="box"><div class="num">${d.infCount}</div><div class="lbl">Infracciones</div></div>
+    <div class="box"><div class="num">${d.gruaCount}</div><div class="lbl">Retenciones grúa</div></div>
+    <div class="box" style="grid-column:1/-1"><div class="num" style="color:#059669">$${Number(d.recaudacion).toLocaleString('es-MX')}</div><div class="lbl">Recaudación directa</div></div>
+  </div>
+  <div class="firma"><div class="firma-line">Firma del oficial</div><div class="firma-line">Vo.Bo. Supervisor</div></div>
+  </body></html>`;
+  const w=window.open('','_blank','width=850,height=650');w.document.write(html);w.document.close();w.onload=()=>{w.focus();w.print();};
+}
+
+// ══════════════════════════════════════════════════════════
+// NOTIFICACIONES PUSH (Notifications API + Realtime)
+// ══════════════════════════════════════════════════════════
+async function setupPushNotifications() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission !== 'granted') return;
+
+  // Escuchar nuevas impugnaciones en tiempo real
+  _sb.channel('rt-impugnaciones')
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'infracciones',
+      filter: 'estado=eq.impugnada'
+    }, payload => {
+      if (_rol === 'admin' || _rol === 'supervisor') {
+        const r = payload.new;
+        new Notification('Tránsito Municipal — Impugnación', {
+          body: `Infracción ${r.folio||r.id} (${r.placa}) fue impugnada. Requiere resolución.`,
+          icon: '/manifest.json',
+          tag: `imp-${r.id}`
+        });
+      }
+    })
+    .subscribe();
+
+  // Escuchar nuevos accidentes
+  _sb.channel('rt-accidentes')
+    .on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'accidentes'
+    }, payload => {
+      if (_rol === 'admin' || _rol === 'supervisor') {
+        const r = payload.new;
+        new Notification('Tránsito Municipal — Accidente', {
+          body: `Nuevo accidente registrado en ${r.ubicacion||'ubicación desconocida'}.`,
+          tag: `acc-${r.id}`
+        });
+      }
+    })
+    .subscribe();
+}
+
+// ══════════════════════════════════════════════════════════
+// CREDENCIAL DIGITAL DEL OFICIAL
+// ══════════════════════════════════════════════════════════
+async function printCredencial(userId) {
+  const {data,error}=await _sb.from('usuarios').select('*').eq('id',userId).single();
+  if(error||!data){alert('No se pudo cargar el usuario.');return;}
+  const rolLabel={admin:'Director de Tránsito',supervisor:'Supervisor de Tránsito',oficial:'Oficial de Tránsito'};
+  const iniciales=(data.iniciales||data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2)).toUpperCase();
+  const qrVal=`OFICIAL:${data.usuario}|ID:${data.id}|ROL:${data.rol}`;
+  let qrDataUrl='';
+  try{qrDataUrl=new QRious({value:qrVal,size:180,padding:8,backgroundAlpha:1}).toDataURL();}catch(e){}
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Credencial — ${data.nombre}</title>
+  <style>*{margin:0;padding:0;box-sizing:border-box}@page{size:85.6mm 53.98mm;margin:0}
+  body{width:85.6mm;height:53.98mm;font-family:Arial,sans-serif;background:#fff;overflow:hidden}
+  .card{width:100%;height:100%;display:flex;flex-direction:column;border:1.5px solid #1A7A82}
+  .card-top{background:#1A7A82;padding:3mm 4mm;display:flex;align-items:center;gap:3mm;flex:0}
+  .avatar{width:12mm;height:12mm;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:14pt;font-weight:800;color:#fff;flex-shrink:0}
+  .card-info{color:#fff}.card-name{font-size:9pt;font-weight:700;line-height:1.2}.card-role{font-size:7pt;opacity:.75}
+  .card-logo{margin-left:auto;font-size:10pt;font-weight:800;color:rgba(255,255,255,.7);letter-spacing:.05em}
+  .card-body{padding:3mm 4mm;display:flex;gap:3mm;flex:1;align-items:center}
+  .card-fields{flex:1;display:flex;flex-direction:column;gap:1.5mm}
+  .field{font-size:7pt}.field-label{color:#888;font-size:6pt;text-transform:uppercase;letter-spacing:.06em}.field-val{color:#111;font-weight:600}
+  .card-qr img{width:18mm;height:18mm}
+  .card-footer{background:#f5f5f5;padding:1.5mm 4mm;font-size:6pt;color:#888;text-align:center;border-top:1px solid #eee}
+  </style></head><body>
+  <div class="card">
+    <div class="card-top">
+      <div class="avatar">${iniciales}</div>
+      <div class="card-info">
+        <div class="card-name">${data.nombre}</div>
+        <div class="card-role">${rolLabel[data.rol]||data.rol}</div>
+      </div>
+      <div class="card-logo">HCE</div>
+    </div>
+    <div class="card-body">
+      <div class="card-fields">
+        <div class="field"><div class="field-label">Usuario</div><div class="field-val">${data.usuario}</div></div>
+        <div class="field"><div class="field-label">Rol</div><div class="field-val">${rolLabel[data.rol]||data.rol}</div></div>
+        <div class="field"><div class="field-label">Estado</div><div class="field-val" style="color:${data.activo?'#059669':'#DC2626'}">${data.activo?'Activo':'Inactivo'}</div></div>
+      </div>
+      ${qrDataUrl?`<div class="card-qr"><img src="${qrDataUrl}"/></div>`:''}
+    </div>
+    <div class="card-footer">Tránsito y Movilidad Municipal · HCE Consultoría · Credencial oficial de agente</div>
+  </div>
+  </body></html>`;
+  const w=window.open('','_blank','width=420,height=320');w.document.write(html);w.document.close();w.onload=()=>{w.focus();w.print();};
+}
+
 // ── initData (seed configuracion if empty) ────────────────
 async function initData() {
   const { count: cfgCount } = await _sb.from('configuracion').select('*',{count:'exact',head:true});
@@ -2707,7 +3116,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
   }
   initUI();
+  checkTurnoActivo();
+  setInterval(checkTurnoActivo, 60000);
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
   try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
+  setupPushNotifications().catch(()=>{});
   navigate('dashboard');
 });

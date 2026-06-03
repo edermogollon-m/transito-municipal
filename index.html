@@ -319,6 +319,25 @@
     @keyframes qr-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
     .qr-scanning .qr-box { animation:qr-pulse 1.2s ease-in-out infinite; }
 
+    /* ALERTAS */
+    .alertas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.75rem; margin-bottom:1.5rem; }
+    .alerta-card { border-radius:var(--r); padding:.9rem 1rem; display:flex; align-items:flex-start; gap:.75rem; border:1px solid; }
+    .alerta-card.red   { background:var(--red-bg);   border-color:#FECACA; }
+    .alerta-card.amber { background:var(--amber-bg); border-color:#FDE68A; }
+    .alerta-card.blue  { background:var(--blue-bg);  border-color:#BFDBFE; }
+    .alerta-icon { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .alerta-body { flex:1; min-width:0; }
+    .alerta-title { font-size:.8rem; font-weight:700; margin-bottom:.15rem; }
+    .alerta-sub   { font-size:.72rem; line-height:1.4; }
+    /* TURNO */
+    .turno-chip { display:flex; align-items:center; gap:.55rem; padding:.45rem .7rem; border-radius:7px; font-size:.75rem; font-weight:600; cursor:pointer; transition:background .15s; margin-top:.4rem; border:none; width:100%; font-family:inherit; }
+    .turno-chip.activo { background:rgba(5,150,105,.15); color:#34D399; }
+    .turno-chip.inactivo { background:rgba(255,255,255,.04); color:rgba(255,255,255,.35); }
+    .turno-chip.activo:hover { background:rgba(5,150,105,.25); }
+    .turno-chip.inactivo:hover { background:rgba(255,255,255,.08); color:rgba(255,255,255,.6); }
+    .turno-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .turno-dot.on  { background:#34D399; box-shadow:0 0 0 3px rgba(52,211,153,.25); }
+    .turno-dot.off { background:rgba(255,255,255,.2); }
     /* CALENDARIO */
     .cal-nav { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; }
     .cal-grid-header { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:4px; }
@@ -396,6 +415,11 @@
         Grúa / Corralón
         <span class="nav-badge" id="badge-grua" style="display:none">0</span>
       </button>
+      <button class="nav-item" onclick="navigate('accidentes',this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Accidentes Viales
+        <span class="nav-badge" id="badge-accidentes" style="display:none">0</span>
+      </button>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-section-label">Análisis</div>
@@ -439,7 +463,11 @@
           <div class="user-role" id="user-role">Director de Tránsito</div>
         </div>
       </div>
-      <button onclick="logout()" style="margin-top:.5rem;width:100%;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:none;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.35);transition:background .15s,color .15s;font-family:inherit" onmouseover="this.style.background='rgba(220,38,38,.15)';this.style.color='#F87171'" onmouseout="this.style.background='none';this.style.color='rgba(255,255,255,.35)'">
+      <button id="turno-btn" class="turno-chip inactivo" onclick="toggleTurno()">
+        <span class="turno-dot off" id="turno-dot"></span>
+        <span id="turno-label">Iniciar turno</span>
+      </button>
+      <button onclick="logout()" style="margin-top:.4rem;width:100%;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:none;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.35);transition:background .15s,color .15s;font-family:inherit" onmouseover="this.style.background='rgba(220,38,38,.15)';this.style.color='#F87171'" onmouseout="this.style.background='none';this.style.color='rgba(255,255,255,.35)'">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Cerrar sesión
       </button>
@@ -518,6 +546,7 @@
           </div>
         </div>
 
+        <div id="alertas-panel" class="alertas-grid" style="display:none"></div>
         <div id="dash-alerts"></div>
         <div class="dash-grid">
           <div class="card">
@@ -829,6 +858,51 @@
               <tbody id="usuarios-table"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <!-- ACCIDENTES VIALES -->
+      <div class="view" id="view-accidentes">
+        <div class="page-header"><h2>Accidentes Viales</h2><p>Registro y seguimiento de percances en vía pública</p></div>
+        <div class="filter-bar">
+          <div class="search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="acc-search" class="search-input" type="text" placeholder="Buscar por folio, ubicación u oficial…" oninput="filterAccidentes()"/>
+          </div>
+          <select id="acc-tipo-fil" class="filter-select" onchange="filterAccidentes()">
+            <option value="">Todos los tipos</option>
+            <option value="choque">Choque</option>
+            <option value="atropello">Atropello</option>
+            <option value="volcadura">Volcadura</option>
+            <option value="otro">Otro</option>
+          </select>
+          <select id="acc-estado-fil" class="filter-select" onchange="filterAccidentes()">
+            <option value="">Todos los estados</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="cerrado">Cerrado</option>
+            <option value="derivado">Derivado a MP</option>
+          </select>
+          <button class="btn btn-primary" onclick="openNewAccidente()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Registrar accidente
+          </button>
+        </div>
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
+            <div style="text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--ink)" id="acc-stat-total">—</div><div style="font-size:.75rem;color:var(--muted)">Total registrados</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--amber)" id="acc-stat-proceso">—</div><div style="font-size:.75rem;color:var(--muted)">En proceso</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--red)" id="acc-stat-lesionados">—</div><div style="font-size:.75rem;color:var(--muted)">Lesionados (total)</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem;font-weight:800;color:var(--red)" id="acc-stat-fallecidos">—</div><div style="font-size:.75rem;color:var(--muted)">Fallecidos (total)</div></div>
+          </div>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Ubicación</th><th>Lesionados</th><th>Oficial</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="accidentes-table"></tbody>
+            </table>
+          </div>
+          <div id="accidentes-pager"></div>
         </div>
       </div>
 
@@ -1238,6 +1312,101 @@
       <p id="qr-status" style="margin-top:.9rem;font-size:.82rem;color:var(--muted);line-height:1.5">Iniciando cámara…</p>
       <button class="btn btn-ghost" style="margin-top:.75rem" onclick="stopQRScan()">Cancelar</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: Accidente vial -->
+<div class="modal-overlay" id="modal-accidente">
+  <div class="modal" style="width:580px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-acc-title">Registrar accidente vial</div>
+      <button class="modal-close" onclick="closeModal('modal-accidente')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="submitAccidente(event)" style="overflow-y:auto;max-height:75vh">
+      <input type="hidden" id="acc-id"/>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Tipo de accidente *</label>
+          <select id="acc-tipo" class="form-select" required>
+            <option value="choque">Choque</option>
+            <option value="atropello">Atropello</option>
+            <option value="volcadura">Volcadura</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Fecha y hora</label>
+          <input id="acc-fecha" class="form-input" type="datetime-local"/>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Ubicación *</label>
+        <input id="acc-ubicacion" class="form-input" type="text" placeholder="Calle / Av. / Intersección" required/>
+      </div>
+      <div class="form-field">
+        <label>Descripción del accidente</label>
+        <textarea id="acc-descripcion" class="form-input" rows="3" placeholder="Describe brevemente lo ocurrido…" style="resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Lesionados</label>
+          <input id="acc-lesionados" class="form-input" type="number" value="0" min="0"/>
+        </div>
+        <div class="form-field">
+          <label>Fallecidos</label>
+          <input id="acc-fallecidos" class="form-input" type="number" value="0" min="0"/>
+        </div>
+      </div>
+      <div class="form-field">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+          <label style="margin:0">Partes involucradas</label>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addParte()">+ Agregar parte</button>
+        </div>
+        <div id="acc-partes-list"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Oficial que levanta</label>
+          <input id="acc-oficial" class="form-input" type="text" placeholder="Nombre del oficial"/>
+        </div>
+        <div class="form-field">
+          <label>Estado</label>
+          <select id="acc-estado" class="form-select">
+            <option value="en_proceso">En proceso</option>
+            <option value="cerrado">Cerrado</option>
+            <option value="derivado">Derivado a MP</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Fotos de evidencia (máx. 3)</label>
+        <label class="foto-upload-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Seleccionar fotos
+          <input type="file" id="acc-fotos" accept="image/*" multiple style="display:none" onchange="previewFotos(this,'acc-fotos-preview')"/>
+        </label>
+        <div id="acc-fotos-preview" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem"></div>
+      </div>
+      <div class="form-field">
+        <label>Observaciones</label>
+        <input id="acc-obs" class="form-input" type="text" placeholder="Notas adicionales"/>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-accidente')">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="acc-submit-btn">Registrar accidente</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Resumen de turno -->
+<div class="modal-overlay" id="modal-turno-resumen">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <div class="modal-title">Resumen de turno</div>
+      <button class="modal-close" onclick="closeModal('modal-turno-resumen')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="turno-resumen-body"></div>
   </div>
 </div>
 
