@@ -117,7 +117,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','tickets'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion'];
 
 function navigate(view, btn) {
   VIEWS.forEach(v => {
@@ -131,15 +131,14 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', tickets:'Impresión de Ticket' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', tickets:'Tickets' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
   if (view==='infracciones')  renderInfracciones();
   if (view==='permisos')      renderPermisos();
   if (view==='configuracion') loadConfig();
-  if (view==='tickets')       renderTicketView();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -335,7 +334,7 @@ async function submitInfraccion(e) {
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
-    printInfraccion(data.id);
+    printTicket80(data.id);
   }
 
   renderInfracciones();
@@ -518,7 +517,11 @@ async function viewDetail(tabla, id) {
       </select>
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
       <button class="btn btn-secondary btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
-      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')" title="Imprimir boleta de infracción">
+      <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Imprimir ticket 80mm para el infractor">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir ticket
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')" title="Imprimir boleta A4 (2 copias)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Imprimir boleta
       </button>
@@ -808,89 +811,7 @@ async function printInfraccion(id) {
   win.document.close();
 }
 
-// ── Ticket view (80mm) ────────────────────────────────────
-let _tktPage = 1, _tktSearch = '', _tktEstado = '', _tktSelected = null;
-const TKT_PAGE_SIZE = 15;
-
-async function renderTicketView() {
-  _tktPage = 1; _tktSearch = ''; _tktEstado = ''; _tktSelected = null;
-  const btn80 = $('tkt-btn-80'), btnA4 = $('tkt-btn-a4');
-  if (btn80) btn80.style.display = 'none';
-  if (btnA4) btnA4.style.display = 'none';
-  const empty = $('tkt-empty'), scroll = $('tkt-preview-scroll');
-  if (empty) empty.style.display = 'flex';
-  if (scroll) { scroll.style.display = 'none'; scroll.innerHTML = ''; }
-  await renderTktList();
-}
-
-async function renderTktList() {
-  const body = $('tkt-list-body');
-  if (!body) return;
-  body.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.8rem">Cargando…</div>';
-
-  let q = _sb.from('infracciones').select('id,folio,fecha,placa,infractor,tipo,monto,estado').order('fecha',{ascending:false});
-  if (_tktEstado) q = q.eq('estado', _tktEstado);
-  if (_tktSearch) q = q.or(`placa.ilike.%${_tktSearch}%,infractor.ilike.%${_tktSearch}%,folio.ilike.%${_tktSearch}%`);
-  const { data, error } = await q;
-  if (error) { body.innerHTML = `<div style="color:var(--red);padding:1rem;font-size:.8rem">${error.message}</div>`; return; }
-
-  const all = data || [];
-  const pages = Math.max(1, Math.ceil(all.length / TKT_PAGE_SIZE));
-  if (_tktPage > pages) _tktPage = pages;
-  const rows = all.slice((_tktPage-1)*TKT_PAGE_SIZE, _tktPage*TKT_PAGE_SIZE);
-
-  if (!rows.length) {
-    body.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados</div>';
-    renderPager('tkt-pager', 1, 1, 'goTktPage');
-    return;
-  }
-
-  body.innerHTML = rows.map(r => `
-    <div class="tkt-item${_tktSelected===r.id?' selected':''}" onclick="selectTicket('${r.id}')">
-      <div class="tkt-item-info">
-        <div class="tkt-item-folio">${r.folio||'—'}</div>
-        <div class="tkt-item-name">${r.infractor}</div>
-        <div class="tkt-item-meta">${r.placa} · ${fmtDateShort(r.fecha)}</div>
-      </div>
-      <div class="tkt-item-right">
-        ${estadoBadge(r.estado)}
-        <span style="font-size:.74rem;font-weight:700;color:var(--ink)">${fmt(r.monto)}</span>
-      </div>
-    </div>`).join('');
-
-  renderPager('tkt-pager', _tktPage, pages, 'goTktPage');
-}
-
-function filterTickets() {
-  _tktSearch = ($('tkt-search')||{}).value||'';
-  _tktEstado = ($('tkt-estado-filter')||{}).value||'';
-  _tktPage = 1;
-  renderTktList();
-}
-
-function goTktPage(p) { _tktPage = p; renderTktList(); }
-
-async function selectTicket(id) {
-  _tktSelected = id;
-  document.querySelectorAll('.tkt-item').forEach(el => el.classList.remove('selected'));
-  const found = document.querySelector(`.tkt-item[onclick*="'${id}'"]`);
-  if (found) found.classList.add('selected');
-
-  const btn80 = $('tkt-btn-80'), btnA4 = $('tkt-btn-a4');
-  if (btn80) btn80.style.display = 'inline-flex';
-  if (btnA4) btnA4.style.display = 'inline-flex';
-
-  const [{ data: r }, { data: cfg }] = await Promise.all([
-    _sb.from('infracciones').select('*').eq('id', id).single(),
-    _sb.from('configuracion').select('*').eq('id', 1).single()
-  ]);
-  if (!r) return;
-
-  const empty = $('tkt-empty'), scroll = $('tkt-preview-scroll');
-  if (empty) empty.style.display = 'none';
-  if (scroll) { scroll.style.display = 'flex'; scroll.innerHTML = buildTicket80(r, cfg); }
-}
-
+// ── Ticket 80mm (print functions) ────────────────────────
 function buildTicket80(r, cfg) {
   const mun = cfg?.municipio || 'Municipio';
   const est = cfg?.estado || '';
