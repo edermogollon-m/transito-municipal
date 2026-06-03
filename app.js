@@ -90,6 +90,44 @@ const SEED_ACTIVIDAD = [
   { tipo:'config',    texto:'Configuración del sistema actualizada por Carlos Alvarado', ts: new Date(Date.now()-172800000).toISOString() }
 ];
 
+const SEED_VEHICULOS = [
+  { placa:'ABC-123', propietario:'Roberto Gómez López',    tipo:'automovil',   marca:'Nissan',        modelo:'Sentra',    anio:2019, color:'Blanco',   num_serie:'3N1AB7AP4KL123456', estado:'activo', telefono:'5551234567' },
+  { placa:'XYZ-456', propietario:'María López Ramírez',    tipo:'camioneta',   marca:'Ford',          modelo:'Explorer',  anio:2021, color:'Gris',     num_serie:'1FMHK8D80BGA45678', estado:'activo', telefono:'5552345678' },
+  { placa:'DEF-789', propietario:'Carlos Hernández Mora',  tipo:'automovil',   marca:'Volkswagen',    modelo:'Jetta',     anio:2020, color:'Negro',    num_serie:null, estado:'activo', telefono:'5553456789' },
+  { placa:'GHI-012', propietario:'Ana Martínez Soto',      tipo:'automovil',   marca:'Chevrolet',     modelo:'Aveo',      anio:2018, color:'Rojo',     num_serie:null, estado:'activo', telefono:'5554567890' },
+  { placa:'JKL-345', propietario:'Pedro Sánchez Vargas',   tipo:'motocicleta', marca:'Honda',         modelo:'CB500F',    anio:2022, color:'Azul',     num_serie:null, estado:'activo', telefono:'5555678901' },
+  { placa:'MNO-678', propietario:'Laura García Torres',    tipo:'automovil',   marca:'Toyota',        modelo:'Corolla',   anio:2020, color:'Plateado', num_serie:'2T1BURHE8JC123789', estado:'activo', telefono:'5556789012' },
+  { placa:'PQR-901', propietario:'Jorge Ramírez Herrera',  tipo:'camioneta',   marca:'Chevrolet',     modelo:'Silverado', anio:2019, color:'Blanco',   num_serie:null, estado:'activo', telefono:null },
+  { placa:'STU-234', propietario:'Sofía Torres Nuño',      tipo:'automovil',   marca:'Kia',           modelo:'Rio',       anio:2021, color:'Rojo',     num_serie:null, estado:'activo', telefono:'5557890123' },
+  { placa:'KLM-890', propietario:'Ursula Navas Bravo',     tipo:'camion',      marca:'International', modelo:'4300',      anio:2017, color:'Blanco',   num_serie:'INTLDCFE67H123001', estado:'activo', telefono:'5558901234' },
+  { placa:'RST-345', propietario:'César Aguilar Mora',     tipo:'automovil',   marca:'Honda',         modelo:'Civic',     anio:2022, color:'Negro',    num_serie:null, estado:'activo', telefono:'5559012345' },
+  { placa:'VWX-345', propietario:'Pablo Espinoza Walker',  tipo:'automovil',   marca:'Mazda',         modelo:'3',         anio:2021, color:'Azul',     num_serie:null, estado:'activo', telefono:'5550123456' },
+  { placa:'BCD-901', propietario:'Rodrigo Leal Yáñez',    tipo:'camioneta',   marca:'RAM',           modelo:'1500',      anio:2020, color:'Gris',     num_serie:null, estado:'activo', telefono:'5551122334' },
+  { placa:'EFG-234', propietario:'Sandra Mena Zárate',     tipo:'automovil',   marca:'Seat',          modelo:'Ibiza',     anio:2019, color:'Verde',    num_serie:null, estado:'activo', telefono:'5552233445' },
+  { placa:'NOP-123', propietario:'Víctor Prado Castro',    tipo:'automovil',   marca:'Hyundai',       modelo:'Elantra',   anio:2020, color:'Blanco',   num_serie:null, estado:'activo', telefono:'5553344556' },
+  { placa:'QRS-456', propietario:'Wendy Quintero Díaz',    tipo:'motocicleta', marca:'Yamaha',        modelo:'MT-07',     anio:2021, color:'Naranja',  num_serie:null, estado:'activo', telefono:'5554455667' }
+];
+
+const SEED_GRUA = [
+  { placa:'KLM-890', propietario:'Ursula Navas Bravo',  motivo:'Doble fila',                    oficial:'Agente Martínez R.', ubicacion:'Av. Juárez esq. Hidalgo, Centro',           costo_deposito:900,  costo_diario:200, estado:'retenido', fecha:'2026-06-01T09:30:00Z', obs:'Obstruyendo carril de autobuses' },
+  { placa:'PQR-901', propietario:'Jorge Ramírez Herrera', motivo:'Obstrucción de vía pública',  oficial:'Agente López G.',    ubicacion:'Calle Morelos #88, Centro',                 costo_deposito:700,  costo_diario:150, estado:'retenido', fecha:'2026-05-28T14:15:00Z', obs:null },
+  { placa:'DEF-789', propietario:'Carlos Hernández Mora', motivo:'Sin verificación vehicular',  oficial:'Agente García F.',   ubicacion:'Blvd. Norte km 3',                          costo_deposito:600,  costo_diario:120, estado:'retenido', fecha:'2026-05-20T11:00:00Z', obs:'Verificación vencida desde enero 2026' },
+  { placa:'RST-345', propietario:'César Aguilar Mora',   motivo:'Placa no visible / inválida', oficial:'Agente García F.',   ubicacion:'Carretera Federal km 12',                   costo_deposito:600,  costo_diario:100, estado:'retenido', fecha:'2026-06-02T16:30:00Z', obs:'Placa delantera destruida intencionalmente' },
+  { placa:'GHI-012', propietario:'Ana Martínez Soto',    motivo:'Conductor en estado etílico', oficial:'Agente Ramos P.',    ubicacion:'Av. Independencia #200, Zona Centro',       costo_deposito:1200, costo_diario:250, estado:'liberado', fecha:'2026-05-10T22:45:00Z', obs:'Conductora alcoholizada en operativo nocturno', fecha_liberacion:'2026-05-11T10:00:00Z' },
+  { placa:'BCD-901', propietario:'Rodrigo Leal Yáñez',   motivo:'Vehículo abandonado',         oficial:'Agente Torres V.',   ubicacion:'Periférico Sur km 8',                       costo_deposito:800,  costo_diario:180, estado:'liberado', fecha:'2026-04-25T08:00:00Z', obs:'Abandonado más de 5 días en vía pública', fecha_liberacion:'2026-05-01T09:30:00Z' },
+  { placa:'MNO-678', propietario:'Laura García Torres',  motivo:'Zona prohibida',              oficial:'Agente Mendoza L.',  ubicacion:'Zona Escolar Benito Juárez, Col. Centro',   costo_deposito:700,  costo_diario:150, estado:'liberado', fecha:'2026-04-15T07:20:00Z', obs:null, fecha_liberacion:'2026-04-15T16:00:00Z' },
+  { placa:'VWX-345', propietario:'Pablo Espinoza Walker', motivo:'Doble fila',                 oficial:'Agente López G.',    ubicacion:'Mercado Municipal, Acceso Sur',             costo_deposito:700,  costo_diario:150, estado:'liberado', fecha:'2026-05-05T10:00:00Z', obs:null, fecha_liberacion:'2026-05-06T08:00:00Z' }
+];
+
+const SEED_ACCIDENTES = [
+  { tipo:'choque',    ubicacion:'Av. Juárez esq. Hidalgo, Centro',            descripcion:'Colisión frontal entre vehículo particular y camioneta de reparto. El conductor del vehículo menor invadió carril contrario al intentar rebasar.',                                                         lesionados:2, fallecidos:0, oficial:'Agente Martínez R.', estado:'cerrado',    fecha:'2026-05-15T08:30:00Z', obs:'Ambos conductores con lesiones leves. Daños materiales significativos.', partes:'[{"nombre":"Roberto Gómez López","placa":"ABC-123","licencia":"MX-1234567","aseguradora":"GNP Seguros"},{"nombre":"Transportes Veloz S.A.","placa":"TRP-881","licencia":"CP-8876543","aseguradora":"AXA Seguros"}]' },
+  { tipo:'atropello', ubicacion:'Calle Morelos #45, Centro Histórico',         descripcion:'Peatón cruzó fuera del cruce peatonal y fue impactado por vehículo que circulaba a velocidad reglamentaria.',                                                                                            lesionados:1, fallecidos:0, oficial:'Agente López G.', estado:'derivado',   fecha:'2026-05-22T17:45:00Z', obs:'Peatón trasladado a hospital. Expediente derivado al Ministerio Público.', partes:'[{"nombre":"Carlos Hernández Mora","placa":"DEF-789","licencia":"MX-9876543","aseguradora":"Qualitas"}]' },
+  { tipo:'choque',    ubicacion:'Blvd. Central esq. Av. Reforma',              descripcion:'Alcance en cadena entre tres vehículos durante hora pico. El primer vehículo frenó de emergencia y los siguientes no mantuvieron distancia de seguridad.',                                               lesionados:0, fallecidos:0, oficial:'Agente Ramos P.', estado:'cerrado',    fecha:'2026-04-18T18:20:00Z', obs:'Sin lesionados. Los tres conductores llegaron a acuerdo entre partes.', partes:'[{"nombre":"Laura García Torres","placa":"MNO-678","licencia":"MX-5555123","aseguradora":"GNP Seguros"},{"nombre":"Sofía Torres Nuño","placa":"STU-234","licencia":"MX-7771234","aseguradora":"HDI Seguros"},{"nombre":"Sin identificar","placa":"AAA-999","licencia":"","aseguradora":""}]' },
+  { tipo:'volcadura', ubicacion:'Carretera Municipal km 5, curva La Loma',     descripcion:'Camioneta perdió el control en curva pronunciada por exceso de velocidad. El vehículo volcó quedando sobre el acotamiento.',                                                                              lesionados:1, fallecidos:0, oficial:'Agente García F.', estado:'cerrado',   fecha:'2026-04-05T21:10:00Z', obs:'Conductor con fractura en brazo. Vehículo con daño total. Alcoholemia negativa.', partes:'[{"nombre":"Pablo Espinoza Walker","placa":"VWX-345","licencia":"MX-3334567","aseguradora":"Mapfre"}]' },
+  { tipo:'choque',    ubicacion:'Av. 16 de Septiembre esq. Calle Guerrero',    descripcion:'Colisión entre motocicleta y unidad de transporte público. La motociclista se incorporó de forma imprudente al carril de la ruta 5.',                                                                    lesionados:1, fallecidos:0, oficial:'Agente Torres V.', estado:'en_proceso', fecha:'2026-06-01T12:05:00Z', obs:'Motociclista con traumatismo leve, hospitalizada para observación. Se investigan responsabilidades.', partes:'[{"nombre":"Wendy Quintero Díaz","placa":"QRS-456","licencia":"MX-9990012","aseguradora":"Sin seguro"},{"nombre":"Autobuses del Norte S.A.","placa":"BUS-202","licencia":"CP-2234567","aseguradora":"AIG Seguros"}]' },
+  { tipo:'atropello', ubicacion:'Zona Escolar Benito Juárez, Entrada Principal',descripcion:'Menor de edad fue rozado por vehículo al salir del plantel escolar. El conductor realizó maniobra imprudente en zona de seguridad escolar.',                                                             lesionados:1, fallecidos:0, oficial:'Agente Mendoza L.', estado:'en_proceso', fecha:'2026-06-02T13:30:00Z', obs:'Menor trasladado a clínica. Padres presentaron denuncia. Conductora con aliento alcohólico.', partes:'[{"nombre":"Ana Martínez Soto","placa":"GHI-012","licencia":"MX-4443210","aseguradora":"HDI Seguros"}]' }
+];
+
 // ── Helpers ───────────────────────────────────────────────
 function fmt(n) { return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:0}).format(n||0); }
 function fmtDateShort(d) { if(!d) return '—'; try { return new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); } catch(e){return d;} }
@@ -1248,12 +1286,18 @@ async function resetData() {
   await Promise.all([
     _sb.from('infracciones').delete().neq('id', 0),
     _sb.from('permisos').delete().neq('id', 0),
-    _sb.from('actividad').delete().neq('id', 0)
+    _sb.from('actividad').delete().neq('id', 0),
+    _sb.from('vehiculos').delete().neq('id', 0),
+    _sb.from('grua').delete().neq('id', 0),
+    _sb.from('accidentes').delete().neq('id', 0),
   ]);
   await _sb.from('configuracion').upsert({ ...SEED_CONFIG, id:1 }, { onConflict:'id' });
   await _sb.from('infracciones').insert(SEED_INFRACCIONES);
   await _sb.from('permisos').insert(SEED_PERMISOS);
   await _sb.from('actividad').insert(SEED_ACTIVIDAD);
+  await _sb.from('vehiculos').insert(SEED_VEHICULOS);
+  await _sb.from('grua').insert(SEED_GRUA);
+  await _sb.from('accidentes').insert(SEED_ACCIDENTES);
   _cachedConfig = null;
   showToast('Datos restablecidos');
   navigate('dashboard');
@@ -4117,6 +4161,18 @@ async function initData() {
     await _sb.from('infracciones').insert(SEED_INFRACCIONES);
     await _sb.from('permisos').insert(SEED_PERMISOS);
     await _sb.from('actividad').insert(SEED_ACTIVIDAD);
+  }
+  const { count: vehCount } = await _sb.from('vehiculos').select('*',{count:'exact',head:true});
+  if (!vehCount) {
+    await _sb.from('vehiculos').insert(SEED_VEHICULOS);
+  }
+  const { count: gruaCount } = await _sb.from('grua').select('*',{count:'exact',head:true});
+  if (!gruaCount) {
+    await _sb.from('grua').insert(SEED_GRUA);
+  }
+  const { count: accCount } = await _sb.from('accidentes').select('*',{count:'exact',head:true});
+  if (!accCount) {
+    await _sb.from('accidentes').insert(SEED_ACCIDENTES);
   }
 }
 
