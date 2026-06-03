@@ -256,6 +256,13 @@
     .t80 .t-barref { font-family:'Courier New',monospace; font-size:7pt; letter-spacing:4px; word-break:break-all; text-align:center; margin:1mm 0; color:#333; }
     .t80 .t-sig    { border-bottom:1px solid #000; height:8mm; margin-bottom:1mm; }
     @media (max-width:900px) { .ticket-split { grid-template-columns:1fr; height:auto; } }
+    .caja-tab-bar { display:flex; gap:.25rem; margin-bottom:1.2rem; border-bottom:2px solid var(--border); }
+    .caja-tab { display:flex; align-items:center; gap:.4rem; padding:.55rem 1.2rem; border:none; background:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:.82rem; font-weight:600; color:var(--muted); border-bottom:2.5px solid transparent; margin-bottom:-2px; transition:color .15s; }
+    .caja-tab.active { color:var(--ac); border-bottom-color:var(--ac); }
+    .caja-tab:hover:not(.active) { color:var(--text); }
+    .pend-badge { background:var(--red); color:#fff; border-radius:10px; padding:.1rem .45rem; font-size:.67rem; margin-left:.2rem; }
+    .qr-frame { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    .qr-box { width:200px; height:200px; border:2.5px solid var(--ac); border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.5); }
   </style>
 </head>
 <body>
@@ -580,33 +587,78 @@
 
       <!-- PAGOS / CAJA -->
       <div class="view" id="view-caja">
-        <div class="page-header"><h2>Pagos / Caja</h2><p>Registro de cobros y cierre de caja diario</p></div>
+        <div class="page-header"><h2>Pagos / Caja</h2><p>Gestión de cobros e historial de pagos</p></div>
         <div class="stats-grid" id="caja-stats" style="margin-bottom:1.2rem"></div>
-        <div class="filter-bar">
-          <div class="search-wrap">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="search-input" id="caja-search" type="text" placeholder="Buscar por folio, cajero…" oninput="filterCaja()">
-          </div>
-          <input type="date" id="caja-fecha-filter" class="filter-select" onchange="filterCaja()">
-          <select class="filter-select" id="caja-metodo-filter" onchange="filterCaja()">
-            <option value="">Todos los métodos</option>
-            <option value="efectivo">Efectivo</option>
-            <option value="tarjeta">Tarjeta</option>
-            <option value="transferencia">Transferencia</option>
-          </select>
-          <button class="btn btn-primary" onclick="openBuscarParaPago()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Registrar pago
+
+        <!-- Tab bar -->
+        <div class="caja-tab-bar">
+          <button class="caja-tab active" id="tab-pendientes" onclick="switchCajaTab('pendientes')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Pendientes de pago
+            <span class="pend-badge" id="badge-pendientes" style="display:none"></span>
+          </button>
+          <button class="caja-tab" id="tab-pagos" onclick="switchCajaTab('pagos')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Historial de pagos
           </button>
         </div>
-        <div class="card" style="padding:0">
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Folio inf.</th><th>Fecha pago</th><th>Placa</th><th>Infractor</th><th>Monto orig.</th><th>Descuento</th><th>Cobrado</th><th>Método</th><th>Cajero</th><th></th></tr></thead>
-              <tbody id="caja-table"></tbody>
-            </table>
+
+        <!-- PENDIENTES section -->
+        <div id="caja-section-pendientes">
+          <div class="filter-bar">
+            <div class="search-wrap">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" id="pend-search" type="text" placeholder="Buscar por folio, placa, infractor…" oninput="filterPendientes()">
+            </div>
+            <select class="filter-select" id="pend-sort" onchange="filterPendientes()">
+              <option value="fecha_desc">Más recientes</option>
+              <option value="fecha_asc">Más antiguas</option>
+              <option value="monto_desc">Mayor monto</option>
+            </select>
+            <button class="btn btn-primary" style="background:#1D4ED8;border-color:#1D4ED8" onclick="openQRScanner()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Escanear QR
+            </button>
+            <button class="btn btn-primary" onclick="openBuscarParaPago()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Registrar pago
+            </button>
           </div>
-          <div class="pager" id="caja-pager"></div>
+          <div class="card" style="padding:0">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Folio</th><th>Fecha</th><th>Placa</th><th>Infractor</th><th>Tipo de infracción</th><th>Monto</th><th>Días</th><th></th></tr></thead>
+                <tbody id="pendientes-table"></tbody>
+              </table>
+            </div>
+            <div class="pager" id="pendientes-pager"></div>
+          </div>
+        </div>
+
+        <!-- HISTORIAL section -->
+        <div id="caja-section-pagos" style="display:none">
+          <div class="filter-bar">
+            <div class="search-wrap">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" id="caja-search" type="text" placeholder="Buscar por folio, cajero…" oninput="filterCaja()">
+            </div>
+            <input type="date" id="caja-fecha-filter" class="filter-select" onchange="filterCaja()">
+            <select class="filter-select" id="caja-metodo-filter" onchange="filterCaja()">
+              <option value="">Todos los métodos</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="tarjeta">Tarjeta</option>
+              <option value="transferencia">Transferencia</option>
+            </select>
+          </div>
+          <div class="card" style="padding:0">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Folio inf.</th><th>Fecha pago</th><th>Placa</th><th>Infractor</th><th>Monto orig.</th><th>Descuento</th><th>Cobrado</th><th>Método</th><th>Cajero</th><th></th></tr></thead>
+                <tbody id="caja-table"></tbody>
+              </table>
+            </div>
+            <div class="pager" id="caja-pager"></div>
+          </div>
         </div>
       </div>
 
@@ -862,7 +914,28 @@
   </div>
 </div>
 
+<!-- MODAL: QR Scanner -->
+<div class="modal-overlay" id="modal-qr-scanner">
+  <div class="modal" style="width:400px">
+    <div class="modal-header">
+      <div class="modal-title">Escanear código QR</div>
+      <button class="modal-close" onclick="stopQRScan()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div style="padding:1.5rem;text-align:center">
+      <div style="position:relative;background:#000;border-radius:10px;overflow:hidden;width:100%;aspect-ratio:1">
+        <video id="qr-video" style="width:100%;height:100%;object-fit:cover" playsinline autoplay muted></video>
+        <div class="qr-frame"><div class="qr-box"></div></div>
+      </div>
+      <canvas id="qr-canvas" style="display:none"></canvas>
+      <p id="qr-status" style="margin-top:.9rem;font-size:.82rem;color:var(--muted);line-height:1.5">Apunta la cámara al código QR del ticket de infracción</p>
+      <button class="btn btn-ghost" style="margin-top:.75rem" onclick="stopQRScan()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <script src="app.js"></script>

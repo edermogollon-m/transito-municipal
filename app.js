@@ -1106,17 +1106,78 @@ async function checkPlacaHistory() {
 
 // ── Pagos / Caja ──────────────────────────────────────────
 let _cajaPage = 1, _cajaSearch = '', _cajaFecha = '', _cajaMetodo = '';
+let _cajaTab = 'pendientes', _pendSearch = '', _pendSort = 'fecha_desc', _pendPage = 1;
 const CAJA_PAGE_SIZE = 15;
+const PEND_PAGE_SIZE = 15;
 
-async function renderCaja() {
-  // Set today as default date filter if empty
-  if (!_cajaFecha) {
+function switchCajaTab(tab) {
+  _cajaTab = tab;
+  ['pendientes','pagos'].forEach(t => {
+    const btn = $('tab-'+t), sec = $('caja-section-'+(t==='pagos'?'pagos':t));
+    if (btn) btn.classList.toggle('active', t===tab);
+    if (sec) sec.style.display = t===tab ? 'block' : 'none';
+  });
+  if (tab==='pagos' && !_cajaFecha) {
     const hoy = new Date().toISOString().slice(0,10);
     const fechaEl = $('caja-fecha-filter');
     if (fechaEl && !fechaEl.value) { fechaEl.value = hoy; _cajaFecha = hoy; }
+    renderCajaTable();
   }
-  await Promise.all([renderCajaStats(), renderCajaTable()]);
 }
+
+async function renderCaja() {
+  await Promise.all([renderCajaStats(), renderPendientesTable()]);
+  // lazy-render historial only when user switches to it
+}
+
+async function renderPendientesTable() {
+  const tbody = $('pendientes-table'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado').eq('estado','pendiente');
+  if (_pendSearch) q = q.or(`placa.ilike.%${_pendSearch}%,infractor.ilike.%${_pendSearch}%,folio.ilike.%${_pendSearch}%`);
+  if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
+  else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
+  else q = q.order('fecha',{ascending:false});
+  const { data, error } = await q;
+  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  const all = data||[];
+  // Update badge count
+  const badge = $('badge-pendientes');
+  if (badge) { badge.textContent = all.length; badge.style.display = all.length ? 'inline' : 'none'; }
+  const pages = Math.max(1,Math.ceil(all.length/PEND_PAGE_SIZE));
+  if (_pendPage>pages) _pendPage=pages;
+  const rows = all.slice((_pendPage-1)*PEND_PAGE_SIZE, _pendPage*PEND_PAGE_SIZE);
+  const today = Date.now();
+  tbody.innerHTML = rows.length ? rows.map(r=>{
+    const dias = Math.floor((today - new Date(r.fecha).getTime())/86400000);
+    const diasColor = dias>20?'var(--red)':dias>10?'var(--amber)':'var(--green)';
+    const desc20 = dias<=15;
+    return `<tr>
+      <td class="mono">${r.folio||'—'}</td>
+      <td>${fmtDateShort(r.fecha)}</td>
+      <td class="mono" style="font-weight:700">${r.placa}</td>
+      <td>${r.infractor}</td>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.tipo}</td>
+      <td style="font-weight:700;color:var(--ink)">${fmt(r.monto)}</td>
+      <td><span style="font-weight:700;color:${diasColor}">${dias}d</span>${desc20?` <span class="badge pagada" style="font-size:.62rem">20% dto</span>`:''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green)" onclick="openRegistrarPago('${r.id}')">Cobrar</button>
+        <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Reimprimir ticket">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        </button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin infracciones pendientes de pago</td></tr>';
+  renderPager('pendientes-pager', _pendPage, pages, 'goPendPage');
+}
+
+function filterPendientes() {
+  _pendSearch = ($('pend-search')||{}).value||'';
+  _pendSort   = ($('pend-sort')||{}).value||'fecha_desc';
+  _pendPage   = 1; renderPendientesTable();
+}
+
+function goPendPage(p) { _pendPage = p; renderPendientesTable(); }
 
 async function renderCajaStats() {
   const today = new Date().toISOString().slice(0,10);
@@ -1177,6 +1238,72 @@ function filterCaja() {
 }
 
 function goCajaPage(p) { _cajaPage = p; renderCajaTable(); }
+
+// ── QR Scanner ────────────────────────────────────────────
+let _qrStream = null, _qrAnimId = null;
+
+async function openQRScanner() {
+  openModal('modal-qr-scanner');
+  const statusEl = $('qr-status');
+  if (statusEl) statusEl.textContent = 'Iniciando cámara…';
+  try {
+    _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = document.getElementById('qr-video');
+    video.srcObject = _qrStream;
+    video.play();
+    video.addEventListener('loadeddata', () => { _qrAnimId = requestAnimationFrame(scanQRFrame); }, { once: true });
+    if (statusEl) statusEl.textContent = 'Apunta la cámara al código QR del ticket de infracción';
+  } catch(err) {
+    if (statusEl) statusEl.textContent = 'No se pudo acceder a la cámara: ' + err.message;
+  }
+}
+
+function scanQRFrame() {
+  const video = document.getElementById('qr-video');
+  const canvas = document.getElementById('qr-canvas');
+  if (!_qrStream || !video || video.readyState < 2) { _qrAnimId = requestAnimationFrame(scanQRFrame); return; }
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = typeof jsQR === 'function' ? jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' }) : null;
+  if (code && code.data) {
+    stopQRScan();
+    handleQRResult(code.data);
+  } else {
+    _qrAnimId = requestAnimationFrame(scanQRFrame);
+  }
+}
+
+function stopQRScan() {
+  if (_qrAnimId) { cancelAnimationFrame(_qrAnimId); _qrAnimId = null; }
+  if (_qrStream) { _qrStream.getTracks().forEach(t=>t.stop()); _qrStream = null; }
+  const video = document.getElementById('qr-video');
+  if (video) { video.srcObject = null; }
+  closeModal('modal-qr-scanner');
+}
+
+async function handleQRResult(data) {
+  let infId = null;
+  try {
+    const obj = JSON.parse(data);
+    infId = obj.id || null;
+    if (!infId && obj.folio) {
+      const { data: r } = await _sb.from('infracciones').select('id,estado').eq('folio', obj.folio).single();
+      if (r) infId = r.id;
+    }
+  } catch(e) {
+    // Try as plain folio text
+    const q = data.trim();
+    const { data: r } = await _sb.from('infracciones').select('id,estado').eq('folio', q).single();
+    if (r) infId = r.id;
+  }
+  if (!infId) { showToast('QR no reconocido o la infracción no existe'); return; }
+  const { data: inf } = await _sb.from('infracciones').select('estado').eq('id', infId).single();
+  if (!inf) { showToast('Infracción no encontrada'); return; }
+  if (inf.estado !== 'pendiente') { showToast('Esta infracción ya fue pagada o está vencida'); return; }
+  openRegistrarPago(infId);
+}
 
 async function openBuscarParaPago() {
   if ($('buscar-pago-input')) $('buscar-pago-input').value = '';
@@ -1258,7 +1385,7 @@ async function submitPago() {
   showToast(`Pago registrado: ${fmt(final)} — ${payload.metodo}`);
   printReciboPago(pago.id);
   renderInfracciones(); renderDashboard();
-  if ($('view-caja')?.style.display==='block') renderCaja();
+  if ($('view-caja')?.style.display==='block') { renderCajaStats(); renderPendientesTable(); renderCajaTable(); }
 }
 
 async function printReciboPago(pagoId) {
@@ -1435,7 +1562,7 @@ async function toggleUsuario(id, activo) {
 }
 
 // ── Ticket 80mm (print functions) ────────────────────────
-function buildTicket80(r, cfg) {
+function buildTicket80(r, cfg, qrDataUrl) {
   const mun = cfg?.municipio || 'Municipio';
   const est = cfg?.estado || '';
   const fechaObj = new Date(r.fecha);
@@ -1489,6 +1616,7 @@ function buildTicket80(r, cfg) {
     <div class="t-center t-small">Lunes a Viernes 8:00–15:00 hrs</div>
     <div class="t-center t-small" style="margin-top:.5mm">Referencia de pago:</div>
     <div class="t-barref">${ref}</div>
+    ${qrDataUrl?`<div style="text-align:center;margin:2mm 0 1mm"><img src="${qrDataUrl}" style="width:130px;height:130px;display:block;margin:0 auto"/><div style="font-size:6.5pt;margin-top:.5mm;color:#444">Escanea para cobrar</div></div>`:''}
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
     <div class="t-sig"></div>
@@ -1511,7 +1639,13 @@ async function printTicket80(id) {
   ]);
   if (!r) return;
 
-  const ticketHTML = buildTicket80(r, cfg);
+  let qrDataUrl = '';
+  try {
+    const qrPayload = JSON.stringify({ id: r.id, folio: r.folio||'', placa: r.placa, monto: r.monto, infractor: r.infractor });
+    qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 260, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  } catch(e) {}
+
+  const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
   <title>Ticket ${r.folio||''}</title>
