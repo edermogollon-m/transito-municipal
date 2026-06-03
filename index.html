@@ -306,7 +306,9 @@
     .caja-tab:hover:not(.active) { color:var(--text); }
     .pend-badge { background:var(--red); color:#fff; border-radius:10px; padding:.1rem .45rem; font-size:.67rem; margin-left:.2rem; }
     .qr-frame { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-    .qr-box { width:200px; height:200px; border:2.5px solid var(--ac); border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.5); }
+    .qr-box { width:200px; height:200px; border:2.5px solid var(--ac); border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.5); transition:border-color .3s; }
+    @keyframes qr-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .qr-scanning .qr-box { animation:qr-pulse 1.2s ease-in-out infinite; }
   </style>
 </head>
 <body>
@@ -970,12 +972,12 @@
       <button class="modal-close" onclick="stopQRScan()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div style="padding:1.5rem;text-align:center">
-      <div style="position:relative;background:#000;border-radius:10px;overflow:hidden;width:100%;aspect-ratio:1">
+      <div id="qr-viewport" style="position:relative;background:#000;border-radius:10px;overflow:hidden;width:100%;aspect-ratio:1">
         <video id="qr-video" style="width:100%;height:100%;object-fit:cover" playsinline autoplay muted></video>
-        <div class="qr-frame"><div class="qr-box"></div></div>
+        <div class="qr-frame qr-scanning"><div class="qr-box" id="qr-box"></div></div>
       </div>
       <canvas id="qr-canvas" style="display:none"></canvas>
-      <p id="qr-status" style="margin-top:.9rem;font-size:.82rem;color:var(--muted);line-height:1.5">Apunta la cámara al código QR del ticket de infracción</p>
+      <p id="qr-status" style="margin-top:.9rem;font-size:.82rem;color:var(--muted);line-height:1.5">Iniciando cámara…</p>
       <button class="btn btn-ghost" style="margin-top:.75rem" onclick="stopQRScan()">Cancelar</button>
     </div>
   </div>

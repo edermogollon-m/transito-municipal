@@ -1256,47 +1256,56 @@ let _qrStream = null, _qrScanInterval = null;
 async function openQRScanner() {
   openModal('modal-qr-scanner');
   const statusEl = $('qr-status');
-
-  if (typeof jsQR === 'undefined') {
-    if (statusEl) statusEl.textContent = 'Librería de escaneo no disponible. Recarga la página.';
-    return;
-  }
-
+  const box = document.getElementById('qr-box');
   if (statusEl) statusEl.textContent = 'Iniciando cámara…';
+  if (box) box.style.borderColor = 'var(--ac)';
+
   try {
     _qrStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      video: { facingMode: { ideal: 'environment' } }
     });
     const video = document.getElementById('qr-video');
     video.srcObject = _qrStream;
     await video.play();
-    if (statusEl) statusEl.textContent = 'Apunta la cámara al código QR del ticket';
-    _qrScanInterval = setInterval(scanQRFrame, 200);
+    if (statusEl) statusEl.textContent = 'Escaneando — acerca el QR al recuadro…';
+
+    // BarcodeDetector (nativo en Chrome/Android/Edge — más confiable)
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      _qrScanInterval = setInterval(async () => {
+        if (!_qrStream) return;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length > 0 && codes[0].rawValue) {
+            if (box) box.style.borderColor = '#059669';
+            stopQRScan();
+            handleQRResult(codes[0].rawValue);
+          }
+        } catch(e) {}
+      }, 300);
+    } else {
+      // Fallback: jsQR sobre canvas
+      const canvas = document.getElementById('qr-canvas');
+      if (!canvas) { if (statusEl) statusEl.textContent = 'Error interno (canvas).'; return; }
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      _qrScanInterval = setInterval(() => {
+        if (!_qrStream || video.readyState < 2 || !video.videoWidth) return;
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        try {
+          const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+          if (code?.data) {
+            if (box) box.style.borderColor = '#059669';
+            stopQRScan();
+            handleQRResult(code.data);
+          }
+        } catch(e) {}
+      }, 250);
+    }
   } catch(err) {
     if (statusEl) statusEl.textContent = 'Cámara no disponible: ' + err.message;
-  }
-}
-
-function scanQRFrame() {
-  const video = document.getElementById('qr-video');
-  const canvas = document.getElementById('qr-canvas');
-  if (!_qrStream || !video || !canvas) return;
-  if (video.readyState < 2 || !video.videoWidth) return;
-
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0);
-
-  let code = null;
-  try {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-  } catch(e) { return; }
-
-  if (code && code.data) {
-    stopQRScan();
-    handleQRResult(code.data);
   }
 }
 
