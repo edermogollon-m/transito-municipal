@@ -2497,6 +2497,7 @@ async function renderRendimiento() {
     if (labelsEl) labelsEl.innerHTML = sorted.slice(0,8).map(o=>
       `<span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${o.nombre.split(' ')[0]}</span>`).join('');
   }
+}
 
 // ── initData (seed configuracion if empty) ────────────────
 async function initData() {
