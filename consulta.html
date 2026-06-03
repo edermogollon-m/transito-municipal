@@ -86,18 +86,18 @@
   </div>
 
   <h1>Consulta de infracciones</h1>
-  <p class="intro">Ingresa la placa del vehículo o el folio de la infracción para consultar si tienes multas pendientes de pago.</p>
+  <p class="intro">Busca por placa, folio de infracción o nombre del infractor para consultar multas pendientes de pago.</p>
 
   <div class="search-card">
-    <label for="q">Placa o folio de infracción</label>
+    <label for="q">Placa, folio o nombre del infractor</label>
     <div class="input-row">
-      <input id="q" class="form-input" type="text" placeholder="Ej. ABC-123 o INF-2026-001" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')buscar()"/>
+      <input id="q" class="form-input" type="text" placeholder="Ej. ABC-123, INF-2026-001 o Juan Pérez" autocomplete="off" onkeydown="if(event.key==='Enter')buscar()"/>
       <button class="btn btn-primary" onclick="buscar()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Buscar
       </button>
     </div>
-    <p class="hint">Puedes buscar por placa completa (ej. ABC-123) o por el folio del ticket. Solo se muestran infracciones activas — <button id="btn-historial" onclick="toggleHistorial()" style="background:none;border:none;color:var(--ac);cursor:pointer;font-size:.75rem;text-decoration:underline;font-family:inherit">Ver historial completo</button></p>
+    <p class="hint">Busca por placa (ABC-123), folio del ticket o nombre completo del infractor. Solo infracciones activas — <button id="btn-historial" onclick="toggleHistorial()" style="background:none;border:none;color:var(--ac);cursor:pointer;font-size:.75rem;text-decoration:underline;font-family:inherit">Ver historial completo</button></p>
   </div>
 
   <div class="spinner" id="spinner">Buscando…</div>
@@ -123,7 +123,7 @@ function toggleHistorial() {
 }
 
 async function buscar() {
-  const q = ($('q').value||'').trim().toUpperCase();
+  const q = ($('q').value||'').trim();
   if (q.length < 2) { alert('Ingresa al menos 2 caracteres'); return; }
 
   const spinner = document.getElementById('spinner');
@@ -133,7 +133,7 @@ async function buscar() {
 
   let query = _sb.from('infracciones')
     .select('id,folio,fecha,placa,infractor,tipo,monto,estado,ubicacion,obs')
-    .or(`placa.ilike.%${q}%,folio.ilike.%${q}%`)
+    .or(`placa.ilike.%${q}%,folio.ilike.%${q}%,infractor.ilike.%${q}%`)
     .order('fecha', { ascending: false });
 
   if (!_mostrarHistorial) {

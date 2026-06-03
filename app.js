@@ -170,7 +170,22 @@ async function captureLocation() {
     window._infLat = pos.coords.latitude;
     window._infLng = pos.coords.longitude;
     const ubi = document.getElementById('inf-ubicacion');
-    if (ubi && !ubi.value) ubi.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+    if (status) status.innerHTML = `<span style="color:var(--muted)">Obteniendo dirección…</span>`;
+    // Reverse geocode with Nominatim (free, no API key)
+    let addr = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+    try {
+      const gr = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&accept-language=es`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      if (gr.ok) {
+        const gj = await gr.json();
+        const a = gj.address || {};
+        const parts = [a.road, a.house_number, a.suburb||a.neighbourhood||a.quarter, a.city||a.town||a.municipality||a.county].filter(Boolean);
+        if (parts.length) addr = parts.join(', ');
+      }
+    } catch(_) { /* sin conexión — usar coordenadas */ }
+    if (ubi && !ubi.value) ubi.value = addr;
     if (status) status.innerHTML = `<span style="color:var(--green)">✓ Ubicación capturada (±${Math.round(pos.coords.accuracy)}m)</span>`;
     if (btn) { btn.textContent = '✓ GPS'; btn.style.color = 'var(--green)'; btn.disabled = false; }
   } catch(e) {
@@ -257,6 +272,10 @@ async function renderDashboard() {
   const prevCount = prevM.length;
   const prevRec = prevM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+r.monto,0);
   const delta = c => c>0 ? `<span class="delta-up">▲ ${c}</span>` : c<0 ? `<span class="delta-dn">▼ ${Math.abs(c)}</span>` : `<span style="color:var(--muted)">—</span>`;
+
+  const mesNombre = now.toLocaleDateString('es-MX',{month:'long',year:'numeric'});
+  if($('s-inf-label'))  $('s-inf-label').textContent  = `Infracciones · ${mesNombre}`;
+  if($('s-rec-label'))  $('s-rec-label').textContent  = `Recaudación · ${mesNombre}`;
 
   if($('s-inf'))        $('s-inf').textContent      = infMesCount;
   if($('s-pend'))       $('s-pend').textContent     = infPend;
@@ -428,6 +447,7 @@ async function renderInfracciones() {
   if (_infPage > pages) _infPage = pages;
   const rows = all.slice((_infPage-1)*INF_PAGE_SIZE, _infPage*INF_PAGE_SIZE);
 
+  const esc = s => (s||'').replace(/"/g,'&quot;');
   tbody.innerHTML = rows.length ? rows.map(r=>`
     <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
       <td>${r.folio||'—'}</td>
@@ -437,8 +457,23 @@ async function renderInfracciones() {
       <td>${r.tipo}</td>
       <td>${fmt(r.monto)}</td>
       <td>${estadoBadge(r.estado)}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center;width:36px">
+        ${r.telefono?`<button class="btn-wa-icon"
+          data-tel="${r.telefono.replace(/\D/g,'')}"
+          data-nombre="${esc(r.infractor)}"
+          data-folio="${r.folio||''}"
+          data-placa="${r.placa||''}"
+          data-tipo="${esc(r.tipo)}"
+          data-monto="${r.monto||0}"
+          data-ubicacion="${esc(r.ubicacion)}"
+          data-fecha="${r.fecha||''}"
+          onclick="event.stopPropagation();_waFromBtn(this)"
+          title="Enviar notificación WhatsApp">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        </button>`:''}
+      </td>
     </tr>`).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
+    : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
 
   renderPager('inf-pager', _infPage, pages, 'goInfPage');
 }
@@ -499,10 +534,31 @@ async function submitInfraccion(e) {
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
     printTicket80(data.id);
+    if (payload.telefono) notificarWhatsApp(data);
   }
 
   renderInfracciones();
   renderDashboard();
+}
+
+// ── Tipos de infracción (base + personalizables) ──────────
+const TIPOS_BASE = [
+  'Exceso de velocidad','Estacionamiento prohibido','No respetar señal de alto',
+  'Conducir sin licencia','Uso de celular al conducir','Circular en sentido contrario',
+  'Girar en U prohibido','No portar documentos','Conducir en estado de ebriedad','Otro'
+];
+
+async function loadTiposInfraccion(currentVal) {
+  if (!_cachedConfig) {
+    const { data } = await _sb.from('configuracion').select('tipos_extra,descuento_pct,dias_descuento').eq('id',1).single();
+    if (data) _cachedConfig = { ...(_cachedConfig||{}), ...data };
+  }
+  const extras = (_cachedConfig?.tipos_extra || []).filter(t => t && !TIPOS_BASE.includes(t));
+  const all = [...TIPOS_BASE.filter(t => t !== 'Otro'), ...extras, 'Otro'];
+  const el = $('inf-tipo');
+  if (!el) return;
+  const prev = currentVal ?? el.value;
+  el.innerHTML = all.map(t => `<option value="${t}"${t === prev ? ' selected' : ''}>${t}</option>`).join('');
 }
 
 function openNewInfraccion() {
@@ -511,6 +567,7 @@ function openNewInfraccion() {
   $('inf-id').value = '';
   $('inf-fecha').value = new Date().toISOString().slice(0,16);
   $('inf-est').value = 'pendiente';
+  if ($('inf-est-wrap')) $('inf-est-wrap').style.display = 'none';
   window._infLat = null; window._infLng = null;
   const geoStatus = document.getElementById('inf-geo-status');
   if (geoStatus) geoStatus.textContent = '';
@@ -518,6 +575,14 @@ function openNewInfraccion() {
   if (geoBtn) { geoBtn.textContent = 'GPS'; geoBtn.style.color = ''; geoBtn.disabled = false; }
   const prev = document.getElementById('inf-fotos-preview');
   if (prev) prev.innerHTML = '';
+  const plHist = document.getElementById('placa-history');
+  if (plHist) plHist.innerHTML = '';
+  // Pre-fill official with logged-in user if they are an oficial/supervisor
+  if ($('inf-oficial')) {
+    $('inf-oficial').dataset.preload = _session?.name || '';
+  }
+  loadOficiales(['inf-oficial']);
+  loadTiposInfraccion();
   openModal('modal-infraccion');
 }
 
@@ -525,6 +590,7 @@ async function editInfraccion(id) {
   const { data, error } = await _sb.from('infracciones').select('*').eq('id', id).single();
   if (error || !data) return;
   $('modal-inf-title').textContent = 'Editar infracción';
+  if ($('inf-est-wrap')) $('inf-est-wrap').style.display = '';
   $('inf-id').value       = data.id;
   $('inf-fecha').value    = data.fecha ? data.fecha.slice(0,16) : '';
   $('inf-placa').value    = data.placa;
@@ -532,7 +598,8 @@ async function editInfraccion(id) {
   $('inf-licencia').value = data.licencia||'';
   $('inf-vehiculo').value = data.vehiculo||'';
   $('inf-color').value    = data.color_vehiculo||'';
-  $('inf-oficial').value  = data.oficial||'';
+  if ($('inf-oficial')) $('inf-oficial').dataset.preload = data.oficial||'';
+  await loadOficiales(['inf-oficial']);
   $('inf-tipo').value     = data.tipo;
   $('inf-monto').value    = data.monto;
   $('inf-ubicacion').value= data.ubicacion||'';
@@ -544,6 +611,7 @@ async function editInfraccion(id) {
   if (geoStatus) geoStatus.innerHTML = data.lat ? `<span style="color:var(--green)">✓ Coordenadas guardadas</span>` : '';
   const prev = document.getElementById('inf-fotos-preview');
   if (prev) prev.innerHTML = '';
+  await loadTiposInfraccion(data.tipo);
   openModal('modal-infraccion');
 }
 
@@ -642,6 +710,7 @@ function openNewPermiso() {
   $('modal-per-title').textContent = 'Nuevo permiso';
   $('per-form').reset();
   $('per-id').value = '';
+  if ($('per-inicio')) $('per-inicio').value = new Date().toISOString().slice(0,10);
   openModal('modal-permiso');
 }
 
@@ -774,6 +843,12 @@ async function loadConfig() {
   ['velocidad','estacionamiento','alto','sinlicencia','celular','contrario','uprohibido','documentos'].forEach(k=>{
     if($('cfg-m-'+k)) $('cfg-m-'+k).value = m[k]||'';
   });
+  if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
+  if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
+  if($('cfg-tipos-extra')) {
+    const extras = data.tipos_extra || [];
+    $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
+  }
 }
 
 async function saveConfig() {
@@ -781,13 +856,18 @@ async function saveConfig() {
   ['velocidad','estacionamiento','alto','sinlicencia','celular','contrario','uprohibido','documentos'].forEach(k=>{
     montos[k] = parseInt(($('cfg-m-'+k)||{}).value)||0;
   });
+  const tiposRaw = ($('cfg-tipos-extra')||{}).value||'';
+  const tiposExtra = tiposRaw.split('\n').map(s=>s.trim()).filter(Boolean);
   const payload = {
     id: 1,
     municipio: ($('cfg-municipio')||{}).value||'',
     estado:    ($('cfg-estado')||{}).value||'',
     director:  ($('cfg-director')||{}).value||'',
     correo:    ($('cfg-correo')||{}).value||'',
-    montos
+    montos,
+    descuento_pct:  parseInt(($('cfg-descuento-pct')||{}).value)||20,
+    dias_descuento: parseInt(($('cfg-dias-descuento')||{}).value)||15,
+    tipos_extra:    tiposExtra
   };
   const { error } = await _sb.from('configuracion').upsert(payload, { onConflict:'id' });
   if (error) { alert('Error guardando configuración: '+error.message); return; }
@@ -1000,6 +1080,101 @@ async function printInfraccion(id) {
 
   const win = window.open('', '_blank', 'width=870,height=960');
   win.document.write(html);
+  win.document.close();
+}
+
+// ── Accidente — parte oficial imprimible ─────────────────
+async function printAccidente(id) {
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('accidentes').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!r) return;
+  let partes = []; try { partes = JSON.parse(r.partes||'[]'); } catch(_) {}
+  const mun   = cfg?.municipio || 'Municipio';
+  const edo   = cfg?.estado    || '';
+  const dir   = cfg?.director  || '';
+  const tipoMap = { choque:'Choque vehicular', atropello:'Atropello', volcadura:'Volcadura', otro:'Otro' };
+  const estadoMap = { en_proceso:'En proceso', cerrado:'Cerrado', derivado:'Derivado al Ministerio Público' };
+  const fecha = r.fecha ? new Date(r.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'}) : '—';
+  const win = window.open('','_blank','width=850,height=1100');
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Parte de Accidente ${r.folio||''}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Arial',sans-serif;font-size:11pt;color:#111;padding:1.5cm 2cm}
+    .no-print{margin-bottom:1rem}
+    .no-print button{padding:.4rem 1rem;background:#1A7A82;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:.5rem}
+    @media print{.no-print{display:none}}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1A7A82;padding-bottom:.7rem;margin-bottom:1rem}
+    .header-left h1{font-size:13pt;color:#1A7A82;font-weight:700}
+    .header-left p{font-size:9pt;color:#555;margin-top:.15rem}
+    .folio-box{border:2px solid #1A7A82;border-radius:8px;padding:.4rem .9rem;text-align:center}
+    .folio-box .lbl{font-size:7pt;text-transform:uppercase;letter-spacing:.08em;color:#6B7280}
+    .folio-box .val{font-size:14pt;font-weight:800;font-family:monospace;color:#1A7A82}
+    .section-title{font-size:9pt;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#1A7A82;border-bottom:1px solid #E5E7EB;padding-bottom:.25rem;margin:1rem 0 .6rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem .8rem}
+    .field label{font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;display:block;margin-bottom:.15rem}
+    .field span{font-size:10pt;font-weight:600}
+    .field.full{grid-column:1/-1}
+    .parte-box{border:1px solid #E5E7EB;border-radius:6px;padding:.5rem .75rem;margin-bottom:.4rem;font-size:9.5pt}
+    .badge{display:inline-block;padding:.15rem .6rem;border-radius:12px;font-size:8pt;font-weight:700}
+    .badge.en_proceso{background:#FEF3C7;color:#92400E}
+    .badge.cerrado{background:#D1FAE5;color:#065F46}
+    .badge.derivado{background:#DBEAFE;color:#1E40AF}
+    .firma-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-top:2rem}
+    .firma-box{border-top:1px solid #374151;padding-top:.4rem;font-size:8pt;text-align:center;color:#6B7280}
+    .footer{margin-top:1.5rem;border-top:1px solid #E5E7EB;padding-top:.5rem;font-size:8pt;color:#9CA3AF;text-align:center}
+  </style></head><body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()">Cerrar</button>
+  </div>
+  <div class="header">
+    <div class="header-left">
+      <h1>Dirección de Tránsito y Movilidad Municipal</h1>
+      <p>${mun}${edo ? ', '+edo : ''}</p>
+      <p style="margin-top:.5rem;font-size:11pt;font-weight:700">CONSTANCIA DE ACCIDENTE VIAL</p>
+    </div>
+    <div class="folio-box">
+      <div class="lbl">Folio</div>
+      <div class="val">${r.folio||'—'}</div>
+    </div>
+  </div>
+
+  <div class="section-title">Datos del accidente</div>
+  <div class="grid">
+    <div class="field"><label>Tipo</label><span>${tipoMap[r.tipo]||r.tipo}</span></div>
+    <div class="field"><label>Estado</label><span class="badge ${r.estado}">${estadoMap[r.estado]||r.estado}</span></div>
+    <div class="field"><label>Fecha y hora</label><span>${fecha}</span></div>
+    <div class="field"><label>Oficial que levanta</label><span>${r.oficial||'—'}</span></div>
+    <div class="field full"><label>Ubicación / Lugar de los hechos</label><span>${r.ubicacion||'—'}</span></div>
+    <div class="field"><label>Personas lesionadas</label><span>${r.lesionados||0}</span></div>
+    <div class="field"><label>Personas fallecidas</label><span>${r.fallecidos||0}</span></div>
+    ${r.descripcion?`<div class="field full"><label>Descripción</label><span>${r.descripcion}</span></div>`:''}
+    ${r.obs?`<div class="field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
+  </div>
+
+  ${partes.length ? `
+  <div class="section-title">Partes involucradas</div>
+  ${partes.map((p,i)=>`
+    <div class="parte-box">
+      <strong>Parte ${i+1}:</strong>&nbsp; ${p.nombre||'—'} &nbsp;|&nbsp;
+      Placa: <strong>${p.placa||'—'}</strong> &nbsp;|&nbsp;
+      Licencia: ${p.licencia||'—'} &nbsp;|&nbsp;
+      Aseguradora: ${p.aseguradora||'—'}
+    </div>`).join('')}` : ''}
+
+  <div class="firma-row">
+    <div class="firma-box">Firma del oficial<br><br><br>${r.oficial||'_________________'}</div>
+    <div class="firma-box">Testigo / Parte 1<br><br><br>_________________</div>
+    <div class="firma-box">Testigo / Parte 2<br><br><br>_________________</div>
+  </div>
+
+  <div class="footer">
+    Documento generado el ${new Date().toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})} · ${mun} · Sistema de Tránsito y Movilidad · HCE Consultoría
+  </div>
+  </body></html>`);
   win.document.close();
 }
 
@@ -1226,19 +1401,43 @@ async function checkAndUpdateVencidos() {
   ]);
 }
 
-// ── Historial por placa ───────────────────────────────────
+// ── Historial por placa + auto-fill desde padrón vehicular ──
 async function checkPlacaHistory() {
   const placa = ($('inf-placa')||{}).value?.trim().toUpperCase();
   const panel = $('placa-history');
   if (!panel) return;
   if (!placa || placa.length < 3) { panel.innerHTML = ''; return; }
-  const { data } = await _sb.from('infracciones')
-    .select('id,folio,fecha,tipo,estado,monto').eq('placa', placa)
-    .order('fecha',{ascending:false}).limit(5);
+
+  // Consultar historial de infracciones y padrón vehicular en paralelo
+  const [{ data }, { data: veh }] = await Promise.all([
+    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto').eq('placa', placa).order('fecha',{ascending:false}).limit(5),
+    _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').eq('placa', placa).maybeSingle()
+  ]);
+
+  // Auto-completar campos del formulario si están vacíos
+  if (veh) {
+    const infractor = $('inf-infractor');
+    if (infractor && !infractor.value) infractor.value = veh.propietario || '';
+    const vehiculo = $('inf-vehiculo');
+    if (vehiculo && !vehiculo.value) {
+      vehiculo.value = [veh.marca, veh.modelo].filter(Boolean).join(' ');
+    }
+    const color = $('inf-color');
+    if (color && !color.value) color.value = veh.color || '';
+    const tel = $('inf-telefono');
+    if (tel && !tel.value) tel.value = veh.telefono || '';
+  }
+
   const prevId = $('inf-id')?.value;
   const prev = (data||[]).filter(r => String(r.id) !== String(prevId));
-  if (!prev.length) { panel.innerHTML = ''; return; }
-  panel.innerHTML = `
+
+  const vehBanner = veh ? `
+    <div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.6rem 1rem;margin:.4rem 0 .4rem;font-size:.78rem;color:#065F46">
+      ✓ Vehículo encontrado en padrón — <strong>${veh.propietario}</strong>${veh.marca?` · ${[veh.marca,veh.modelo].filter(Boolean).join(' ')}`:''}${veh.color?` · ${veh.color}`:''}
+    </div>` : '';
+
+  if (!prev.length) { panel.innerHTML = vehBanner; return; }
+  panel.innerHTML = vehBanner + `
     <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:.75rem 1rem;margin:.4rem 0 .6rem">
       <div style="font-size:.78rem;font-weight:700;color:#DC2626;margin-bottom:.45rem">
         ⚠ Placa con ${prev.length} infracción${prev.length>1?'es':''} previa${prev.length>1?'s':''} — REINCIDENTE
@@ -1351,6 +1550,30 @@ async function renderCajaStats() {
     card(fmt(efect),'Efectivo',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,'var(--green-bg)')+
     card(fmt(tarj),'Tarjeta',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,'var(--blue-bg)')+
     card(fmt(transf),'Transferencia',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>`,'var(--amber-bg)');
+
+  // Distribución visual de métodos de pago
+  const distEl = $('caja-distribucion');
+  if (distEl) {
+    if (total > 0) {
+      const pct = v => Math.round(v / total * 100);
+      const bar = (label, val, color) => val <= 0 ? '' : `
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
+          <div style="width:100px;font-size:.78rem;font-weight:600;color:var(--ink);text-align:right;flex-shrink:0">${label}</div>
+          <div style="flex:1;height:10px;background:var(--border);border-radius:5px;overflow:hidden">
+            <div style="width:${pct(val)}%;height:100%;background:${color};border-radius:5px;transition:width .5s ease"></div>
+          </div>
+          <div style="width:110px;font-size:.78rem;color:var(--muted);flex-shrink:0">${fmt(val)} <span style="color:${color};font-weight:700">${pct(val)}%</span></div>
+        </div>`;
+      distEl.innerHTML = `<div class="card" style="padding:1rem 1.3rem">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.8rem">Distribución por método de pago — hoy</div>
+        ${bar('Efectivo', efect, '#059669')}
+        ${bar('Tarjeta', tarj, '#2563EB')}
+        ${bar('Transferencia', transf, '#D97706')}
+      </div>`;
+    } else {
+      distEl.innerHTML = '';
+    }
+  }
 }
 
 async function renderCajaTable() {
@@ -1510,20 +1733,31 @@ async function buscarInfPago() {
 }
 
 async function openRegistrarPago(infId) {
+  if (!_cachedConfig) {
+    const { data: cfg } = await _sb.from('configuracion').select('descuento_pct,dias_descuento').eq('id',1).single();
+    if (cfg) _cachedConfig = { ...(_cachedConfig||{}), ...cfg };
+  }
+  const descPct  = _cachedConfig?.descuento_pct  ?? 20;
+  const diasDesc = _cachedConfig?.dias_descuento ?? 15;
+
   const { data: r } = await _sb.from('infracciones').select('*').eq('id', infId).single();
   if (!r) return;
   $('pago-inf-id').value = infId;
   const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
-  const desc20ok = dias <= 15;
+  const descOk = dias <= diasDesc;
   const infoEl = $('pago-inf-info');
   if (infoEl) infoEl.innerHTML = `
     <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.35rem">Infracción</div>
     <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${r.folio||'—'} — ${r.tipo}</div>
     <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${r.infractor} · Placa: <strong>${r.placa}</strong></div>
     <div style="font-size:.8rem;color:var(--text)">${fmtDateShort(r.fecha)} · <strong>${fmt(r.monto)}</strong></div>
-    ${desc20ok?'<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del 20% (pronto pago — menos de 15 días)</div>':'<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Sin descuento disponible (más de 15 días)</div>'}`;
+    ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pronto pago — menos de ${diasDesc} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Sin descuento disponible (más de ${diasDesc} días)</div>`}`;
   const descEl = $('pago-descuento');
-  if (descEl) { Array.from(descEl.options).forEach(o=>{ if(o.value==='20') o.disabled=!desc20ok; }); descEl.value='0'; }
+  if (descEl) {
+    descEl.innerHTML = `<option value="0">Sin descuento (100%)</option><option value="${descPct}">${descPct}% — pronto pago</option>`;
+    Array.from(descEl.options).forEach(o=>{ if(o.value===String(descPct)) o.disabled=!descOk; });
+    descEl.value='0';
+  }
   if ($('pago-metodo'))  $('pago-metodo').value = 'efectivo';
   if ($('pago-cajero'))  $('pago-cajero').value = _session?.name||'';
   if ($('pago-notas'))   $('pago-notas').value  = '';
@@ -2120,6 +2354,61 @@ function renderPager(containerId, page, pages, fnName) {
   el.innerHTML = html;
 }
 
+// ── Oficiales cache + helpers ─────────────────────────────
+let _oficiales = null;
+
+async function loadOficiales(selectIds) {
+  if (!_oficiales) {
+    const { data } = await _sb.from('usuarios').select('nombre').eq('activo', true).order('nombre');
+    _oficiales = (data||[]).map(u => u.nombre);
+  }
+  selectIds.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    const prev = el.dataset.preload || '';
+    el.innerHTML = '<option value="">— Seleccionar oficial —</option>' +
+      _oficiales.map(n => `<option value="${n}"${n===prev?' selected':''}>${n}</option>`).join('');
+    delete el.dataset.preload;
+  });
+}
+
+function calcEstadoPermiso() {
+  const venc = ($('per-venc')||{}).value;
+  if (!venc) return;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(venc + 'T00:00:00');
+  const diff = Math.ceil((d - today) / (1000*60*60*24));
+  const est = diff < 0 ? 'vencido' : diff <= 30 ? 'por-vencer' : 'vigente';
+  if ($('per-est')) $('per-est').value = est;
+}
+
+// ── WhatsApp automático ───────────────────────────────────
+function notificarWhatsApp(data) {
+  const tel = (data.telefono||'').replace(/\D/g,'');
+  if (!tel) return;
+  const fecha = data.fecha
+    ? new Date(data.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'})
+    : '—';
+  const msg = `Estimado/a ${data.infractor}, se levantó una infracción de tránsito a su nombre.\n\n` +
+    `📋 Folio: ${data.folio||'—'}\n` +
+    `🚗 Placa: ${data.placa||'—'}\n` +
+    `⚡ Infracción: ${data.tipo}\n` +
+    `💰 Monto: $${Number(data.monto).toLocaleString('es-MX')} MXN\n` +
+    `📍 Lugar: ${data.ubicacion||'—'}\n` +
+    `📅 Fecha: ${fecha}\n\n` +
+    `Consulte y pague en: ${window.location.origin}/consulta\n` +
+    `Dirección de Tránsito y Movilidad Municipal.`;
+  window.open(`https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+  const fmt10 = tel.replace(/(\d{3})(\d{3})(\d{4})/,'$1-$2-$3');
+  showToast(`WhatsApp listo para enviar a ${fmt10||tel}`);
+}
+
+function _waFromBtn(btn) {
+  const d = btn.dataset;
+  notificarWhatsApp({ telefono:d.tel, infractor:d.nombre, folio:d.folio,
+    placa:d.placa, tipo:d.tipo, monto:d.monto, ubicacion:d.ubicacion, fecha:d.fecha });
+}
+
 // ── Toast ─────────────────────────────────────────────────
 function showToast(msg) {
   let t = document.querySelector('.toast');
@@ -2258,6 +2547,8 @@ function openNewVehiculo() {
   $('veh-marca').value=''; $('veh-modelo').value=''; $('veh-anio').value='';
   $('veh-color').value=''; $('veh-serie').value=''; $('veh-motor').value=''; $('veh-obs').value='';
   $('veh-estado-field').value='activo';
+  if ($('veh-tipo')) $('veh-tipo').value='';
+  if ($('veh-telefono')) $('veh-telefono').value='';
   $('modal-veh-title').textContent='Registrar vehículo';
   $('veh-submit-btn').textContent='Guardar';
   openModal('modal-vehiculo');
@@ -2270,6 +2561,8 @@ async function editVehiculo(id) {
   $('veh-marca').value=data.marca||''; $('veh-modelo').value=data.modelo||''; $('veh-anio').value=data.anio||'';
   $('veh-color').value=data.color||''; $('veh-serie').value=data.num_serie||''; $('veh-motor').value=data.num_motor||''; $('veh-obs').value=data.obs||'';
   $('veh-estado-field').value=data.estado||'activo';
+  if ($('veh-tipo')) $('veh-tipo').value=data.tipo||'';
+  if ($('veh-telefono')) $('veh-telefono').value=data.telefono||'';
   $('modal-veh-title').textContent='Editar vehículo';
   $('veh-submit-btn').textContent='Actualizar';
   openModal('modal-vehiculo');
@@ -2286,7 +2579,9 @@ async function submitVehiculo(e) {
     anio: $('veh-anio').value ? parseInt($('veh-anio').value) : null,
     color: $('veh-color').value.trim(), num_serie: $('veh-serie').value.trim(),
     num_motor: $('veh-motor').value.trim(), estado: $('veh-estado-field').value,
-    obs: $('veh-obs').value.trim()
+    obs: $('veh-obs').value.trim(),
+    tipo: ($('veh-tipo')||{}).value||null,
+    telefono: ($('veh-telefono')||{}).value?.trim()||null
   };
   const { error } = id
     ? await _sb.from('vehiculos').update(payload).eq('id',id)
@@ -2315,6 +2610,8 @@ async function viewVehiculoDetalle(id) {
       <div class="detail-field"><label>Placa</label><span style="font-weight:700;font-family:monospace;font-size:1rem">${v.placa}</span></div>
       <div class="detail-field"><label>Estado</label><span>${estadoBadge(v.estado)}</span></div>
       <div class="detail-field"><label>Propietario</label><span>${v.propietario}</span></div>
+      ${v.telefono?`<div class="detail-field"><label>Teléfono</label><span><a href="https://wa.me/52${v.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E">${v.telefono}</a></span></div>`:''}
+      <div class="detail-field"><label>Tipo</label><span>${v.tipo||'—'}</span></div>
       <div class="detail-field"><label>Color</label><span>${v.color||'—'}</span></div>
       <div class="detail-field"><label>Marca / Modelo</label><span>${[v.marca,v.modelo,v.anio].filter(Boolean).join(' ')||'—'}</span></div>
       <div class="detail-field"><label>Núm. de serie</label><span>${v.num_serie||'—'}</span></div>
@@ -2394,12 +2691,14 @@ function goGruaPage(p) { _gruaPage=p; renderGrua(); }
 
 function openNewGrua() {
   $('grua-id').value=''; $('grua-placa').value=''; $('grua-propietario').value='';
-  $('grua-motivo').value=''; $('grua-oficial').value=_session?.name||''; $('grua-ubicacion').value='';
+  $('grua-motivo').value=''; $('grua-ubicacion').value='';
   $('grua-costo').value=''; $('grua-diario').value=''; $('grua-obs').value='';
   const now = new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
   $('grua-fecha').value=now.toISOString().slice(0,16);
   $('modal-grua-title').textContent='Registrar retención';
   $('grua-submit-btn').textContent='Registrar';
+  if ($('grua-oficial')) $('grua-oficial').dataset.preload = _session?.name||'';
+  loadOficiales(['grua-oficial']);
   openModal('modal-grua');
 }
 
@@ -2407,9 +2706,14 @@ async function editGrua(id) {
   const { data, error } = await _sb.from('grua').select('*').eq('id',id).single();
   if (error || !data) return;
   $('grua-id').value=data.id; $('grua-placa').value=data.placa; $('grua-propietario').value=data.propietario||'';
-  $('grua-motivo').value=data.motivo||''; $('grua-oficial').value=data.oficial||''; $('grua-ubicacion').value=data.ubicacion||'';
+  $('grua-ubicacion').value=data.ubicacion||'';
   $('grua-costo').value=data.costo_deposito||''; $('grua-diario').value=data.costo_diario||''; $('grua-obs').value=data.obs||'';
   if(data.fecha){ const d=new Date(data.fecha); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); $('grua-fecha').value=d.toISOString().slice(0,16); }
+  // motivo select
+  if ($('grua-motivo')) $('grua-motivo').value = data.motivo||'';
+  // oficial select
+  if ($('grua-oficial')) $('grua-oficial').dataset.preload = data.oficial||'';
+  await loadOficiales(['grua-oficial']);
   $('modal-grua-title').textContent='Editar registro';
   $('grua-submit-btn').textContent='Actualizar';
   openModal('modal-grua');
@@ -2443,6 +2747,22 @@ async function submitGrua(e) {
   logActivity('info', `Grúa: vehículo ${payload.placa} ${id?'actualizado':'retenido'}`);
   renderGrua();
   showToast(id?'Registro actualizado':'Vehículo retenido en corralón');
+
+  // WhatsApp automático al propietario (solo en retención nueva)
+  if (!id) {
+    const { data: vehWa } = await _sb.from('vehiculos').select('telefono,propietario').eq('placa', payload.placa).maybeSingle();
+    if (vehWa?.telefono) {
+      const tel = vehWa.telefono.replace(/\D/g,'');
+      const msg = `Estimado/a ${vehWa.propietario||payload.propietario}, su vehículo de placas ${payload.placa} ha sido retirado al corralón municipal.\n\n` +
+        `🚗 Placa: ${payload.placa}\n` +
+        `📋 Motivo: ${payload.motivo}\n` +
+        `📍 Lugar: ${payload.ubicacion||'—'}\n` +
+        `💰 Costo de depósito: $${payload.costo_deposito} MXN + $${payload.costo_diario} por día\n\n` +
+        `Acuda a Tránsito Municipal para recuperar su vehículo. Dirección de Tránsito y Movilidad.`;
+      window.open(`https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+      showToast(`WhatsApp enviado al propietario de ${payload.placa}`);
+    }
+  }
 }
 
 async function liberarVehiculo(id) {
@@ -2805,11 +3125,13 @@ function openNewAccidente(){
   $('acc-id').value='';_accPartes=[];renderPartesForm();
   $('acc-tipo').value='choque';$('acc-ubicacion').value='';$('acc-descripcion').value='';
   $('acc-lesionados').value=0;$('acc-fallecidos').value=0;$('acc-obs').value='';
-  $('acc-oficial').value=_session?.name||'';$('acc-estado').value='en_proceso';
+  $('acc-estado').value='en_proceso';
   if($('acc-fotos-preview'))$('acc-fotos-preview').innerHTML='';
   const now=new Date();now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
   $('acc-fecha').value=now.toISOString().slice(0,16);
   $('modal-acc-title').textContent='Registrar accidente vial';
+  if ($('acc-oficial')) $('acc-oficial').dataset.preload = _session?.name||'';
+  loadOficiales(['acc-oficial']);
   openModal('modal-accidente');
 }
 
@@ -2822,9 +3144,11 @@ async function editAccidente(id){
   $('acc-tipo').value=data.tipo||'choque';$('acc-ubicacion').value=data.ubicacion||'';
   $('acc-descripcion').value=data.descripcion||'';$('acc-lesionados').value=data.lesionados||0;
   $('acc-fallecidos').value=data.fallecidos||0;$('acc-obs').value=data.obs||'';
-  $('acc-oficial').value=data.oficial||'';$('acc-estado').value=data.estado||'en_proceso';
+  $('acc-estado').value=data.estado||'en_proceso';
   if(data.fecha){const d=new Date(data.fecha);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$('acc-fecha').value=d.toISOString().slice(0,16);}
   $('modal-acc-title').textContent='Editar accidente vial';
+  if ($('acc-oficial')) $('acc-oficial').dataset.preload = data.oficial||'';
+  await loadOficiales(['acc-oficial']);
   openModal('modal-accidente');
 }
 
@@ -2887,6 +3211,10 @@ async function viewAccidenteDetalle(id){
       ${fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')"/>`).join('')}</div></div>`:''}
     </div>
     <div class="detail-actions">
+      <button class="btn btn-ghost btn-sm" onclick="printAccidente('${r.id}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir parte
+      </button>
       <button class="btn btn-secondary btn-sm" onclick="editAccidente('${r.id}');closeModal('modal-detail')">Editar</button>
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail')">Cerrar</button>
     </div>`;
