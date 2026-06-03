@@ -324,7 +324,7 @@ async function renderInfracciones() {
   const rows = all.slice((_infPage-1)*INF_PAGE_SIZE, _infPage*INF_PAGE_SIZE);
 
   tbody.innerHTML = rows.length ? rows.map(r=>`
-    <tr>
+    <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
       <td>${r.folio||'—'}</td>
       <td>${fmtDateShort(r.fecha)}</td>
       <td>${r.placa}</td>
@@ -332,9 +332,8 @@ async function renderInfracciones() {
       <td>${r.tipo}</td>
       <td>${fmt(r.monto)}</td>
       <td>${estadoBadge(r.estado)}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="viewDetail('infracciones','${r.id}')">Ver</button></td>
     </tr>`).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
+    : '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
 
   renderPager('inf-pager', _infPage, pages, 'goInfPage');
 }
