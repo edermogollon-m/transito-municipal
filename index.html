@@ -161,6 +161,61 @@
       .sidebar { width:0; position:fixed; z-index:100; }
       .sidebar.open { width:240px; }
     }
+
+    /* BADGE VARIANTS (generados por app.js) */
+    .badge-green  { display:inline-flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:600;padding:.22rem .6rem;border-radius:20px;background:var(--green-bg);color:var(--green); }
+    .badge-yellow { display:inline-flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:600;padding:.22rem .6rem;border-radius:20px;background:var(--amber-bg);color:var(--amber); }
+    .badge-red    { display:inline-flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:600;padding:.22rem .6rem;border-radius:20px;background:var(--red-bg);color:var(--red); }
+    .badge-muted  { display:inline-flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:600;padding:.22rem .6rem;border-radius:20px;background:var(--stone);color:var(--muted); }
+
+    /* BAR CHART */
+    .bar-chart { display:flex; align-items:flex-end; gap:.35rem; height:110px; margin:.5rem 0 .25rem; }
+    .bar-col  { display:flex; flex-direction:column; align-items:center; gap:.35rem; flex:1; height:100%; justify-content:flex-end; }
+    .bar-fill { width:100%; border-radius:4px 4px 0 0; background:var(--ac-gl); transition:background .2s, height .4s; min-height:3px; cursor:default; }
+    .bar-fill:hover { background:var(--ac); }
+    .bar-label { font-size:.59rem; color:var(--subtle); }
+
+    /* LEGEND */
+    .legend-row   { display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:var(--text); }
+    .legend-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .legend-val   { font-weight:700; color:var(--ink); flex-shrink:0; }
+
+    /* ACTIVITY */
+    .act-row  { display:flex; align-items:flex-start; gap:.75rem; padding:.65rem 0; border-bottom:1px solid var(--border); }
+    .act-row:last-child { border-bottom:none; }
+    .act-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:.35rem; }
+    .act-dot-infraccion { background:var(--red); }
+    .act-dot-permiso    { background:var(--ac); }
+    .act-dot-config     { background:var(--amber); }
+    .act-dot-info       { background:var(--blue); }
+    .act-txt  { font-size:.79rem; color:var(--text); line-height:1.5; flex:1; min-width:0; }
+    .act-time { font-size:.69rem; color:var(--subtle); white-space:nowrap; margin-left:auto; padding-left:.5rem; }
+
+    /* DELTA */
+    .delta-up { color:var(--green); font-size:.72rem; font-weight:600; }
+    .delta-dn { color:var(--red);   font-size:.72rem; font-weight:600; }
+
+    /* TOAST */
+    .toast { position:fixed; bottom:1.5rem; right:1.5rem; background:#1A1F2B; color:#fff; padding:.7rem 1.15rem; border-radius:8px; font-size:.82rem; font-weight:500; opacity:0; transform:translateY(6px); transition:all .25s; pointer-events:none; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,.3); }
+    .toast.show { opacity:1; transform:translateY(0); }
+
+    /* PAGER */
+    .pager { display:flex; align-items:center; gap:.5rem; justify-content:center; padding:.85rem 0 .35rem; }
+    .pager-btn  { padding:.3rem .75rem; border:1px solid var(--border); border-radius:6px; background:var(--white); cursor:pointer; font-size:.8rem; color:var(--text); transition:background .15s; }
+    .pager-btn:hover { background:var(--stone); }
+    .pager-info { font-size:.78rem; color:var(--muted); }
+
+    /* DETAIL MODAL */
+    .detail-grid  { display:grid; grid-template-columns:1fr 1fr; gap:.8rem 1.2rem; margin-bottom:1.2rem; }
+    .detail-field { display:flex; flex-direction:column; gap:.25rem; }
+    .detail-field.full { grid-column:1/-1; }
+    .detail-field label { font-size:.7rem; font-weight:700; color:var(--subtle); text-transform:uppercase; letter-spacing:.06em; }
+    .detail-field span  { font-size:.85rem; color:var(--ink); }
+    .detail-actions { display:flex; gap:.65rem; flex-wrap:wrap; align-items:center; padding-top:1rem; border-top:1px solid var(--border); margin-top:.25rem; }
+
+    /* BTN SECONDARY */
+    .btn-secondary { background:var(--stone); color:var(--text); border:1px solid var(--border); }
+    .btn-secondary:hover { background:var(--border); }
   </style>
 </head>
 <body>
@@ -290,7 +345,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
                 <tbody id="dash-tbody"></tbody>
               </table>
             </div>
@@ -298,7 +353,7 @@
 
           <div>
             <div class="card">
-              <div class="card-header"><div class="card-title">Estado de infracciones</div></div>
+              <div class="card-header"><div class="card-title">Infracciones por estado</div></div>
               <div class="donut-wrap">
                 <div class="donut" id="main-donut" style="background:conic-gradient(var(--amber) 0% 40%,var(--blue) 40% 65%,var(--green) 65% 100%)">
                   <div class="donut-center" id="donut-center-txt">0<br>total</div>
@@ -330,27 +385,29 @@
         <div class="filter-bar">
           <div class="search-wrap">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="search-input" id="inf-search" type="text" placeholder="Buscar por folio, placa, infractor…" oninput="filterTable('inf-table',this.value)">
+            <input class="search-input" id="inf-search" type="text" placeholder="Buscar por folio, placa, infractor…" oninput="filterInfracciones()">
           </div>
-          <select class="filter-select" id="inf-filter" onchange="filterTableByStatus('inf-table',this.value)">
+          <select class="filter-select" id="inf-estado-filter" onchange="filterInfracciones()">
             <option value="">Todos los estados</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="Pagada">Pagada</option>
-            <option value="Impugnada">Impugnada</option>
-            <option value="Vencida">Vencida</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="pagada">Pagada</option>
+            <option value="impugnada">Impugnada</option>
+            <option value="vencida">Vencida</option>
+            <option value="cancelada">Cancelada</option>
           </select>
-          <button class="btn btn-primary" onclick="openModal('modal-infraccion')">
+          <button class="btn btn-primary" onclick="openNewInfraccion()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nueva infracción
           </button>
         </div>
         <div class="card" style="padding:0">
           <div class="table-wrap">
-            <table id="inf-table">
+            <table>
               <thead><tr><th>Folio</th><th>Fecha</th><th>Placa</th><th>Infractor</th><th>Tipo</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
-              <tbody></tbody>
+              <tbody id="inf-table"></tbody>
             </table>
           </div>
+          <div class="pager" id="inf-pager"></div>
         </div>
       </div>
 
@@ -363,27 +420,28 @@
         <div class="filter-bar">
           <div class="search-wrap">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="search-input" id="per-search" type="text" placeholder="Buscar por número, titular o ruta…" oninput="filterTable('per-table',this.value)">
+            <input class="search-input" id="per-search" type="text" placeholder="Buscar por número, titular o ruta…" oninput="filterPermisos()">
           </div>
-          <select class="filter-select" onchange="filterTable('per-table',this.value)">
-            <option value="">Todos los tipos</option>
-            <option>Transporte público</option>
-            <option>Carga y logística</option>
-            <option>Servicio especial</option>
-            <option>Temporal</option>
+          <select class="filter-select" id="per-estado-filter" onchange="filterPermisos()">
+            <option value="">Todos los estados</option>
+            <option value="vigente">Vigente</option>
+            <option value="vencido">Vencido</option>
+            <option value="por-vencer">Por vencer</option>
+            <option value="suspendido">Suspendido</option>
           </select>
-          <button class="btn btn-primary" onclick="openModal('modal-permiso')">
+          <button class="btn btn-primary" onclick="openNewPermiso()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nuevo permiso
           </button>
         </div>
         <div class="card" style="padding:0">
           <div class="table-wrap">
-            <table id="per-table">
+            <table>
               <thead><tr><th>No. Permiso</th><th>Titular</th><th>Tipo</th><th>Placa</th><th>Ruta / Zona</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
-              <tbody></tbody>
+              <tbody id="per-table"></tbody>
             </table>
           </div>
+          <div class="pager" id="per-pager"></div>
         </div>
       </div>
 
@@ -474,10 +532,11 @@
 <div class="modal-overlay" id="modal-infraccion">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Nueva Infracción</div>
+      <div class="modal-title" id="modal-inf-title">Nueva Infracción</div>
       <button class="modal-close" onclick="closeModal('modal-infraccion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <form id="form-infraccion" onsubmit="event.preventDefault();submitInfraccion()">
+    <form id="inf-form" onsubmit="submitInfraccion(event)">
+      <input type="hidden" id="inf-id"/>
       <div class="form-row">
         <div class="form-field"><label>Placa *</label><input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required/></div>
         <div class="form-field"><label>Fecha y hora</label><input id="inf-fecha" class="form-input" type="datetime-local"/></div>
@@ -500,11 +559,21 @@
         </div>
         <div class="form-field"><label>Monto ($) *</label><input id="inf-monto" class="form-input" placeholder="800" type="number" min="1" required/></div>
       </div>
-      <div class="form-field"><label>Ubicación</label><input id="inf-ubicacion" class="form-input" placeholder="Calle o avenida" type="text"/></div>
+      <div class="form-row">
+        <div class="form-field"><label>Ubicación</label><input id="inf-ubicacion" class="form-input" placeholder="Calle o avenida" type="text"/></div>
+        <div class="form-field"><label>Estado</label>
+          <select id="inf-est" class="form-select">
+            <option value="pendiente">Pendiente</option>
+            <option value="pagada">Pagada</option>
+            <option value="impugnada">Impugnada</option>
+            <option value="cancelada">Cancelada</option>
+          </select>
+        </div>
+      </div>
       <div class="form-field"><label>Observaciones</label><input id="inf-obs" class="form-input" placeholder="Notas adicionales…" type="text"/></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-infraccion')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Registrar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
   </div>
@@ -514,10 +583,11 @@
 <div class="modal-overlay" id="modal-permiso">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Nuevo Permiso de Circulación</div>
+      <div class="modal-title" id="modal-per-title">Nuevo Permiso de Circulación</div>
       <button class="modal-close" onclick="closeModal('modal-permiso')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <form id="form-permiso" onsubmit="event.preventDefault();submitPermiso()">
+    <form id="per-form" onsubmit="submitPermiso(event)">
+      <input type="hidden" id="per-id"/>
       <div class="form-field"><label>Titular / Empresa *</label><input id="per-titular" class="form-input" placeholder="Nombre o razón social" type="text" required/></div>
       <div class="form-row">
         <div class="form-field"><label>Tipo de permiso</label>
@@ -528,11 +598,19 @@
       <div class="form-field"><label>Ruta o zona de circulación *</label><input id="per-ruta" class="form-input" placeholder="Ej. Ruta 14 — Centro/Periférico" type="text" required/></div>
       <div class="form-row">
         <div class="form-field"><label>Fecha de inicio</label><input id="per-inicio" class="form-input" type="date"/></div>
-        <div class="form-field"><label>Fecha de vencimiento *</label><input id="per-vencimiento" class="form-input" type="date" required/></div>
+        <div class="form-field"><label>Fecha de vencimiento *</label><input id="per-venc" class="form-input" type="date" required/></div>
+      </div>
+      <div class="form-field"><label>Estado</label>
+        <select id="per-est" class="form-select">
+          <option value="vigente">Vigente</option>
+          <option value="por-vencer">Por vencer</option>
+          <option value="vencido">Vencido</option>
+          <option value="suspendido">Suspendido</option>
+        </select>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-permiso')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Emitir permiso</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
   </div>
@@ -542,23 +620,10 @@
 <div class="modal-overlay" id="modal-detail">
   <div class="modal modal-detail-lg">
     <div class="modal-header">
-      <div>
-        <div class="modal-title" id="detail-title"></div>
-        <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem" id="detail-subtitle"></div>
-      </div>
+      <div class="modal-title"></div>
       <button class="modal-close" onclick="closeModal('modal-detail')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div id="detail-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem 1.5rem;margin-bottom:1.2rem"></div>
-    <div style="border-top:1px solid var(--border);padding-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <span style="font-size:.78rem;font-weight:600;color:var(--ink)">Estado:</span>
-      <span id="detail-badge"></span>
-      <select id="detail-estado" class="filter-select" style="margin-left:auto"></select>
-    </div>
-    <div class="modal-actions" style="margin-top:1rem">
-      <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="deleteDetail()">Eliminar</button>
-      <button class="btn btn-ghost" onclick="closeModal('modal-detail')">Cerrar</button>
-      <button class="btn btn-primary" onclick="saveDetailEstado()">Guardar estado</button>
-    </div>
+    <div class="detail-body"></div>
   </div>
 </div>
 

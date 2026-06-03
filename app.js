@@ -171,42 +171,44 @@ async function renderDashboard() {
   if($('s-per-delta'))  $('s-per-delta').textContent = '';
   if($('badge-pendientes')) $('badge-pendientes').textContent = infPend || '';
 
-  // Donut chart by tipo
-  const palette = ['#1A7A82','#229099','#2AABB5','#6DCBD2','#A8E6EA','#D4F5F7','#0D5A61','#3DB8C0'];
-  const tipos = {};
-  inf.forEach(r=>{ tipos[r.tipo]=(tipos[r.tipo]||0)+1; });
-  const sorted = Object.entries(tipos).sort((a,b)=>b[1]-a[1]);
+  // Donut por estado
+  const estadoColors = { pendiente:'#D97706', pagada:'#059669', impugnada:'#2563EB', cancelada:'#DC2626', vencida:'#9CA3AF' };
+  const estados = {};
+  inf.forEach(r=>{ estados[r.estado]=(estados[r.estado]||0)+1; });
+  const sorted = Object.entries(estados).sort((a,b)=>b[1]-a[1]);
   const total = inf.length || 1;
   let conic = '', deg = 0;
   const donutEl = $('main-donut');
   if (donutEl) {
-    sorted.forEach(([,v],i)=>{
+    sorted.forEach(([k,v])=>{
       const pct = v/total*360;
-      conic += `${palette[i%palette.length]} ${deg}deg ${deg+pct}deg,`;
+      const color = estadoColors[k] || '#9CA3AF';
+      conic += `${color} ${deg}deg ${deg+pct}deg,`;
       deg += pct;
     });
     donutEl.style.background = `conic-gradient(${conic.slice(0,-1)})`;
     if($('donut-center-txt')) $('donut-center-txt').textContent = total;
   }
   if($('dash-legend')) {
-    $('dash-legend').innerHTML = sorted.slice(0,5).map(([t,v],i)=>`
+    $('dash-legend').innerHTML = sorted.map(([k,v])=>`
       <div class="legend-row">
-        <span class="legend-dot" style="background:${palette[i%palette.length]}"></span>
-        <span class="legend-label">${t}</span>
+        <span class="legend-dot" style="background:${estadoColors[k]||'#9CA3AF'}"></span>
+        <span class="legend-label">${k.charAt(0).toUpperCase()+k.slice(1)}</span>
         <span class="legend-val">${v}</span>
       </div>`).join('');
   }
 
-  // Recent infractions table
+  // Recent infractions table (5 cols: Folio, Fecha, Tipo, Monto, Estado)
   const recent = [...inf].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).slice(0,5);
   if($('dash-tbody')) {
     $('dash-tbody').innerHTML = recent.length ? recent.map(r=>`
       <tr>
-        <td>${r.tipo}</td>
+        <td class="mono">${r.folio||'—'}</td>
         <td>${fmtDateShort(r.fecha)}</td>
+        <td>${r.tipo}</td>
         <td>${fmt(r.monto)}</td>
         <td>${estadoBadge(r.estado)}</td>
-      </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
+      </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
   }
 
   // Activity feed
@@ -345,10 +347,14 @@ async function autoFillMonto() {
   }
   if (_cachedConfig && _cachedConfig.montos) {
     const map = {
-      'Exceso de velocidad':'velocidad', 'Estacionamiento indebido':'estacionamiento',
-      'No respetar alto':'alto', 'Conducir sin licencia':'sinlicencia',
-      'Uso de celular':'celular', 'Circulación en sentido contrario':'contrario',
-      'Uso prohibido de vía':'uprohibido', 'Documentos incompletos':'documentos'
+      'Exceso de velocidad':'velocidad',
+      'Estacionamiento prohibido':'estacionamiento',
+      'No respetar señal de alto':'alto',
+      'Conducir sin licencia':'sinlicencia',
+      'Uso de celular al conducir':'celular',
+      'Circular en sentido contrario':'contrario',
+      'Girar en U prohibido':'uprohibido',
+      'No portar documentos':'documentos'
     };
     const key = map[tipo];
     if (key && _cachedConfig.montos[key]) $('inf-monto').value = _cachedConfig.montos[key];
@@ -670,6 +676,9 @@ function initUI() {
   if(userNameEl) userNameEl.textContent = _session.name;
   if(userRoleEl) userRoleEl.textContent = _session.role;
   if(userInitEl) userInitEl.textContent = _session.initials;
+
+  const dateEl = $('topbar-date');
+  if(dateEl) dateEl.textContent = new Date().toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 
   document.querySelectorAll('[data-view]').forEach(el=>{
     el.addEventListener('click', ()=>navigate(el.dataset.view));
