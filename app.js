@@ -1251,44 +1251,58 @@ function filterCaja() {
 function goCajaPage(p) { _cajaPage = p; renderCajaTable(); }
 
 // ── QR Scanner ────────────────────────────────────────────
-let _qrStream = null, _qrAnimId = null;
+let _qrStream = null, _qrScanInterval = null;
 
 async function openQRScanner() {
   openModal('modal-qr-scanner');
   const statusEl = $('qr-status');
+
+  if (typeof jsQR === 'undefined') {
+    if (statusEl) statusEl.textContent = 'Librería de escaneo no disponible. Recarga la página.';
+    return;
+  }
+
   if (statusEl) statusEl.textContent = 'Iniciando cámara…';
   try {
-    _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    _qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
     const video = document.getElementById('qr-video');
     video.srcObject = _qrStream;
-    video.play();
-    video.addEventListener('loadeddata', () => { _qrAnimId = requestAnimationFrame(scanQRFrame); }, { once: true });
-    if (statusEl) statusEl.textContent = 'Apunta la cámara al código QR del ticket de infracción';
+    await video.play();
+    if (statusEl) statusEl.textContent = 'Apunta la cámara al código QR del ticket';
+    _qrScanInterval = setInterval(scanQRFrame, 200);
   } catch(err) {
-    if (statusEl) statusEl.textContent = 'No se pudo acceder a la cámara: ' + err.message;
+    if (statusEl) statusEl.textContent = 'Cámara no disponible: ' + err.message;
   }
 }
 
 function scanQRFrame() {
   const video = document.getElementById('qr-video');
   const canvas = document.getElementById('qr-canvas');
-  if (!_qrStream || !video || video.readyState < 2) { _qrAnimId = requestAnimationFrame(scanQRFrame); return; }
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  if (!_qrStream || !video || !canvas) return;
+  if (video.readyState < 2 || !video.videoWidth) return;
+
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const code = typeof jsQR === 'function' ? jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' }) : null;
+
+  let code = null;
+  try {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+  } catch(e) { return; }
+
   if (code && code.data) {
     stopQRScan();
     handleQRResult(code.data);
-  } else {
-    _qrAnimId = requestAnimationFrame(scanQRFrame);
   }
 }
 
 function stopQRScan() {
-  if (_qrAnimId) { cancelAnimationFrame(_qrAnimId); _qrAnimId = null; }
-  if (_qrStream) { _qrStream.getTracks().forEach(t=>t.stop()); _qrStream = null; }
+  if (_qrScanInterval) { clearInterval(_qrScanInterval); _qrScanInterval = null; }
+  if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
   const video = document.getElementById('qr-video');
   if (video) { video.srcObject = null; }
   closeModal('modal-qr-scanner');
