@@ -773,6 +773,27 @@ async function editInfraccion(id) {
   if (prev) prev.innerHTML = '';
   await loadTiposInfraccion(data.tipo);
   openModal('modal-infraccion');
+  updateInfSummary();
+}
+
+function updateInfSummary() {
+  const placa   = ($('inf-placa')||{}).value?.trim().toUpperCase() || '';
+  const tipo    = ($('inf-tipo')||{}).value || '';
+  const monto   = parseInt(($('inf-monto')||{}).value) || 0;
+  const sumEl   = $('inf-summary');
+  const prevEl  = $('inf-monto-preview');
+  if (prevEl) prevEl.textContent = monto > 0 ? `= ${fmt(monto)}` : '';
+  if (!sumEl) return;
+  if (placa || tipo || monto) {
+    sumEl.style.display = 'block';
+    sumEl.innerHTML =
+      `<span style="color:var(--muted)">Se registrará: </span>` +
+      (tipo   ? `<strong>${tipo}</strong>` : '') +
+      (placa  ? ` · Placa <strong style="font-family:monospace">${placa}</strong>` : '') +
+      (monto  ? ` · <strong style="color:var(--ac)">${fmt(monto)}</strong>` : '');
+  } else {
+    sumEl.style.display = 'none';
+  }
 }
 
 async function autoFillMonto() {
@@ -796,6 +817,7 @@ async function autoFillMonto() {
     const key = map[tipo];
     if (key && _cachedConfig.montos[key]) $('inf-monto').value = _cachedConfig.montos[key];
   }
+  updateInfSummary();
 }
 
 // ── Permisos ──────────────────────────────────────────────
@@ -897,53 +919,101 @@ async function viewDetail(tabla, id) {
   const dm = $('modal-detail');
   if (!dm) return;
   dm.querySelector('.modal-title').textContent = isInf ? `Infracción ${r.folio||''}` : `Permiso ${r.num||''}`;
-  dm.querySelector('.detail-body').innerHTML = isInf ? `
-    <div class="detail-grid">
-      <div class="detail-field"><label>Folio</label><span>${r.folio||'—'}</span></div>
-      <div class="detail-field"><label>Fecha y hora</label><span>${fmtDateShort(r.fecha)}</span></div>
-      <div class="detail-field"><label>Placa</label><span>${r.placa}</span></div>
-      <div class="detail-field"><label>Color del vehículo</label><span>${r.color_vehiculo||'—'}</span></div>
-      <div class="detail-field full"><label>Marca y modelo</label><span>${r.vehiculo||'—'}</span></div>
-      <div class="detail-field full"><label>Infractor</label><span>${r.infractor}</span></div>
-      <div class="detail-field"><label>Núm. de licencia</label><span>${r.licencia||'—'}</span></div>
-      <div class="detail-field"><label>Oficial que levantó</label><span>${r.oficial||'—'}</span></div>
-      <div class="detail-field full"><label>Tipo de infracción</label><span>${r.tipo}</span></div>
-      <div class="detail-field"><label>Monto</label><span style="font-size:1rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</span></div>
-      <div class="detail-field"><label>Estado</label><span>${estadoBadge(r.estado)}</span></div>
-      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="color:var(--ac);font-size:.75rem;margin-left:.4rem">Ver en mapa ↗</a>`:''}</span></div>
-      ${r.telefono?`<div class="detail-field"><label>Teléfono</label><span>${r.telefono}</span></div>`:''}
-      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
-      ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="color:var(--blue)">${r.impugnacion_motivo}</span></div>`:''}
-      ${(()=>{
-        let fotos=[];try{fotos=JSON.parse(r.fotos||'[]');}catch(e){}
-        return fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')" />`).join('')}</div></div>`:'';
-      })()}
+  dm.querySelector('.detail-body').innerHTML = isInf ? (()=>{
+    let fotos=[]; try{fotos=JSON.parse(r.fotos||'[]');}catch(e){}
+    const montoColor = { pendiente:'var(--amber)', pagada:'var(--green)', vencida:'var(--red)', impugnada:'var(--blue)', cancelada:'var(--muted)' };
+    const diasDesde = r.fecha ? Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000) : null;
+    const diasStr = diasDesde===0?'Hoy':diasDesde===1?'Ayer':`Hace ${diasDesde} días`;
+    const diasAlerta = diasDesde!==null && diasDesde>25;
+
+    const secLabel = (icon, txt) =>
+      `<div style="display:flex;align-items:center;gap:.4rem;margin:1rem 0 .6rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">${icon}</svg>
+        <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${txt}</span>
+      </div>`;
+
+    return `
+    <!-- Header -->
+    <div style="background:var(--stone);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1rem">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Folio</div>
+          <div style="font-family:monospace;font-size:1.15rem;font-weight:800;color:var(--ink)">${r.folio||'—'}</div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--ink);margin-top:.3rem">${r.tipo}</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.2rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span>${new Date(r.fecha).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+            <span style="font-weight:600;color:${diasAlerta?'var(--red)':'var(--muted)'}">${diasStr}</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          ${estadoBadge(r.estado)}
+          <div style="font-size:1.5rem;font-weight:800;color:${montoColor[r.estado]||'var(--ink)'};margin-top:.4rem;line-height:1">${fmt(r.monto)}</div>
+          <div style="font-size:.68rem;color:var(--muted);margin-top:.15rem">MXN</div>
+        </div>
+      </div>
     </div>
-    <div class="detail-actions">
-      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px">
+
+    <div class="detail-grid">
+      <!-- Vehículo -->
+      <div class="detail-field full">${secLabel('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>','Vehículo')}</div>
+      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-size:1rem;font-weight:800">${r.placa}</span></div>
+      <div class="detail-field"><label>Color</label><span>${r.color_vehiculo||'—'}</span></div>
+      <div class="detail-field full"><label>Marca y modelo</label><span>${r.vehiculo||'—'}</span></div>
+
+      <!-- Infractor -->
+      <div class="detail-field full">${secLabel('<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>','Infractor')}</div>
+      <div class="detail-field full"><label>Nombre</label><span style="font-weight:600;font-size:.88rem">${r.infractor}</span></div>
+      <div class="detail-field"><label>Núm. licencia</label><span>${r.licencia||'—'}</span></div>
+      <div class="detail-field"><label>Teléfono</label><span>${r.telefono?`<a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none;display:inline-flex;align-items:center;gap:.3rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${r.telefono}</a>`:'—'}</span></div>
+
+      <!-- Infracción -->
+      <div class="detail-field full">${secLabel('<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>','Datos de la infracción')}</div>
+      <div class="detail-field"><label>Oficial</label><span>${r.oficial||'—'}</span></div>
+      <div class="detail-field"><label>Estado actual</label><span>${estadoBadge(r.estado)}</span></div>
+      <div class="detail-field full"><label>Ubicación</label>
+        <span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:.25rem;color:var(--ac);font-size:.75rem;margin-left:.5rem;font-weight:600;text-decoration:none"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver en mapa</a>`:''}</span>
+      </div>
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${r.obs}</span></div>`:''}
+      ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="background:var(--blue-bg);color:var(--blue);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem;font-weight:500">${r.impugnacion_motivo}</span></div>`:''}
+      ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img src="${f}" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" onclick="window.open('${f}','_blank')" />`).join('')}</div></div>`:''}
+    </div>
+
+    <!-- Cambiar estado -->
+    <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+      <span style="font-size:.75rem;font-weight:600;color:var(--muted)">Cambiar estado:</span>
+      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px;flex-shrink:0">
         <option value="pendiente"  ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
         <option value="pagada"     ${r.estado==='pagada'?'selected':''}>Pagada</option>
         <option value="impugnada"  ${r.estado==='impugnada'?'selected':''}>Impugnada</option>
         <option value="cancelada"  ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
         <option value="vencida"    ${r.estado==='vencida'?'selected':''}>Vencida</option>
       </select>
-      ${r.estado==='pendiente'?`<button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green)" onclick="openRegistrarPago('${r.id}')">
+      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Aplicar</button>
+    </div>
+
+    <!-- Acciones -->
+    <div class="detail-actions" style="margin-top:.75rem;flex-wrap:wrap;gap:.5rem">
+      ${r.estado==='pendiente'?`<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="openRegistrarPago('${r.id}')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
         Cobrar
       </button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Editar
+      </button>
       ${(r.estado==='pendiente'||r.estado==='impugnada')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Impugnar</button>`:''}
       ${(r.estado==='impugnada'&&(_rol==='admin'||_rol==='supervisor'))?`
         <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="resolverImpugnacion('${r.id}','cancelada')">✓ Procede</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="resolverImpugnacion('${r.id}','pendiente')">✕ No procede</button>
       `:''}
-      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
-      <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket</button>
-      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta</button>
-      ${r.telefono?`<a class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0;text-decoration:none" href="https://wa.me/52${r.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(`Estimado/a ${r.infractor}, tiene una infracción de tránsito PENDIENTE. Folio: ${r.folio||'—'}. Monto: $${Number(r.monto).toLocaleString('es-MX')} MXN. Acuda a Tesorería Municipal para regularizar. Dirección de Tránsito y Movilidad.`)}" target="_blank" rel="noopener">
+      <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket 80mm</button>
+      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta carta</button>
+      ${r.telefono?`<button class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0" onclick="notificarWhatsApp({telefono:'${r.telefono}',infractor:${JSON.stringify(r.infractor)},folio:'${r.folio||''}',placa:'${r.placa}',tipo:${JSON.stringify(r.tipo)},monto:${r.monto},ubicacion:${JSON.stringify(r.ubicacion||'')},fecha:'${r.fecha||''}'})" >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         WhatsApp
-      </a>`:''}
-    </div>` : `
+      </button>`:''}
+    </div>`;
+  })() : `
     <div class="detail-grid">
       <div class="detail-field"><label>Núm.</label><span>${r.num||'—'}</span></div>
       <div class="detail-field"><label>Titular</label><span>${r.titular}</span></div>
