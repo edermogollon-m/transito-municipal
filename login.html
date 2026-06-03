@@ -109,7 +109,11 @@
 
     @media (max-width: 700px) {
       .login-deco { display: none; }
-      .login-panel { width: 100%; }
+      .login-panel { width: 100%; box-shadow: none; }
+    }
+    @media (max-width: 400px) {
+      .login-panel { padding: 2rem 1.25rem; }
+      h1 { font-size: 1.25rem; }
     }
   </style>
 </head>

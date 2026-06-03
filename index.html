@@ -155,11 +155,55 @@
     .form-row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.75rem; }
     .modal-actions { display:flex; gap:.75rem; justify-content:flex-end; margin-top:1.4rem; }
 
-    @media (max-width:900px) {
-      .stats-grid { grid-template-columns:1fr 1fr; }
+    /* ── RESPONSIVE ────────────────────────────────────────── */
+    .hamburger { display:none; width:34px; height:34px; border-radius:8px; border:1px solid var(--border); background:none; cursor:pointer; align-items:center; justify-content:center; color:var(--muted); flex-shrink:0; transition:background .15s; }
+    .hamburger:hover { background:var(--stone); color:var(--ink); }
+    .sidebar-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:199; }
+    .sidebar-backdrop.open { display:block; }
+
+    /* Tablet (≤1024px) */
+    @media (max-width:1024px) {
+      .stats-grid { grid-template-columns:repeat(2,1fr); }
+      .dash-grid   { grid-template-columns:1fr; }
+      .ticket-split { grid-template-columns:1fr; height:auto; }
+    }
+
+    /* Mobile (≤768px) */
+    @media (max-width:768px) {
+      .sidebar { position:fixed; top:0; left:0; bottom:0; z-index:200; width:240px !important; transform:translateX(-100%); transition:transform .25s ease; box-shadow:none; }
+      .sidebar.open { transform:translateX(0); box-shadow:4px 0 30px rgba(0,0,0,.4); }
+      .hamburger { display:flex; }
+      .topbar { padding:0 1rem; gap:.5rem; }
+      .topbar-breadcrumb { display:none; }
+      .topbar-date { display:none; }
+      .content { padding:1rem; }
+      .stats-grid { grid-template-columns:repeat(2,1fr); gap:.75rem; }
       .dash-grid { grid-template-columns:1fr; }
-      .sidebar { width:0; position:fixed; z-index:100; }
-      .sidebar.open { width:240px; }
+      .filter-bar { gap:.5rem; }
+      .filter-bar .filter-select { flex:1; min-width:0; }
+      .form-row, .form-row-3 { grid-template-columns:1fr !important; }
+      .detail-grid { grid-template-columns:1fr; }
+      .detail-actions { gap:.4rem; }
+      .detail-actions .btn { padding:.32rem .65rem; font-size:.73rem; }
+      .page-header h2 { font-size:1.05rem; }
+      .page-header p { font-size:.78rem; }
+      .modal-overlay { align-items:flex-end; }
+      .modal { width:100vw !important; max-width:100vw !important; border-radius:16px 16px 0 0; max-height:90vh; padding:1.25rem; }
+      .modal-actions { flex-direction:column-reverse; gap:.6rem; }
+      .modal-actions .btn { width:100%; justify-content:center; }
+      .caja-tab { padding:.5rem .8rem; font-size:.76rem; }
+      .table-wrap { -webkit-overflow-scrolling:touch; }
+    }
+
+    /* Small mobile (≤480px) */
+    @media (max-width:480px) {
+      .stats-grid { grid-template-columns:1fr 1fr; gap:.6rem; }
+      .stat-num { font-size:1.35rem; }
+      .content { padding:.75rem; }
+      .topbar-title { font-size:.85rem; }
+      .filter-bar .search-wrap { flex-basis:100%; order:-1; }
+      .pager { flex-wrap:wrap; gap:.35rem; }
+      .card { padding:1rem; }
     }
 
     /* BADGE VARIANTS (generados por app.js) */
@@ -255,7 +299,7 @@
     .t80 .t-disc   { border:1px solid #555; text-align:center; padding:1.5mm; margin:1mm 0; font-size:8pt; }
     .t80 .t-barref { font-family:'Courier New',monospace; font-size:7pt; letter-spacing:4px; word-break:break-all; text-align:center; margin:1mm 0; color:#333; }
     .t80 .t-sig    { border-bottom:1px solid #000; height:8mm; margin-bottom:1mm; }
-    @media (max-width:900px) { .ticket-split { grid-template-columns:1fr; height:auto; } }
+
     .caja-tab-bar { display:flex; gap:.25rem; margin-bottom:1.2rem; border-bottom:2px solid var(--border); }
     .caja-tab { display:flex; align-items:center; gap:.4rem; padding:.55rem 1.2rem; border:none; background:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:.82rem; font-weight:600; color:var(--muted); border-bottom:2.5px solid transparent; margin-bottom:-2px; transition:color .15s; }
     .caja-tab.active { color:var(--ac); border-bottom-color:var(--ac); }
@@ -268,6 +312,7 @@
 <body>
 <div class="app">
 
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="logo-badge">HCE</div>
@@ -332,6 +377,9 @@
   <div class="main">
     <header class="topbar">
       <div class="topbar-left">
+        <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Menú">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <div>
           <div class="topbar-title" id="topbar-title">Panel general</div>
           <div class="topbar-breadcrumb">Tránsito y Movilidad / <span id="topbar-crumb">Dashboard</span></div>

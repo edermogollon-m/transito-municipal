@@ -120,6 +120,18 @@ async function logActivity(tipo, texto) {
 // ── Navigation ────────────────────────────────────────────
 const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios'];
 
+function toggleSidebar() {
+  const s = document.getElementById('sidebar');
+  const b = document.getElementById('sidebar-backdrop');
+  const open = s.classList.toggle('open');
+  b.classList.toggle('open', open);
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('sidebar-backdrop')?.classList.remove('open');
+}
+
 function navigate(view, btn) {
   VIEWS.forEach(v => {
     const el = $('view-'+v);
@@ -143,6 +155,7 @@ function navigate(view, btn) {
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
+  if (window.innerWidth <= 768) closeSidebar();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
