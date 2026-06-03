@@ -120,6 +120,18 @@
     .search-input:focus { border-color:var(--ac); box-shadow:0 0 0 3px var(--ac-gl); }
     .filter-select { padding:.55rem .85rem; border-radius:var(--r); border:1px solid var(--border); background:var(--white); font-family:'DM Sans',sans-serif; font-size:.82rem; color:var(--text); cursor:pointer; outline:none; }
 
+    /* INF STATS STRIP */
+    .inf-stats-strip { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .inf-stat-pill { background:var(--white); border:1px solid var(--border); border-radius:8px; padding:.4rem .85rem; font-size:.78rem; display:flex; align-items:center; gap:.45rem; white-space:nowrap; }
+    .inf-stat-pill .isp-num { font-weight:700; color:var(--ink); font-size:.88rem; }
+    .inf-stat-pill .isp-amt { font-size:.72rem; color:var(--muted); }
+
+    /* SORTABLE TH */
+    .th-sort { cursor:pointer; user-select:none; }
+    .th-sort:hover { color:var(--ac); }
+    .th-sort-icon { opacity:.3; margin-left:.25rem; }
+    .th-sort.active .th-sort-icon { opacity:1; color:var(--ac); }
+
     /* DASHBOARD */
     .dash-grid { display:grid; grid-template-columns:1fr 340px; gap:1.2rem; }
     .activity-list { display:flex; flex-direction:column; }
@@ -667,14 +679,28 @@
 
       <!-- INFRACCIONES -->
       <div class="view" id="view-infracciones">
-        <div class="page-header">
-          <h2>Control de Infracciones</h2>
-          <p>Registro, seguimiento y cobro de infracciones de tránsito municipales</p>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.2rem">
+          <div>
+            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Control de Infracciones</h2>
+            <p style="font-size:.82rem;color:var(--muted);margin-top:.15rem">Registro, seguimiento y cobro de infracciones de tránsito</p>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="exportExcel('infracciones')" title="Exportar Excel con filtros aplicados">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Excel
+            </button>
+            <button class="btn btn-primary" onclick="openNewInfraccion()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Nueva infracción
+            </button>
+          </div>
         </div>
+
+        <!-- Filtros -->
         <div class="filter-bar">
-          <div class="search-wrap">
+          <div class="search-wrap" style="flex:1;min-width:180px">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="search-input" id="inf-search" type="text" placeholder="Buscar por folio, placa, infractor…" oninput="filterInfracciones()">
+            <input class="search-input" id="inf-search" type="text" placeholder="Folio, placa o nombre del infractor…" oninput="filterInfracciones()">
           </div>
           <select class="filter-select" id="inf-estado-filter" onchange="filterInfracciones()">
             <option value="">Todos los estados</option>
@@ -684,23 +710,48 @@
             <option value="vencida">Vencida</option>
             <option value="cancelada">Cancelada</option>
           </select>
-          <button class="btn btn-ghost" onclick="exportExcel('infracciones')" title="Exportar a Excel">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-            Excel
-          </button>
-          <button class="btn btn-primary" onclick="openNewInfraccion()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nueva infracción
+          <select class="filter-select" id="inf-tipo-filter" onchange="filterInfracciones()">
+            <option value="">Todos los tipos</option>
+          </select>
+          <select class="filter-select" id="inf-periodo-filter" onchange="filterInfracciones()">
+            <option value="">Cualquier fecha</option>
+            <option value="hoy">Hoy</option>
+            <option value="semana">Esta semana</option>
+            <option value="mes">Este mes</option>
+            <option value="mes3">Últimos 3 meses</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="limpiarFiltrosInf()" title="Limpiar filtros">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+
+        <!-- Strip de stats -->
+        <div class="inf-stats-strip" id="inf-stats-strip"></div>
+
+        <!-- Tabla -->
         <div class="card" style="padding:0">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Folio</th><th>Fecha</th><th>Placa</th><th>Infractor</th><th>Tipo</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
+              <thead>
+                <tr>
+                  <th class="th-sort" id="th-folio" onclick="sortInf('folio')">Folio <span class="th-sort-icon">↕</span></th>
+                  <th class="th-sort" id="th-fecha" onclick="sortInf('fecha')">Fecha <span class="th-sort-icon">↕</span></th>
+                  <th>Placa</th>
+                  <th>Infractor</th>
+                  <th>Tipo</th>
+                  <th class="th-sort" id="th-monto" onclick="sortInf('monto')">Monto <span class="th-sort-icon">↕</span></th>
+                  <th>Estado</th>
+                  <th>Oficial</th>
+                  <th></th>
+                </tr>
+              </thead>
               <tbody id="inf-table"></tbody>
             </table>
           </div>
-          <div class="pager" id="inf-pager"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.5rem">
+            <div id="inf-count-label" style="font-size:.75rem;color:var(--muted)"></div>
+            <div class="pager" id="inf-pager"></div>
+          </div>
         </div>
       </div>
 

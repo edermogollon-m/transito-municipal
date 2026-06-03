@@ -474,37 +474,133 @@ async function renderBarChart(infAll) {
 }
 
 // ── Infracciones ──────────────────────────────────────────
-let _infPage = 1, _infSearch = '', _infEstado = '';
-const INF_PAGE_SIZE = 12;
+let _infPage = 1, _infSearch = '', _infEstado = '', _infTipo = '', _infPeriodo = '', _infSort = 'fecha_desc';
+const INF_PAGE_SIZE = 15;
+
+function _periodoRango(periodo) {
+  const now = new Date();
+  if (periodo === 'hoy') {
+    return now.toISOString().slice(0,10);
+  }
+  if (periodo === 'semana') {
+    const d = new Date(now); d.setDate(d.getDate()-7); return d.toISOString();
+  }
+  if (periodo === 'mes') {
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
+  }
+  if (periodo === 'mes3') {
+    const d = new Date(now); d.setMonth(d.getMonth()-3); return d.toISOString();
+  }
+  return null;
+}
 
 async function renderInfracciones() {
   const tbody = $('inf-table');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('infracciones').select('*').order('fecha',{ascending:false});
-  if (_infEstado) q = q.eq('estado', _infEstado);
-  if (_infSearch) q = q.or(`placa.ilike.%${_infSearch}%,infractor.ilike.%${_infSearch}%,folio.ilike.%${_infSearch}%`);
+  // Populate tipo filter on first run
+  const tipoEl = $('inf-tipo-filter');
+  if (tipoEl && tipoEl.options.length <= 1) {
+    const tipos = [...TIPOS_BASE];
+    if (_cachedConfig?.tipos_extra) tipos.push(...(_cachedConfig.tipos_extra||[]));
+    tipoEl.innerHTML = '<option value="">Todos los tipos</option>' +
+      [...new Set(tipos)].filter(t=>t&&t!=='Otro').map(t=>`<option value="${t}">${t}</option>`).join('') +
+      '<option value="Otro">Otro</option>';
+  }
+
+  let q = _sb.from('infracciones').select('*');
+  if (_infEstado)  q = q.eq('estado', _infEstado);
+  if (_infTipo)    q = q.eq('tipo', _infTipo);
+  if (_infSearch)  q = q.or(`placa.ilike.%${_infSearch}%,infractor.ilike.%${_infSearch}%,folio.ilike.%${_infSearch}%`);
+  if (_infPeriodo) {
+    const desde = _periodoRango(_infPeriodo);
+    if (_infPeriodo === 'hoy') {
+      q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
+    } else if (desde) {
+      q = q.gte('fecha', desde);
+    }
+  }
+
+  // Sort
+  const [sortCol, sortDir] = _infSort.split('_');
+  const asc = sortDir === 'asc';
+  if (sortCol === 'monto') q = q.order('monto', {ascending: asc});
+  else if (sortCol === 'folio') q = q.order('folio', {ascending: asc});
+  else q = q.order('fecha', {ascending: asc});
+
   const { data, error } = await q;
-  if (error) { tbody.innerHTML = `<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${error.message}</td></tr>`; return; }
 
   const all = data || [];
+
+  // Stats strip
+  const strip = $('inf-stats-strip');
+  if (strip) {
+    const pend = all.filter(r=>r.estado==='pendiente');
+    const paga = all.filter(r=>r.estado==='pagada');
+    const venc = all.filter(r=>r.estado==='vencida');
+    const montoPend = pend.reduce((a,r)=>a+Number(r.monto),0);
+    const montoRec  = paga.reduce((a,r)=>a+Number(r.monto),0);
+    const pill = (label, num, sub, color) =>
+      `<div class="inf-stat-pill">
+        <span style="color:${color||'var(--muted)'}">●</span>
+        <span><span class="isp-num">${num}</span> ${label}${sub?`<span class="isp-amt"> · ${sub}</span>`:''}</span>
+      </div>`;
+    strip.innerHTML =
+      pill('total', all.length, '', 'var(--subtle)') +
+      pill('pendientes', pend.length, fmt(montoPend), 'var(--amber)') +
+      pill('pagadas', paga.length, fmt(montoRec), 'var(--green)') +
+      (venc.length ? pill('vencidas', venc.length, '', 'var(--red)') : '');
+  }
+
+  // Reincidentes (placas con > 1 infracción en el set)
+  const placaCount = {};
+  all.forEach(r => { placaCount[r.placa] = (placaCount[r.placa]||0)+1; });
+
+  // Sort header indicators
+  ['folio','fecha','monto'].forEach(col => {
+    const el = $('th-'+col);
+    if (!el) return;
+    const isActive = _infSort.startsWith(col);
+    el.classList.toggle('active', isActive);
+    const icon = el.querySelector('.th-sort-icon');
+    if (icon) icon.textContent = isActive ? (_infSort.endsWith('asc') ? '↑' : '↓') : '↕';
+  });
+
+  // Count label
+  const countEl = $('inf-count-label');
+  if (countEl) {
+    const filterActive = _infSearch || _infEstado || _infTipo || _infPeriodo;
+    countEl.textContent = filterActive
+      ? `${all.length} resultado${all.length!==1?'s':''} con los filtros aplicados`
+      : `${all.length} infracción${all.length!==1?'es':''} en total`;
+  }
+
+  // Pagination
   const pages = Math.max(1, Math.ceil(all.length/INF_PAGE_SIZE));
   if (_infPage > pages) _infPage = pages;
   const rows = all.slice((_infPage-1)*INF_PAGE_SIZE, _infPage*INF_PAGE_SIZE);
 
   const esc = s => (s||'').replace(/"/g,'&quot;');
+  const montoColor = { pagada:'var(--green)', vencida:'var(--red)', pendiente:'var(--amber)', impugnada:'var(--blue)', cancelada:'var(--muted)' };
+
   tbody.innerHTML = rows.length ? rows.map(r=>`
     <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
-      <td>${r.folio||'—'}</td>
-      <td>${fmtDateShort(r.fecha)}</td>
-      <td>${r.placa}</td>
-      <td>${r.infractor}</td>
-      <td>${r.tipo}</td>
-      <td>${fmt(r.monto)}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${r.folio||'—'}</td>
+      <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(r.fecha)}</td>
+      <td>
+        <span style="font-family:monospace;font-weight:700;font-size:.8rem">${r.placa}</span>
+        ${placaCount[r.placa]>1?`<span title="${placaCount[r.placa]} infracciones — Reincidente" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--amber-bg);color:var(--amber);font-size:.55rem;font-weight:800;margin-left:.25rem;cursor:default">R</span>`:''}
+      </td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.infractor}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${r.tipo}</td>
+      <td style="font-weight:700;color:${montoColor[r.estado]||'var(--text)'}">${fmt(r.monto)}</td>
       <td>${estadoBadge(r.estado)}</td>
-      <td onclick="event.stopPropagation()" style="text-align:center;width:36px">
-        ${r.telefono?`<button class="btn-wa-icon"
+      <td style="font-size:.75rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.oficial||'—'}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
+        ${r.estado==='pendiente'?`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border:1px solid #A7F3D0;padding:.25rem .6rem;font-size:.72rem" onclick="event.stopPropagation();openRegistrarPago('${r.id}')" title="Registrar pago">Cobrar</button>`:''}
+        ${r.telefono?`<button class="btn-wa-icon" style="margin-left:.2rem"
           data-tel="${r.telefono.replace(/\D/g,'')}"
           data-nombre="${esc(r.infractor)}"
           data-folio="${r.folio||''}"
@@ -514,19 +610,37 @@ async function renderInfracciones() {
           data-ubicacion="${esc(r.ubicacion)}"
           data-fecha="${r.fecha||''}"
           onclick="event.stopPropagation();_waFromBtn(this)"
-          title="Enviar notificación WhatsApp">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+          title="Enviar WhatsApp">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         </button>`:''}
       </td>
     </tr>`).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
+    : `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Sin resultados</td></tr>`;
 
   renderPager('inf-pager', _infPage, pages, 'goInfPage');
 }
 
+function sortInf(col) {
+  if (_infSort === col+'_desc') _infSort = col+'_asc';
+  else _infSort = col+'_desc';
+  renderInfracciones();
+}
+
+function limpiarFiltrosInf() {
+  _infSearch = ''; _infEstado = ''; _infTipo = ''; _infPeriodo = ''; _infSort = 'fecha_desc';
+  if ($('inf-search'))        $('inf-search').value = '';
+  if ($('inf-estado-filter')) $('inf-estado-filter').value = '';
+  if ($('inf-tipo-filter'))   $('inf-tipo-filter').value = '';
+  if ($('inf-periodo-filter')) $('inf-periodo-filter').value = '';
+  _infPage = 1;
+  renderInfracciones();
+}
+
 function filterInfracciones() {
-  _infSearch = ($('inf-search')||{}).value||'';
-  _infEstado = ($('inf-estado-filter')||{}).value||'';
+  _infSearch  = ($('inf-search')||{}).value||'';
+  _infEstado  = ($('inf-estado-filter')||{}).value||'';
+  _infTipo    = ($('inf-tipo-filter')||{}).value||'';
+  _infPeriodo = ($('inf-periodo-filter')||{}).value||'';
   _infPage = 1;
   renderInfracciones();
 }
