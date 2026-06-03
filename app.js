@@ -294,27 +294,40 @@ function filterInfracciones() {
 
 async function submitInfraccion(e) {
   e.preventDefault();
+  const btn = $('inf-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
   const id = $('inf-id').value;
   const payload = {
-    fecha:     $('inf-fecha').value ? new Date($('inf-fecha').value).toISOString() : new Date().toISOString(),
-    placa:     $('inf-placa').value.trim().toUpperCase(),
-    infractor: $('inf-infractor').value.trim(),
-    tipo:      $('inf-tipo').value,
-    monto:     parseInt($('inf-monto').value)||0,
-    ubicacion: $('inf-ubicacion').value.trim(),
-    estado:    $('inf-est').value,
-    obs:       $('inf-obs').value.trim()
+    fecha:          $('inf-fecha').value ? new Date($('inf-fecha').value).toISOString() : new Date().toISOString(),
+    placa:          $('inf-placa').value.trim().toUpperCase(),
+    infractor:      $('inf-infractor').value.trim(),
+    licencia:       ($('inf-licencia')||{}).value?.trim() || '',
+    vehiculo:       ($('inf-vehiculo')||{}).value?.trim() || '',
+    color_vehiculo: ($('inf-color')||{}).value?.trim()    || '',
+    oficial:        ($('inf-oficial')||{}).value?.trim()  || '',
+    tipo:           $('inf-tipo').value,
+    monto:          parseInt($('inf-monto').value)||0,
+    ubicacion:      $('inf-ubicacion').value.trim(),
+    estado:         $('inf-est').value,
+    obs:            $('inf-obs').value.trim()
   };
+
   if (id) {
     const { error } = await _sb.from('infracciones').update(payload).eq('id', id);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar y guardar'; }
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción actualizada — ${payload.tipo} (${payload.placa})`);
+    closeModal('modal-infraccion');
   } else {
     const { data, error } = await _sb.from('infracciones').insert(payload).select().single();
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar y guardar'; }
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
+    closeModal('modal-infraccion');
+    printInfraccion(data.id);
   }
-  closeModal('modal-infraccion');
+
   renderInfracciones();
   renderDashboard();
 }
@@ -324,6 +337,7 @@ function openNewInfraccion() {
   $('inf-form').reset();
   $('inf-id').value = '';
   $('inf-fecha').value = new Date().toISOString().slice(0,16);
+  $('inf-est').value = 'pendiente';
   openModal('modal-infraccion');
 }
 
@@ -331,15 +345,19 @@ async function editInfraccion(id) {
   const { data, error } = await _sb.from('infracciones').select('*').eq('id', id).single();
   if (error || !data) return;
   $('modal-inf-title').textContent = 'Editar infracción';
-  $('inf-id').value = data.id;
-  $('inf-fecha').value = data.fecha ? data.fecha.slice(0,16) : '';
-  $('inf-placa').value = data.placa;
-  $('inf-infractor').value = data.infractor;
-  $('inf-tipo').value = data.tipo;
-  $('inf-monto').value = data.monto;
-  $('inf-ubicacion').value = data.ubicacion||'';
-  $('inf-est').value = data.estado;
-  $('inf-obs').value = data.obs||'';
+  $('inf-id').value       = data.id;
+  $('inf-fecha').value    = data.fecha ? data.fecha.slice(0,16) : '';
+  $('inf-placa').value    = data.placa;
+  $('inf-infractor').value= data.infractor;
+  $('inf-licencia').value = data.licencia||'';
+  $('inf-vehiculo').value = data.vehiculo||'';
+  $('inf-color').value    = data.color_vehiculo||'';
+  $('inf-oficial').value  = data.oficial||'';
+  $('inf-tipo').value     = data.tipo;
+  $('inf-monto').value    = data.monto;
+  $('inf-ubicacion').value= data.ubicacion||'';
+  $('inf-est').value      = data.estado;
+  $('inf-obs').value      = data.obs||'';
   openModal('modal-infraccion');
 }
 
@@ -467,13 +485,17 @@ async function viewDetail(tabla, id) {
   dm.querySelector('.detail-body').innerHTML = isInf ? `
     <div class="detail-grid">
       <div class="detail-field"><label>Folio</label><span>${r.folio||'—'}</span></div>
-      <div class="detail-field"><label>Fecha</label><span>${fmtDateShort(r.fecha)}</span></div>
+      <div class="detail-field"><label>Fecha y hora</label><span>${fmtDateShort(r.fecha)}</span></div>
       <div class="detail-field"><label>Placa</label><span>${r.placa}</span></div>
-      <div class="detail-field"><label>Infractor</label><span>${r.infractor}</span></div>
-      <div class="detail-field"><label>Tipo</label><span>${r.tipo}</span></div>
-      <div class="detail-field"><label>Monto</label><span>${fmt(r.monto)}</span></div>
-      <div class="detail-field"><label>Ubicación</label><span>${r.ubicacion||'—'}</span></div>
+      <div class="detail-field"><label>Color del vehículo</label><span>${r.color_vehiculo||'—'}</span></div>
+      <div class="detail-field full"><label>Marca y modelo</label><span>${r.vehiculo||'—'}</span></div>
+      <div class="detail-field full"><label>Infractor</label><span>${r.infractor}</span></div>
+      <div class="detail-field"><label>Núm. de licencia</label><span>${r.licencia||'—'}</span></div>
+      <div class="detail-field"><label>Oficial que levantó</label><span>${r.oficial||'—'}</span></div>
+      <div class="detail-field full"><label>Tipo de infracción</label><span>${r.tipo}</span></div>
+      <div class="detail-field"><label>Monto</label><span style="font-size:1rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</span></div>
       <div class="detail-field"><label>Estado</label><span>${estadoBadge(r.estado)}</span></div>
+      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}</span></div>
       ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
     </div>
     <div class="detail-actions">
@@ -486,6 +508,10 @@ async function viewDetail(tabla, id) {
       </select>
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
       <button class="btn btn-secondary btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
+      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')" title="Imprimir boleta de infracción">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir boleta
+      </button>
       <button class="btn btn-danger btn-sm" onclick="deleteDetail('infracciones','${r.id}')">Eliminar</button>
     </div>` : `
     <div class="detail-grid">
@@ -579,6 +605,197 @@ async function resetData() {
   _cachedConfig = null;
   showToast('Datos restablecidos');
   navigate('dashboard');
+}
+
+// ── Ticket de infracción ──────────────────────────────────
+async function printInfraccion(id) {
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('infracciones').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id',1).single()
+  ]);
+  if (!r) return;
+
+  const mun      = cfg?.municipio || 'Municipio';
+  const estMun   = cfg?.estado    || '';
+  const director = cfg?.director  || '';
+
+  const fechaObj  = new Date(r.fecha);
+  const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const horaStr   = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+
+  // Descuento 20% primeros 15 días; límite 30 días
+  const descFecha = new Date(fechaObj.getTime() + 15*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const limFecha  = new Date(fechaObj.getTime() + 30*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const montoDesc = Math.round(r.monto * 0.80).toLocaleString('es-MX');
+  const montoFmt  = Number(r.monto).toLocaleString('es-MX');
+
+  const copyHTML = (label) => `
+  <div class="copy">
+    <div class="header">
+      <div class="header-top">
+        <div class="seal">HCE</div>
+        <div class="header-text">
+          <div class="gov-name">GOBIERNO MUNICIPAL · ${mun.toUpperCase()}</div>
+          <div class="dept-name">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
+          <div class="state-name">${estMun.toUpperCase()}</div>
+        </div>
+        <div class="copy-tag">${label}</div>
+      </div>
+      <div class="title-bar">
+        <span>BOLETA DE INFRACCIÓN DE TRÁNSITO</span>
+        <span class="folio-num">${r.folio||'—'}</span>
+      </div>
+    </div>
+
+    <div class="sections">
+      <div class="section-row">
+        <div class="section" style="flex:1">
+          <div class="sec-title">Datos de la infracción</div>
+          <div class="fields-grid">
+            <div class="f"><span class="fl">Fecha</span><span class="fv">${fechaStr}</span></div>
+            <div class="f"><span class="fl">Hora</span><span class="fv">${horaStr}</span></div>
+            <div class="f full"><span class="fl">Ubicación / Lugar de los hechos</span><span class="fv">${r.ubicacion||'—'}</span></div>
+            <div class="f full"><span class="fl">Tipo de infracción</span><span class="fv bold">${r.tipo}</span></div>
+            ${r.obs ? `<div class="f full"><span class="fl">Observaciones</span><span class="fv">${r.obs}</span></div>` : ''}
+          </div>
+        </div>
+        <div class="section" style="flex:1">
+          <div class="sec-title">Datos del vehículo</div>
+          <div class="fields-grid">
+            <div class="f"><span class="fl">Placa</span><span class="fv mono bold">${r.placa}</span></div>
+            <div class="f"><span class="fl">Color</span><span class="fv">${r.color_vehiculo||'—'}</span></div>
+            <div class="f full"><span class="fl">Marca y modelo</span><span class="fv">${r.vehiculo||'—'}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Datos del infractor</div>
+        <div class="fields-grid">
+          <div class="f" style="flex:2"><span class="fl">Nombre completo</span><span class="fv bold">${r.infractor}</span></div>
+          <div class="f"><span class="fl">Núm. de licencia</span><span class="fv mono">${r.licencia||'—'}</span></div>
+        </div>
+      </div>
+
+      <div class="amount-section">
+        <div class="amount-label">MONTO DE LA INFRACCIÓN</div>
+        <div class="amount-num">$${montoFmt} <span class="currency">MXN</span></div>
+        <div class="payment-dates">
+          <div class="pd-item discount">
+            <div class="pd-label">▼ 20% descuento si paga antes del</div>
+            <div class="pd-date">${descFecha}</div>
+            <div class="pd-amount">Pague solo $${montoDesc} MXN</div>
+          </div>
+          <div class="pd-item limit">
+            <div class="pd-label">⚠ Fecha límite de pago</div>
+            <div class="pd-date">${limFecha}</div>
+            <div class="pd-amount">Después genera recargo</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="sec-title">Lugar de pago</div>
+        <div class="pay-info">
+          <strong>Tesorería Municipal de ${mun}</strong> — Lunes a Viernes de 8:00 a 15:00 hrs.<br>
+          Presente esta boleta en ventanilla de infracciones. Referencia de pago: <strong class="mono">${r.folio||'—'}</strong>
+        </div>
+      </div>
+
+      <div class="signatures">
+        <div class="sig-box">
+          <div class="sig-line"></div>
+          <div class="sig-label">Oficial que levanta${r.oficial ? ': '+r.oficial : ''}</div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-line"></div>
+          <div class="sig-label">Firma o huella del infractor</div>
+        </div>
+      </div>
+
+      <div class="legal-note">
+        La presente boleta fue expedida conforme a la Ley de Tránsito Municipal vigente. El no pago dentro del plazo establecido
+        generará recargos del 2% mensual y podrá derivar en inmovilización del vehículo. Para impugnar esta infracción acuda a la
+        Dirección de Tránsito dentro de los 15 días hábiles siguientes a esta fecha.
+      </div>
+    </div>
+  </div>`;
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Boleta ${r.folio||''}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;background:#f5f5f5;color:#222}
+    .page{width:210mm;margin:0 auto;padding:8mm;display:flex;flex-direction:column;gap:4mm}
+    .no-print{text-align:center;margin-bottom:6mm}
+    .no-print button{padding:8px 20px;background:#1A7A82;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;margin:0 4px}
+    .no-print button:hover{background:#229099}
+    .cut{text-align:center;color:#aaa;font-size:9px;letter-spacing:2px;padding:2mm 0;border-top:1px dashed #ccc;border-bottom:1px dashed #ccc}
+    .copy{background:#fff;border:1px solid #ccc;border-radius:4px;overflow:hidden;page-break-inside:avoid}
+    .header{background:#fff}
+    .header-top{display:flex;align-items:center;gap:6mm;padding:4mm 5mm 3mm;border-bottom:3px solid #1A7A82}
+    .seal{width:14mm;height:14mm;border-radius:50%;border:2px solid #1A7A82;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#1A7A82;flex-shrink:0}
+    .header-text{flex:1}
+    .gov-name{font-size:9px;font-weight:700;color:#1A7A82;letter-spacing:.5px}
+    .dept-name{font-size:11px;font-weight:900;color:#222;margin:1px 0}
+    .state-name{font-size:8px;color:#666}
+    .copy-tag{font-size:8px;font-weight:700;color:#fff;background:#6B7280;padding:2px 6px;border-radius:3px;white-space:nowrap;align-self:flex-start}
+    .title-bar{display:flex;justify-content:space-between;align-items:center;background:#1A7A82;color:#fff;padding:3mm 5mm}
+    .title-bar span:first-child{font-size:10px;font-weight:700;letter-spacing:.5px}
+    .folio-num{font-size:14px;font-weight:900;letter-spacing:2px;font-family:'Courier New',monospace}
+    .sections{padding:3mm 5mm 4mm}
+    .section-row{display:flex;gap:4mm;margin-bottom:2mm}
+    .section{margin-bottom:2mm}
+    .sec-title{font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#1A7A82;border-bottom:1px solid #e5e7eb;padding-bottom:1mm;margin-bottom:2mm}
+    .fields-grid{display:flex;flex-wrap:wrap;gap:2mm 3mm}
+    .f{display:flex;flex-direction:column;min-width:80px}
+    .f.full{width:100%;flex:1 0 100%}
+    .fl{font-size:6.5px;text-transform:uppercase;color:#9CA3AF;letter-spacing:.5px;margin-bottom:.5px}
+    .fv{font-size:10px;color:#111}
+    .fv.bold{font-weight:700}
+    .fv.mono{font-family:'Courier New',monospace;font-size:9px}
+    .amount-section{background:#f0fafa;border:1.5px solid #1A7A82;border-radius:4px;padding:3mm 4mm;margin:2mm 0;text-align:center}
+    .amount-label{font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#1A7A82;margin-bottom:1mm}
+    .amount-num{font-size:22px;font-weight:900;color:#1A7A82;line-height:1.1}
+    .currency{font-size:12px;font-weight:600;color:#229099}
+    .payment-dates{display:flex;gap:3mm;margin-top:2mm}
+    .pd-item{flex:1;border-radius:3px;padding:2mm;text-align:center}
+    .pd-item.discount{background:#f0fdf4;border:1px solid #6ee7b7}
+    .pd-item.limit{background:#fef2f2;border:1px solid #fca5a5}
+    .pd-label{font-size:7px;color:#555;margin-bottom:1px}
+    .pd-date{font-size:9px;font-weight:700;color:#111}
+    .pd-amount{font-size:8px;font-weight:600}
+    .pd-item.discount .pd-amount{color:#059669}
+    .pd-item.limit .pd-amount{color:#DC2626}
+    .pay-info{font-size:9px;color:#444;line-height:1.6;background:#f9fafb;border:1px solid #e5e7eb;border-radius:3px;padding:2mm 3mm}
+    .pay-info .mono{font-family:'Courier New',monospace;font-size:9px;background:#e5e7eb;padding:0 3px;border-radius:2px}
+    .signatures{display:flex;gap:10mm;margin-top:4mm}
+    .sig-box{flex:1;text-align:center}
+    .sig-line{height:8mm;border-bottom:1px solid #333;margin-bottom:1mm}
+    .sig-label{font-size:7.5px;color:#666}
+    .legal-note{font-size:7px;color:#9CA3AF;line-height:1.5;margin-top:3mm;padding-top:2mm;border-top:1px solid #e5e7eb;text-align:justify}
+    @media print{
+      body{background:#fff}
+      .no-print{display:none!important}
+      .page{width:100%;margin:0;padding:4mm}
+      @page{margin:8mm;size:A4 portrait}
+    }
+  </style></head><body>
+  <div class="page">
+    <div class="no-print">
+      <button onclick="window.print()">🖨 Imprimir boleta</button>
+      <button onclick="window.close()">Cerrar</button>
+    </div>
+    ${copyHTML('COPIA INFRACTOR')}
+    <div class="cut">✂ &nbsp;&nbsp; CORTAR POR AQUÍ &nbsp;&nbsp; ✂</div>
+    ${copyHTML('COPIA TRÁNSITO')}
+  </div>
+  <script>setTimeout(()=>window.print(),600)<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=870,height=960');
+  win.document.write(html);
+  win.document.close();
 }
 
 // ── Reportes ──────────────────────────────────────────────

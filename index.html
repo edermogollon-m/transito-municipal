@@ -531,18 +531,32 @@
 
 <!-- MODAL: Infracción -->
 <div class="modal-overlay" id="modal-infraccion">
-  <div class="modal">
+  <div class="modal" style="width:560px">
     <div class="modal-header">
       <div class="modal-title" id="modal-inf-title">Nueva Infracción</div>
       <button class="modal-close" onclick="closeModal('modal-infraccion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <form id="inf-form" onsubmit="submitInfraccion(event)">
       <input type="hidden" id="inf-id"/>
+
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.6rem">Datos del vehículo</div>
       <div class="form-row">
         <div class="form-field"><label>Placa *</label><input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required/></div>
-        <div class="form-field"><label>Fecha y hora</label><input id="inf-fecha" class="form-input" type="datetime-local"/></div>
+        <div class="form-field"><label>Color del vehículo</label><input id="inf-color" class="form-input" placeholder="Ej. Blanco" type="text"/></div>
       </div>
-      <div class="form-field"><label>Nombre del infractor *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
+      <div class="form-field"><label>Marca y modelo</label><input id="inf-vehiculo" class="form-input" placeholder="Ej. Toyota Corolla 2020" type="text"/></div>
+
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .6rem">Datos del infractor</div>
+      <div class="form-row">
+        <div class="form-field"><label>Nombre completo *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
+        <div class="form-field"><label>Núm. de licencia</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text"/></div>
+      </div>
+
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .6rem">Datos de la infracción</div>
+      <div class="form-row">
+        <div class="form-field"><label>Fecha y hora *</label><input id="inf-fecha" class="form-input" type="datetime-local" required/></div>
+        <div class="form-field"><label>Oficial que levanta</label><input id="inf-oficial" class="form-input" placeholder="Nombre del agente" type="text"/></div>
+      </div>
       <div class="form-row">
         <div class="form-field"><label>Tipo de infracción</label>
           <select id="inf-tipo" class="form-select" onchange="autoFillMonto()">
@@ -558,10 +572,10 @@
             <option>Otro</option>
           </select>
         </div>
-        <div class="form-field"><label>Monto ($) *</label><input id="inf-monto" class="form-input" placeholder="800" type="number" min="1" required/></div>
+        <div class="form-field"><label>Monto (MXN) *</label><input id="inf-monto" class="form-input" placeholder="800" type="number" min="1" required/></div>
       </div>
+      <div class="form-field"><label>Ubicación / Lugar de los hechos</label><input id="inf-ubicacion" class="form-input" placeholder="Calle, avenida o cruce" type="text"/></div>
       <div class="form-row">
-        <div class="form-field"><label>Ubicación</label><input id="inf-ubicacion" class="form-input" placeholder="Calle o avenida" type="text"/></div>
         <div class="form-field"><label>Estado</label>
           <select id="inf-est" class="form-select">
             <option value="pendiente">Pendiente</option>
@@ -571,11 +585,15 @@
             <option value="vencida">Vencida</option>
           </select>
         </div>
+        <div class="form-field"><label>Observaciones</label><input id="inf-obs" class="form-input" placeholder="Notas adicionales…" type="text"/></div>
       </div>
-      <div class="form-field"><label>Observaciones</label><input id="inf-obs" class="form-input" placeholder="Notas adicionales…" type="text"/></div>
+
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-infraccion')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar</button>
+        <button type="submit" id="inf-submit-btn" class="btn btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Registrar y guardar
+        </button>
       </div>
     </form>
   </div>
