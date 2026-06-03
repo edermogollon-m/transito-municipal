@@ -552,7 +552,6 @@ async function viewDetail(tabla, id) {
         Registrar pago
       </button>`:''}
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
-      <button class="btn btn-secondary btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Imprimir ticket 80mm para el infractor">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Imprimir ticket
@@ -561,7 +560,6 @@ async function viewDetail(tabla, id) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Imprimir boleta
       </button>
-      <button class="btn btn-danger btn-sm" onclick="deleteDetail('infracciones','${r.id}')">Eliminar</button>
     </div>` : `
     <div class="detail-grid">
       <div class="detail-field"><label>Núm.</label><span>${r.num||'—'}</span></div>
