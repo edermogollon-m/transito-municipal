@@ -305,6 +305,10 @@
     .caja-tab.active { color:var(--ac); border-bottom-color:var(--ac); }
     .caja-tab:hover:not(.active) { color:var(--text); }
     .pend-badge { background:var(--red); color:#fff; border-radius:10px; padding:.1rem .45rem; font-size:.67rem; margin-left:.2rem; }
+    /* Foto upload */
+    .foto-upload-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.45rem .9rem; border:1.5px dashed var(--border); border-radius:var(--r); font-size:.8rem; font-weight:600; color:var(--muted); cursor:pointer; transition:border-color .15s,color .15s; background:var(--stone); }
+    .foto-upload-btn:hover { border-color:var(--ac); color:var(--ac); }
+    .foto-thumb { width:60px; height:60px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer; }
     .qr-frame { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
     .qr-box { width:200px; height:200px; border:2.5px solid var(--ac); border-radius:10px; box-shadow:0 0 0 9999px rgba(0,0,0,.5); transition:border-color .3s; }
     @keyframes qr-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
@@ -505,6 +509,10 @@
             <option value="vencida">Vencida</option>
             <option value="cancelada">Cancelada</option>
           </select>
+          <button class="btn btn-ghost" onclick="exportExcel('infracciones')" title="Exportar a Excel">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Excel
+          </button>
           <button class="btn btn-primary" onclick="openNewInfraccion()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nueva infracción
@@ -699,6 +707,14 @@
               <option value="tarjeta">Tarjeta</option>
               <option value="transferencia">Transferencia</option>
             </select>
+            <button class="btn btn-ghost" onclick="exportExcel('pagos')" title="Exportar a Excel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Excel
+            </button>
+            <button class="btn btn-ghost" onclick="printCorteCaja()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Corte de caja
+            </button>
           </div>
           <div class="card" style="padding:0">
             <div class="table-wrap">
@@ -772,6 +788,7 @@
         <div class="form-field"><label>Nombre completo *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
         <div class="form-field"><label>Núm. de licencia</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text"/></div>
       </div>
+      <div class="form-field"><label>Teléfono del infractor</label><input id="inf-telefono" class="form-input" placeholder="10 dígitos (para notificación WhatsApp)" type="tel" maxlength="15"/></div>
 
       <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .6rem">Datos de la infracción</div>
       <div class="form-row">
@@ -795,7 +812,17 @@
         </div>
         <div class="form-field"><label>Monto (MXN) *</label><input id="inf-monto" class="form-input" placeholder="800" type="number" min="1" required/></div>
       </div>
-      <div class="form-field"><label>Ubicación / Lugar de los hechos</label><input id="inf-ubicacion" class="form-input" placeholder="Calle, avenida o cruce" type="text"/></div>
+      <div class="form-field">
+        <label>Ubicación / Lugar de los hechos</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input id="inf-ubicacion" class="form-input" placeholder="Calle, avenida o cruce" type="text" style="flex:1"/>
+          <button type="button" id="btn-geolocate" class="btn btn-ghost btn-sm" onclick="captureLocation()" title="Capturar ubicación GPS" style="white-space:nowrap;flex-shrink:0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+            GPS
+          </button>
+        </div>
+        <div id="inf-geo-status" style="font-size:.72rem;color:var(--muted);margin-top:.3rem"></div>
+      </div>
       <div class="form-row">
         <div class="form-field"><label>Estado</label>
           <select id="inf-est" class="form-select">
@@ -807,6 +834,16 @@
           </select>
         </div>
         <div class="form-field"><label>Observaciones</label><input id="inf-obs" class="form-input" placeholder="Notas adicionales…" type="text"/></div>
+      </div>
+
+      <div class="form-field">
+        <label>Fotos de evidencia (máx. 3)</label>
+        <label class="foto-upload-btn" for="inf-fotos">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Adjuntar fotos
+        </label>
+        <input id="inf-fotos" type="file" accept="image/*" multiple style="display:none" onchange="previewFotos(this)"/>
+        <div id="inf-fotos-preview" style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap"></div>
       </div>
 
       <div class="modal-actions">
@@ -964,6 +1001,25 @@
   </div>
 </div>
 
+<!-- MODAL: Impugnación -->
+<div class="modal-overlay" id="modal-impugnacion">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-imp-title">Registrar impugnación</div>
+      <button class="modal-close" onclick="closeModal('modal-impugnacion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <input type="hidden" id="imp-inf-id"/>
+    <div class="form-field" style="margin-top:.25rem">
+      <label>Motivo de la impugnación</label>
+      <textarea id="imp-motivo" class="form-input" rows="4" placeholder="Describe el motivo de la impugnación…" style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-impugnacion')">Cancelar</button>
+      <button class="btn btn-primary" id="imp-submit-btn" onclick="submitImpugnacion()">Registrar impugnación</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: QR Scanner -->
 <div class="modal-overlay" id="modal-qr-scanner">
   <div class="modal" style="width:400px">
@@ -984,6 +1040,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="config.js"></script>

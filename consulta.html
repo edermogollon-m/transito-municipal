@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Consulta de Infracciones — Tránsito Municipal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    :root {
+      --ac:#1A7A82; --ac-lt:#229099; --ac-gl:rgba(26,122,130,.12);
+      --ink:#1A1F2B; --text:#374151; --muted:#6B7280; --border:#E5E7EB;
+      --stone:#F9FAFB; --white:#fff; --r:10px;
+      --green:#059669; --green-bg:#ECFDF5; --amber:#D97706; --amber-bg:#FFFBEB;
+      --red:#DC2626; --red-bg:#FEF2F2; --blue:#2563EB; --blue-bg:#EFF6FF;
+    }
+    html,body { min-height:100%; font-family:'DM Sans',sans-serif; background:var(--stone); color:var(--ink); }
+    .page { max-width:640px; margin:0 auto; padding:2rem 1rem 4rem; }
+    .logo { display:flex; align-items:center; gap:.75rem; margin-bottom:2.5rem; }
+    .logo-badge { width:40px; height:40px; border-radius:10px; background:var(--ac); display:flex; align-items:center; justify-content:center; font-size:.72rem; font-weight:800; color:#fff; letter-spacing:.04em; }
+    .logo-info { line-height:1.3; }
+    .logo-title { font-size:.95rem; font-weight:700; color:var(--ink); }
+    .logo-sub { font-size:.72rem; color:var(--muted); }
+    h1 { font-size:1.5rem; font-weight:700; color:var(--ink); margin-bottom:.4rem; }
+    .intro { font-size:.88rem; color:var(--muted); margin-bottom:2rem; line-height:1.6; }
+    .search-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:1.5rem; margin-bottom:1.5rem; }
+    .search-card label { display:block; font-size:.78rem; font-weight:600; color:var(--ink); margin-bottom:.4rem; }
+    .input-row { display:flex; gap:.6rem; }
+    .form-input { flex:1; padding:.65rem .9rem; border:1.5px solid var(--border); border-radius:var(--r); font-family:'DM Sans',sans-serif; font-size:.85rem; color:var(--ink); background:var(--stone); outline:none; transition:border-color .15s,box-shadow .15s; }
+    .form-input:focus { border-color:var(--ac); box-shadow:0 0 0 3px var(--ac-gl); background:#fff; }
+    .btn { display:inline-flex; align-items:center; gap:.4rem; padding:.65rem 1.2rem; border-radius:var(--r); border:none; font-family:'DM Sans',sans-serif; font-size:.85rem; font-weight:600; cursor:pointer; transition:background .15s; }
+    .btn-primary { background:var(--ac); color:#fff; }
+    .btn-primary:hover { background:var(--ac-lt); }
+    .hint { font-size:.75rem; color:var(--muted); margin-top:.6rem; }
+    #result { margin-top:1rem; }
+    .inf-card { background:var(--white); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .inf-header { padding:1.2rem 1.5rem; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+    .inf-folio { font-size:1.1rem; font-weight:800; color:var(--ink); font-family:monospace; }
+    .inf-tipo { font-size:.82rem; color:var(--text); margin-top:.2rem; }
+    .badge { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem; font-weight:600; padding:.25rem .7rem; border-radius:20px; white-space:nowrap; }
+    .badge::before { content:''; width:6px; height:6px; border-radius:50%; }
+    .badge.pagada    { background:var(--green-bg); color:var(--green); } .badge.pagada::before { background:var(--green); }
+    .badge.pendiente { background:var(--amber-bg); color:var(--amber); } .badge.pendiente::before { background:var(--amber); }
+    .badge.impugnada { background:var(--blue-bg);  color:var(--blue);  } .badge.impugnada::before { background:var(--blue); }
+    .badge.vencida   { background:var(--red-bg);   color:var(--red);   } .badge.vencida::before { background:var(--red); }
+    .badge.cancelada { background:var(--stone); color:var(--muted); } .badge.cancelada::before { background:var(--muted); }
+    .inf-body { padding:1.2rem 1.5rem; display:grid; grid-template-columns:1fr 1fr; gap:.9rem 1.5rem; }
+    .field label { display:block; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:.2rem; }
+    .field span { font-size:.85rem; color:var(--ink); }
+    .field.full { grid-column:1/-1; }
+    .inf-pay { padding:1.2rem 1.5rem; border-top:1px solid var(--border); background:var(--stone); border-radius:0 0 12px 12px; }
+    .pay-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem; }
+    .pay-label { font-size:.82rem; color:var(--text); }
+    .pay-amount { font-size:1.5rem; font-weight:800; color:var(--ink); }
+    .pay-discount { font-size:.8rem; color:var(--green); font-weight:600; }
+    .pay-deadline { font-size:.78rem; color:var(--red); margin-top:.25rem; }
+    .pay-where { font-size:.8rem; color:var(--muted); margin-top:.85rem; padding-top:.85rem; border-top:1px solid var(--border); line-height:1.6; }
+    .already-paid { background:var(--green-bg); border:1px solid #A7F3D0; border-radius:8px; padding:.9rem 1.1rem; color:var(--green); font-size:.85rem; font-weight:600; display:flex; align-items:center; gap:.6rem; }
+    .not-found { text-align:center; padding:2.5rem 1rem; color:var(--muted); }
+    .not-found svg { opacity:.3; display:block; margin:0 auto 1rem; }
+    .not-found p { font-size:.88rem; line-height:1.6; }
+    .spinner { display:none; text-align:center; padding:2rem; color:var(--muted); font-size:.85rem; }
+    .footer { text-align:center; font-size:.72rem; color:var(--muted); margin-top:3rem; }
+    .footer a { color:var(--ac); text-decoration:none; }
+    @media (max-width:480px) {
+      .inf-body { grid-template-columns:1fr; }
+      .inf-header { flex-direction:column; }
+      h1 { font-size:1.2rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="logo">
+    <div class="logo-badge">HCE</div>
+    <div class="logo-info">
+      <div class="logo-title">Tránsito Municipal</div>
+      <div class="logo-sub">Sistema de Movilidad · HCE Consultoría</div>
+    </div>
+  </div>
+
+  <h1>Consulta de infracciones</h1>
+  <p class="intro">Ingresa la placa del vehículo o el folio de la infracción para consultar si tienes multas pendientes de pago.</p>
+
+  <div class="search-card">
+    <label for="q">Placa o folio de infracción</label>
+    <div class="input-row">
+      <input id="q" class="form-input" type="text" placeholder="Ej. ABC-123 o INF-2026-001" autocomplete="off" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')buscar()"/>
+      <button class="btn btn-primary" onclick="buscar()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Buscar
+      </button>
+    </div>
+    <p class="hint">Puedes buscar por placa completa (ej. ABC-123) o por el folio del ticket.</p>
+  </div>
+
+  <div class="spinner" id="spinner">Buscando…</div>
+  <div id="result"></div>
+
+  <div class="footer">
+    Sistema administrado por <strong>HCE Consultoría</strong> · <a href="/login">Acceso operadores</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="supabase.js"></script>
+<script>
+async function buscar() {
+  const q = ($('q').value||'').trim().toUpperCase();
+  if (q.length < 2) { alert('Ingresa al menos 2 caracteres'); return; }
+
+  const spinner = document.getElementById('spinner');
+  const result  = document.getElementById('result');
+  spinner.style.display = 'block';
+  result.innerHTML = '';
+
+  const { data, error } = await _sb.from('infracciones')
+    .select('id,folio,fecha,placa,infractor,tipo,monto,estado,ubicacion,obs')
+    .or(`placa.ilike.%${q}%,folio.ilike.%${q}%`)
+    .order('fecha', { ascending: false })
+    .limit(5);
+
+  spinner.style.display = 'none';
+
+  if (error || !data || !data.length) {
+    result.innerHTML = `<div class="not-found">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <p>No se encontraron infracciones para <strong>${q}</strong>.<br>Verifica que la placa o folio estén escritos correctamente.</p>
+    </div>`;
+    return;
+  }
+
+  result.innerHTML = data.map(r => infCard(r)).join('');
+}
+
+function infCard(r) {
+  const fechaObj  = new Date(r.fecha);
+  const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const descFecha = new Date(fechaObj.getTime()+15*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const limFecha  = new Date(fechaObj.getTime()+30*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const dias      = Math.floor((Date.now()-fechaObj.getTime())/86400000);
+  const montoFmt  = Number(r.monto).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+  const desc20    = dias <= 15;
+  const montoDesc = (r.monto*0.80).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+
+  const badges = {
+    pagada:    '<span class="badge pagada">Pagada</span>',
+    pendiente: '<span class="badge pendiente">Pendiente de pago</span>',
+    impugnada: '<span class="badge impugnada">Impugnada</span>',
+    vencida:   '<span class="badge vencida">Vencida</span>',
+    cancelada: '<span class="badge cancelada">Cancelada</span>',
+  };
+
+  const paySection = r.estado === 'pagada' ? `
+    <div class="inf-pay">
+      <div class="already-paid">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Esta infracción ya fue pagada. No tienes adeudos pendientes por este folio.
+      </div>
+    </div>` : r.estado === 'cancelada' ? `
+    <div class="inf-pay">
+      <div class="already-paid" style="background:var(--stone);border-color:var(--border);color:var(--muted)">
+        Esta infracción fue cancelada. No requiere pago.
+      </div>
+    </div>` : `
+    <div class="inf-pay">
+      <div class="pay-row">
+        <span class="pay-label">Monto total</span>
+        <span class="pay-amount">${montoFmt}</span>
+      </div>
+      ${desc20 ? `<div class="pay-discount">✓ Paga antes del ${descFecha} y obtén 20% de descuento: <strong>${montoDesc}</strong></div>` : ''}
+      <div class="pay-deadline">⚠ Fecha límite de pago: ${limFecha}</div>
+      <div class="pay-where">
+        <strong>¿Dónde pagar?</strong><br>
+        Acude a la <strong>Tesorería Municipal</strong> con este folio.<br>
+        Horario: Lunes a Viernes 8:00 – 15:00 hrs.
+      </div>
+    </div>`;
+
+  return `<div class="inf-card" style="margin-bottom:1rem">
+    <div class="inf-header">
+      <div>
+        <div class="inf-folio">${r.folio||'—'}</div>
+        <div class="inf-tipo">${r.tipo}</div>
+      </div>
+      ${badges[r.estado]||''}
+    </div>
+    <div class="inf-body">
+      <div class="field"><label>Fecha</label><span>${fechaStr}</span></div>
+      <div class="field"><label>Placa</label><span>${r.placa}</span></div>
+      <div class="field"><label>Infractor</label><span>${r.infractor}</span></div>
+      <div class="field"><label>Días transcurridos</label><span>${dias} día${dias!==1?'s':''}</span></div>
+      ${r.ubicacion?`<div class="field full"><label>Lugar</label><span>${r.ubicacion}</span></div>`:''}
+    </div>
+    ${paySection}
+  </div>`;
+}
+
+function $(id) { return document.getElementById(id); }
+</script>
+</body>
+</html>

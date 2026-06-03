@@ -120,6 +120,66 @@ async function logActivity(tipo, texto) {
 // ── Navigation ────────────────────────────────────────────
 const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios'];
 
+// ── Fotos (compresión client-side) ───────────────────────
+async function compressPhoto(file, maxPx = 1000) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxPx || h > maxPx) {
+          if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+          else { w = Math.round(w * maxPx / h); h = maxPx; }
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function previewFotos(input) {
+  const prev = document.getElementById('inf-fotos-preview');
+  if (!prev) return;
+  prev.innerHTML = '';
+  const files = Array.from(input.files).slice(0, 3);
+  files.forEach(f => {
+    const url = URL.createObjectURL(f);
+    const img = document.createElement('img');
+    img.src = url; img.className = 'foto-thumb';
+    img.title = 'Clic para ver en grande';
+    img.onclick = () => window.open(url, '_blank');
+    prev.appendChild(img);
+  });
+}
+
+// ── Geolocalización ──────────────────────────────────────
+async function captureLocation() {
+  const btn = document.getElementById('btn-geolocate');
+  const status = document.getElementById('inf-geo-status');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const pos = await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 12000, enableHighAccuracy: true })
+    );
+    window._infLat = pos.coords.latitude;
+    window._infLng = pos.coords.longitude;
+    const ubi = document.getElementById('inf-ubicacion');
+    if (ubi && !ubi.value) ubi.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+    if (status) status.innerHTML = `<span style="color:var(--green)">✓ Ubicación capturada (±${Math.round(pos.coords.accuracy)}m)</span>`;
+    if (btn) { btn.textContent = '✓ GPS'; btn.style.color = 'var(--green)'; btn.disabled = false; }
+  } catch(e) {
+    if (status) status.textContent = 'No se pudo obtener la ubicación GPS';
+    if (btn) { btn.textContent = 'GPS'; btn.disabled = false; }
+    showToast('GPS no disponible: ' + e.message);
+  }
+}
+
 function toggleSidebar() {
   const s = document.getElementById('sidebar');
   const b = document.getElementById('sidebar-backdrop');
@@ -351,6 +411,16 @@ async function submitInfraccion(e) {
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
   const id = $('inf-id').value;
+
+  // Compress photos
+  const fileInput = document.getElementById('inf-fotos');
+  const fotosArr = [];
+  if (fileInput && fileInput.files.length > 0) {
+    for (let i = 0; i < Math.min(fileInput.files.length, 3); i++) {
+      fotosArr.push(await compressPhoto(fileInput.files[i]));
+    }
+  }
+
   const payload = {
     fecha:          $('inf-fecha').value ? new Date($('inf-fecha').value).toISOString() : new Date().toISOString(),
     placa:          $('inf-placa').value.trim().toUpperCase(),
@@ -363,8 +433,13 @@ async function submitInfraccion(e) {
     monto:          parseInt($('inf-monto').value)||0,
     ubicacion:      $('inf-ubicacion').value.trim(),
     estado:         $('inf-est').value,
-    obs:            $('inf-obs').value.trim()
+    obs:            $('inf-obs').value.trim(),
+    telefono:       ($('inf-telefono')||{}).value?.trim() || '',
+    lat:            window._infLat || null,
+    lng:            window._infLng || null,
+    fotos:          fotosArr.length ? JSON.stringify(fotosArr) : (id ? undefined : '[]')
   };
+  if (payload.fotos === undefined) delete payload.fotos;
 
   if (id) {
     const { error } = await _sb.from('infracciones').update(payload).eq('id', id);
@@ -391,6 +466,13 @@ function openNewInfraccion() {
   $('inf-id').value = '';
   $('inf-fecha').value = new Date().toISOString().slice(0,16);
   $('inf-est').value = 'pendiente';
+  window._infLat = null; window._infLng = null;
+  const geoStatus = document.getElementById('inf-geo-status');
+  if (geoStatus) geoStatus.textContent = '';
+  const geoBtn = document.getElementById('btn-geolocate');
+  if (geoBtn) { geoBtn.textContent = 'GPS'; geoBtn.style.color = ''; geoBtn.disabled = false; }
+  const prev = document.getElementById('inf-fotos-preview');
+  if (prev) prev.innerHTML = '';
   openModal('modal-infraccion');
 }
 
@@ -411,6 +493,12 @@ async function editInfraccion(id) {
   $('inf-ubicacion').value= data.ubicacion||'';
   $('inf-est').value      = data.estado;
   $('inf-obs').value      = data.obs||'';
+  if ($('inf-telefono')) $('inf-telefono').value = data.telefono||'';
+  window._infLat = data.lat||null; window._infLng = data.lng||null;
+  const geoStatus = document.getElementById('inf-geo-status');
+  if (geoStatus) geoStatus.innerHTML = data.lat ? `<span style="color:var(--green)">✓ Coordenadas guardadas</span>` : '';
+  const prev = document.getElementById('inf-fotos-preview');
+  if (prev) prev.innerHTML = '';
   openModal('modal-infraccion');
 }
 
@@ -548,8 +636,14 @@ async function viewDetail(tabla, id) {
       <div class="detail-field full"><label>Tipo de infracción</label><span>${r.tipo}</span></div>
       <div class="detail-field"><label>Monto</label><span style="font-size:1rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</span></div>
       <div class="detail-field"><label>Estado</label><span>${estadoBadge(r.estado)}</span></div>
-      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}</span></div>
+      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="color:var(--ac);font-size:.75rem;margin-left:.4rem">Ver en mapa ↗</a>`:''}</span></div>
+      ${r.telefono?`<div class="detail-field"><label>Teléfono</label><span>${r.telefono}</span></div>`:''}
       ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
+      ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="color:var(--blue)">${r.impugnacion_motivo}</span></div>`:''}
+      ${(()=>{
+        let fotos=[];try{fotos=JSON.parse(r.fotos||'[]');}catch(e){}
+        return fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')" />`).join('')}</div></div>`:'';
+      })()}
     </div>
     <div class="detail-actions">
       <select id="detail-estado" class="form-select" style="width:auto;min-width:130px">
@@ -561,17 +655,20 @@ async function viewDetail(tabla, id) {
       </select>
       ${r.estado==='pendiente'?`<button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green)" onclick="openRegistrarPago('${r.id}')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-        Registrar pago
+        Cobrar
       </button>`:''}
+      ${(r.estado==='pendiente'||r.estado==='impugnada')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Impugnar</button>`:''}
+      ${(r.estado==='impugnada'&&(_rol==='admin'||_rol==='supervisor'))?`
+        <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="resolverImpugnacion('${r.id}','cancelada')">✓ Procede</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="resolverImpugnacion('${r.id}','pendiente')">✕ No procede</button>
+      `:''}
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
-      <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Imprimir ticket 80mm para el infractor">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-        Imprimir ticket
-      </button>
-      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')" title="Imprimir boleta A4 (2 copias)">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-        Imprimir boleta
-      </button>
+      <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket</button>
+      <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta</button>
+      ${r.telefono?`<a class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0;text-decoration:none" href="https://wa.me/52${r.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(`Estimado/a ${r.infractor}, tiene una infracción de tránsito PENDIENTE. Folio: ${r.folio||'—'}. Monto: $${Number(r.monto).toLocaleString('es-MX')} MXN. Acuda a Tesorería Municipal para regularizar. Dirección de Tránsito y Movilidad.`)}" target="_blank" rel="noopener">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        WhatsApp
+      </a>`:''}
     </div>` : `
     <div class="detail-grid">
       <div class="detail-field"><label>Núm.</label><span>${r.num||'—'}</span></div>
@@ -1143,7 +1240,7 @@ async function renderCaja() {
 async function renderPendientesTable() {
   const tbody = $('pendientes-table'); if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado').eq('estado','pendiente');
+  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono').eq('estado','pendiente');
   if (_pendSearch) q = q.or(`placa.ilike.%${_pendSearch}%,infractor.ilike.%${_pendSearch}%,folio.ilike.%${_pendSearch}%`);
   if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
   else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
@@ -1175,6 +1272,9 @@ async function renderPendientesTable() {
         <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Reimprimir ticket">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         </button>
+        ${r.telefono?`<a class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0;text-decoration:none" href="https://wa.me/52${r.telefono.replace(/\D/g,'')}?text=${encodeURIComponent(`Estimado/a ${r.infractor}, tiene una infracción pendiente. Folio: ${r.folio||'—'}. Monto: $${Number(r.monto).toLocaleString('es-MX')} MXN. Acuda a Tesorería Municipal. Tránsito Municipal.`)}" target="_blank" rel="noopener" title="Enviar WhatsApp">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        </a>`:''}
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin infracciones pendientes de pago</td></tr>';
@@ -1761,6 +1861,172 @@ async function generateReport(tipo) {
   <div class="footer">Sistema de Tránsito y Movilidad Municipal — HCE Consultoría</div>
   </body></html>`);
   win.document.close();
+}
+
+// ── Impugnaciones ─────────────────────────────────────────
+function impugnarInfraccion(id, estado) {
+  $('imp-inf-id').value = id;
+  $('imp-motivo').value = '';
+  const title = $('modal-imp-title');
+  if (title) title.textContent = estado === 'impugnada' ? 'Actualizar motivo de impugnación' : 'Registrar impugnación';
+  const btn = $('imp-submit-btn');
+  if (btn) btn.textContent = estado === 'impugnada' ? 'Actualizar' : 'Registrar impugnación';
+  closeModal('modal-detail');
+  openModal('modal-impugnacion');
+}
+
+async function submitImpugnacion() {
+  const id = $('imp-inf-id').value;
+  const motivo = ($('imp-motivo').value || '').trim();
+  if (!motivo) { alert('Ingresa el motivo de la impugnación.'); return; }
+  const btn = $('imp-submit-btn');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  const { error } = await _sb.from('infracciones')
+    .update({ estado: 'impugnada', impugnacion_motivo: motivo })
+    .eq('id', id);
+  btn.disabled = false; btn.textContent = 'Registrar impugnación';
+  if (error) { alert('Error: ' + error.message); return; }
+  closeModal('modal-impugnacion');
+  logActivity('infraccion', `Impugnación registrada para infracción ID ${id}`);
+  renderInfracciones();
+  showToast('Impugnación registrada');
+}
+
+async function resolverImpugnacion(id, resolucion) {
+  const label = resolucion === 'cancelada' ? 'cancelar (procede)' : 'reactivar como pendiente (no procede)';
+  if (!confirm(`¿Confirmas ${label} esta infracción?`)) return;
+  const { error } = await _sb.from('infracciones')
+    .update({ estado: resolucion })
+    .eq('id', id);
+  if (error) { alert('Error: ' + error.message); return; }
+  closeModal('modal-detail');
+  logActivity('infraccion', `Impugnación resuelta (${resolucion}) para infracción ID ${id}`);
+  renderInfracciones();
+  renderDashboard();
+  showToast(resolucion === 'cancelada' ? 'Infracción cancelada (impugnación procedente)' : 'Infracción reactivada como pendiente');
+}
+
+// ── Corte de caja ─────────────────────────────────────────
+async function printCorteCaja() {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth()+1).padStart(2,'0');
+  const d = String(today.getDate()).padStart(2,'0');
+  const desde = `${y}-${m}-${d}T00:00:00`;
+  const hasta  = `${y}-${m}-${d}T23:59:59`;
+
+  const { data: pagosHoy } = await _sb.from('pagos')
+    .select('monto,descuento,monto_pagado,created_at,oficial_id')
+    .gte('created_at', desde).lte('created_at', hasta);
+
+  const totalRecaudado = (pagosHoy||[]).reduce((s,p) => s + Number(p.monto_pagado||0), 0);
+  const totalInfracciones = (pagosHoy||[]).length;
+  const totalDescuentos = (pagosHoy||[]).reduce((s,p) => s + Number(p.descuento||0), 0);
+
+  const cfg = _cachedConfig || {};
+  const fechaStr = today.toLocaleDateString('es-MX', {weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const horaStr  = today.toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
+
+  const filas = (pagosHoy||[]).map((p,i) => {
+    const hora = new Date(p.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${hora}</td>
+      <td>${fmt(p.monto)}</td>
+      <td>${p.descuento>0?'Sí (20%)':'No'}</td>
+      <td style="font-weight:700">${fmt(p.monto_pagado)}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Corte de Caja — ${y}-${m}-${d}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:11pt;color:#111;padding:2cm}
+    @page{size:letter portrait;margin:2cm}
+    h1{font-size:16pt;margin-bottom:.2cm}h2{font-size:12pt;color:#555;margin-bottom:.6cm}
+    .header{border-bottom:2px solid #1A7A82;padding-bottom:.5cm;margin-bottom:.7cm}
+    .meta{font-size:9pt;color:#555;margin-bottom:.8cm}
+    table{width:100%;border-collapse:collapse;margin-bottom:.8cm}
+    th{background:#1A7A82;color:#fff;padding:.3cm .4cm;font-size:10pt;text-align:left}
+    td{padding:.25cm .4cm;border-bottom:1px solid #eee;font-size:10pt}
+    tr:nth-child(even) td{background:#F9FAFB}
+    .totals{background:#F0FDF4;border:1px solid #A7F3D0;border-radius:6px;padding:.6cm;margin-bottom:.8cm}
+    .total-row{display:flex;justify-content:space-between;margin-bottom:.2cm;font-size:11pt}
+    .total-row.main{font-size:14pt;font-weight:700;color:#059669;border-top:1px solid #A7F3D0;padding-top:.3cm;margin-top:.2cm}
+    .firma{margin-top:1.5cm;display:flex;justify-content:space-between}
+    .firma-box{text-align:center;width:45%}
+    .firma-line{border-top:1px solid #333;padding-top:.2cm;font-size:9pt;color:#555}
+    .no-data{text-align:center;color:#888;padding:.8cm;font-style:italic}
+  </style></head><body>
+  <div class="header">
+    <h1>Corte de Caja Diario</h1>
+    <h2>${cfg.municipio||'Municipio'} — Dirección de Tránsito y Movilidad</h2>
+  </div>
+  <div class="meta">
+    Fecha: <strong>${fechaStr}</strong> &nbsp;|&nbsp; Hora de corte: <strong>${horaStr}</strong><br>
+    Elaboró: <strong>${_session?.name||'—'}</strong>
+  </div>
+  <div class="totals">
+    <div class="total-row"><span>Pagos registrados:</span><span>${totalInfracciones}</span></div>
+    <div class="total-row"><span>Descuentos aplicados (20%):</span><span>${fmt(totalDescuentos)}</span></div>
+    <div class="total-row main"><span>Total recaudado:</span><span>${fmt(totalRecaudado)}</span></div>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Hora</th><th>Monto orig.</th><th>Descuento</th><th>Pagado</th></tr></thead>
+    <tbody>${filas||`<tr><td colspan="5" class="no-data">Sin pagos registrados hoy</td></tr>`}</tbody>
+  </table>
+  <div class="firma">
+    <div class="firma-box"><div class="firma-line">Oficial receptor</div></div>
+    <div class="firma-box"><div class="firma-line">Supervisor / Vo.Bo.</div></div>
+  </div>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=850,height=700');
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
+}
+
+// ── Export Excel ──────────────────────────────────────────
+async function exportExcel(tipo) {
+  if (typeof XLSX === 'undefined') { alert('La librería Excel no está cargada. Recarga la página.'); return; }
+  let rows = [], wsName = '', filename = '';
+
+  if (tipo === 'infracciones') {
+    const { data } = await _sb.from('infracciones').select('folio,fecha,placa,infractor,tipo,monto,ubicacion,estado,obs').order('fecha',{ascending:false});
+    rows = (data||[]).map(r => ({
+      'Folio': r.folio||'',
+      'Fecha': r.fecha ? new Date(r.fecha).toLocaleDateString('es-MX') : '',
+      'Placa': r.placa||'',
+      'Infractor': r.infractor||'',
+      'Tipo de infracción': r.tipo||'',
+      'Monto (MXN)': Number(r.monto)||0,
+      'Ubicación': r.ubicacion||'',
+      'Estado': r.estado||'',
+      'Observaciones': r.obs||''
+    }));
+    wsName = 'Infracciones'; filename = `infracciones_${new Date().toISOString().slice(0,10)}.xlsx`;
+  } else {
+    const { data } = await _sb.from('pagos').select('created_at,monto,descuento,monto_pagado,metodo,oficial_id').order('created_at',{ascending:false});
+    rows = (data||[]).map(r => ({
+      'Fecha y hora': r.created_at ? new Date(r.created_at).toLocaleString('es-MX') : '',
+      'Monto original (MXN)': Number(r.monto)||0,
+      'Descuento (MXN)': Number(r.descuento)||0,
+      'Total pagado (MXN)': Number(r.monto_pagado)||0,
+      'Método de pago': r.metodo||'Efectivo'
+    }));
+    wsName = 'Pagos'; filename = `pagos_${new Date().toISOString().slice(0,10)}.xlsx`;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, wsName);
+
+  const colWidths = Object.keys(rows[0]||{}).map(k => ({ wch: Math.max(k.length, 14) }));
+  ws['!cols'] = colWidths;
+
+  XLSX.writeFile(wb, filename);
 }
 
 async function exportCSV(tipo) {
