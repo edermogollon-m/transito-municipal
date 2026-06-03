@@ -892,7 +892,34 @@
 
       <!-- PAGOS / CAJA -->
       <div class="view" id="view-caja">
-        <div class="page-header"><h2>Pagos / Caja</h2><p>Gestión de cobros e historial de pagos</p></div>
+
+        <!-- Header -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.2rem">
+          <div>
+            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Pagos / Caja</h2>
+            <p style="font-size:.82rem;color:var(--muted);margin-top:.15rem">Cobro de infracciones e historial de pagos</p>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="openQRScanner()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Escanear QR
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="printCorteCaja()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Corte de caja
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="exportExcel('pagos')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Excel
+            </button>
+            <button class="btn btn-primary" onclick="openBuscarParaPago()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Registrar pago
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats -->
         <div class="stats-grid" id="caja-stats" style="margin-bottom:.8rem"></div>
         <div id="caja-distribucion" style="margin-bottom:1.2rem"></div>
 
@@ -912,66 +939,79 @@
         <!-- PENDIENTES section -->
         <div id="caja-section-pendientes">
           <div class="filter-bar">
-            <div class="search-wrap">
+            <div class="search-wrap" style="flex:1;min-width:180px">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input class="search-input" id="pend-search" type="text" placeholder="Buscar por folio, placa, infractor…" oninput="filterPendientes()">
+              <input class="search-input" id="pend-search" type="text" placeholder="Folio, placa o nombre del infractor…" oninput="filterPendientes()">
             </div>
+            <select class="filter-select" id="pend-periodo" onchange="filterPendientes()">
+              <option value="">Cualquier fecha</option>
+              <option value="hoy">Levantadas hoy</option>
+              <option value="semana">Esta semana</option>
+              <option value="mes">Este mes</option>
+            </select>
             <select class="filter-select" id="pend-sort" onchange="filterPendientes()">
               <option value="fecha_desc">Más recientes</option>
-              <option value="fecha_asc">Más antiguas</option>
+              <option value="fecha_asc">Más antiguas (urgentes)</option>
               <option value="monto_desc">Mayor monto</option>
             </select>
-            <button class="btn btn-primary" style="background:#1D4ED8;border-color:#1D4ED8" onclick="openQRScanner()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-              Escanear QR
-            </button>
-            <button class="btn btn-primary" onclick="openBuscarParaPago()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Registrar pago
+            <button class="btn btn-ghost btn-sm" onclick="limpiarFiltrosPend()" title="Limpiar filtros">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
           <div class="card" style="padding:0">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Folio</th><th>Fecha</th><th>Placa</th><th>Infractor</th><th>Tipo de infracción</th><th>Monto</th><th>Días</th><th></th></tr></thead>
+                <thead><tr><th></th><th>Folio</th><th>Placa</th><th>Infractor</th><th>Tipo</th><th>Monto</th><th>Días</th><th></th></tr></thead>
                 <tbody id="pendientes-table"></tbody>
+                <tfoot id="pendientes-tfoot"></tfoot>
               </table>
             </div>
-            <div class="pager" id="pendientes-pager"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.5rem">
+              <div id="pend-count-label" style="font-size:.75rem;color:var(--muted)"></div>
+              <div class="pager" id="pendientes-pager"></div>
+            </div>
           </div>
         </div>
 
         <!-- HISTORIAL section -->
         <div id="caja-section-pagos" style="display:none">
           <div class="filter-bar">
-            <div class="search-wrap">
+            <div class="search-wrap" style="flex:1;min-width:180px">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input class="search-input" id="caja-search" type="text" placeholder="Buscar por folio, cajero…" oninput="filterCaja()">
+              <input class="search-input" id="caja-search" type="text" placeholder="Folio, placa, infractor o cajero…" oninput="filterCaja()">
             </div>
-            <input type="date" id="caja-fecha-filter" class="filter-select" onchange="filterCaja()">
+            <select class="filter-select" id="caja-periodo-filter" onchange="filterCajaByPeriodo()">
+              <option value="hoy">Hoy</option>
+              <option value="semana">Esta semana</option>
+              <option value="mes">Este mes</option>
+              <option value="custom">Fecha específica</option>
+            </select>
+            <input type="date" id="caja-fecha-filter" class="filter-select" onchange="filterCaja()" style="display:none">
             <select class="filter-select" id="caja-metodo-filter" onchange="filterCaja()">
               <option value="">Todos los métodos</option>
               <option value="efectivo">Efectivo</option>
               <option value="tarjeta">Tarjeta</option>
               <option value="transferencia">Transferencia</option>
             </select>
-            <button class="btn btn-ghost" onclick="exportExcel('pagos')" title="Exportar a Excel">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-              Excel
-            </button>
-            <button class="btn btn-ghost" onclick="printCorteCaja()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-              Corte de caja
+            <select class="filter-select" id="caja-cajero-filter" onchange="filterCaja()">
+              <option value="">Todos los cajeros</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="limpiarFiltrosCaja()" title="Limpiar">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
           <div class="card" style="padding:0">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Folio inf.</th><th>Fecha pago</th><th>Placa</th><th>Infractor</th><th>Monto orig.</th><th>Descuento</th><th>Cobrado</th><th>Método</th><th>Cajero</th><th></th></tr></thead>
+                <thead><tr><th>Folio inf.</th><th>Fecha pago</th><th>Placa</th><th>Infractor</th><th>Original</th><th>Descuento</th><th>Cobrado</th><th>Método</th><th>Cajero</th><th></th></tr></thead>
                 <tbody id="caja-table"></tbody>
+                <tfoot id="caja-tfoot"></tfoot>
               </table>
             </div>
-            <div class="pager" id="caja-pager"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.5rem">
+              <div id="caja-count-label" style="font-size:.75rem;color:var(--muted)"></div>
+              <div class="pager" id="caja-pager"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1367,32 +1407,37 @@
 
 <!-- MODAL: Registrar Pago -->
 <div class="modal-overlay" id="modal-pago">
-  <div class="modal" style="width:460px">
+  <div class="modal" style="width:500px">
     <div class="modal-header">
-      <div class="modal-title">Registrar pago de infracción</div>
+      <div class="modal-title">Registrar pago</div>
       <button class="modal-close" onclick="closeModal('modal-pago')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div id="pago-inf-info" style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;margin-bottom:1rem"></div>
+    <!-- Infracción info -->
+    <div id="pago-inf-info" style="background:var(--stone);border:1px solid var(--border);border-radius:10px;padding:1rem 1.1rem;margin-bottom:1.1rem"></div>
     <input type="hidden" id="pago-inf-id"/>
-    <div class="form-row">
-      <div class="form-field">
-        <label>Descuento aplicado</label>
+
+    <!-- Monto a cobrar prominente -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1rem">
+      <div class="form-field" style="flex:1;margin:0">
+        <label>Descuento</label>
         <select id="pago-descuento" class="form-select" onchange="calcularMontoPago()">
-          <option value="0">Sin descuento (100%)</option>
+          <option value="0">Sin descuento</option>
           <option value="20">20% — pronto pago</option>
         </select>
       </div>
-      <div class="form-field">
-        <label>Total a cobrar</label>
-        <div id="pago-monto-display" style="font-size:1.5rem;font-weight:800;color:var(--ac);padding:.3rem 0;font-family:'DM Mono',monospace">—</div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Total a cobrar</div>
+        <div id="pago-monto-display" style="font-size:2rem;font-weight:800;color:var(--green);line-height:1.1">—</div>
       </div>
     </div>
+
+    <!-- Método + Cajero -->
     <div class="form-row">
       <div class="form-field">
         <label>Método de pago</label>
-        <select id="pago-metodo" class="form-select">
+        <select id="pago-metodo" class="form-select" onchange="onMetodoChange()">
           <option value="efectivo">Efectivo</option>
-          <option value="tarjeta">Tarjeta</option>
+          <option value="tarjeta">Tarjeta bancaria</option>
           <option value="transferencia">Transferencia</option>
         </select>
       </div>
@@ -1401,15 +1446,30 @@
         <input id="pago-cajero" class="form-input" placeholder="Nombre del cajero" type="text"/>
       </div>
     </div>
+
+    <!-- Monto recibido (solo efectivo) -->
+    <div id="pago-efectivo-wrap" style="background:var(--green-bg);border:1px solid #A7F3D0;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+      <div class="form-row" style="margin:0">
+        <div class="form-field" style="margin:0">
+          <label style="color:var(--green)">Monto recibido ($)</label>
+          <input id="pago-recibido" class="form-input" type="number" min="0" placeholder="0.00" oninput="calcularCambio()" style="font-size:1rem;font-weight:700"/>
+        </div>
+        <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:.15rem">
+          <div style="font-size:.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Cambio</div>
+          <div id="pago-cambio-display" style="font-size:1.4rem;font-weight:800;color:var(--green)">—</div>
+        </div>
+      </div>
+    </div>
+
     <div class="form-field">
-      <label>Notas del pago</label>
-      <input id="pago-notas" class="form-input" placeholder="Observaciones opcionales" type="text"/>
+      <label>Notas del pago <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+      <input id="pago-notas" class="form-input" placeholder="Ej. pagó con billete de $500" type="text"/>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
-      <button type="button" id="pago-submit-btn" class="btn btn-primary" onclick="submitPago()">
+      <button type="button" id="pago-submit-btn" class="btn btn-primary" style="background:var(--green);border-color:var(--green)" onclick="submitPago()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-        Registrar pago
+        Confirmar pago
       </button>
     </div>
   </div>
