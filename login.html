@@ -181,7 +181,7 @@
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <script>
-  if (localStorage.getItem('tm_session')) window.location.replace('index.html');
+  if (localStorage.getItem('tm_session')) window.location.replace('/');
 
   const roleNames = { admin:'Director de Tránsito', supervisor:'Supervisor de Tránsito', oficial:'Operador de Tránsito' };
 
@@ -218,7 +218,7 @@
       rol:      data.rol,
       initials: data.iniciales || data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()
     }));
-    window.location.href = 'index.html';
+    window.location.href = '/';
   }
 </script>
 </body>

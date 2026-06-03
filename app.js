@@ -4,7 +4,7 @@
 
 // ── Auth (session stays in localStorage) ─────────────────
 const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
-if (!_session) window.location.replace('login.html');
+if (!_session) window.location.replace('/login');
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
 // ── Config cache (populated on first autoFillMonto call) ──
@@ -1806,7 +1806,7 @@ function initUI() {
 
 function logout() {
   localStorage.removeItem('tm_session');
-  window.location.replace('login.html');
+  window.location.replace('/login');
 }
 
 // ── initData (seed configuracion if empty) ────────────────
