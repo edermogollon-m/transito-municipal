@@ -245,45 +245,60 @@ async function renderDashboard() {
   const y = now.getFullYear(), m = now.getMonth()+1;
   const mesInicio = `${y}-${String(m).padStart(2,'0')}-01`;
   const mesFin = new Date(y, m, 1).toISOString().slice(0,10);
+  const today = now.toISOString().slice(0,10);
+
+  // Actualizar fecha en header
+  if ($('dash-fecha-hoy')) {
+    $('dash-fecha-hoy').textContent = now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  }
 
   const [
     { data: infAll },
     { data: infMes },
     { data: perAll },
-    { data: act }
+    { data: act },
+    { data: pagosHoy },
+    { count: gruaCount }
   ] = await Promise.all([
-    _sb.from('infracciones').select('id,monto,estado,fecha,tipo'),
-    _sb.from('infracciones').select('id,monto,estado').gte('fecha', mesInicio).lt('fecha', mesFin),
+    _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial'),
+    _sb.from('infracciones').select('id,monto,estado,tipo').gte('fecha', mesInicio).lt('fecha', mesFin),
     _sb.from('permisos').select('id,estado'),
-    _sb.from('actividad').select('*').order('ts',{ascending:false}).limit(8)
+    _sb.from('actividad').select('*').order('ts',{ascending:false}).limit(8),
+    _sb.from('pagos').select('monto_final').gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59'),
+    _sb.from('grua').select('*',{count:'exact',head:true}).eq('estado','retenido')
   ]);
 
   const inf = infAll || [], infM = infMes || [], per = perAll || [];
-
   const infMesCount = infM.length;
   const infPend = inf.filter(r=>r.estado==='pendiente').length;
   const perVig  = per.filter(r=>r.estado==='vigente').length;
-  const recMes  = infM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+r.monto,0);
+  const recMes  = infM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+Number(r.monto),0);
+  const recHoy  = (pagosHoy||[]).reduce((a,r)=>a+Number(r.monto_final),0);
+  const pagosHoyCount = (pagosHoy||[]).length;
 
   const pm = m===1?12:m-1, py = m===1?y-1:y;
   const pmInicio = `${py}-${String(pm).padStart(2,'0')}-01`;
   const { data: infPrevMes } = await _sb.from('infracciones').select('id,monto,estado').gte('fecha',pmInicio).lt('fecha',mesInicio);
   const prevM = infPrevMes || [];
   const prevCount = prevM.length;
-  const prevRec = prevM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+r.monto,0);
-  const delta = c => c>0 ? `<span class="delta-up">▲ ${c}</span>` : c<0 ? `<span class="delta-dn">▼ ${Math.abs(c)}</span>` : `<span style="color:var(--muted)">—</span>`;
+  const prevRec = prevM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+Number(r.monto),0);
+  const delta = c => c>0 ? `<span class="delta-up">▲ ${c} vs mes anterior</span>` : c<0 ? `<span class="delta-dn">▼ ${Math.abs(c)} vs mes anterior</span>` : `<span style="color:var(--muted)">igual al mes anterior</span>`;
 
   const mesNombre = now.toLocaleDateString('es-MX',{month:'long',year:'numeric'});
-  if($('s-inf-label'))  $('s-inf-label').textContent  = `Infracciones · ${mesNombre}`;
-  if($('s-rec-label'))  $('s-rec-label').textContent  = `Recaudación · ${mesNombre}`;
+  if($('s-inf-label'))  $('s-inf-label').textContent = `Infracciones · ${mesNombre}`;
+  if($('s-rec-label'))  $('s-rec-label').textContent = `Recaudación · ${mesNombre}`;
 
-  if($('s-inf'))        $('s-inf').textContent      = infMesCount;
-  if($('s-pend'))       $('s-pend').textContent     = infPend;
-  if($('s-per'))        $('s-per').textContent      = perVig;
-  if($('s-rec'))        $('s-rec').textContent      = fmt(recMes);
-  if($('s-inf-delta'))  $('s-inf-delta').innerHTML  = delta(infMesCount - prevCount);
-  if($('s-pend-delta')) $('s-pend-delta').innerHTML = delta(0);
-  if($('s-rec-delta'))  $('s-rec-delta').innerHTML  = delta(recMes - prevRec > 0 ? 1 : recMes - prevRec < 0 ? -1 : 0);
+  if($('s-inf'))        $('s-inf').textContent     = infMesCount;
+  if($('s-pend'))       $('s-pend').textContent    = infPend;
+  if($('s-per'))        $('s-per').textContent     = perVig;
+  if($('s-rec'))        $('s-rec').textContent     = fmt(recMes);
+  if($('s-hoy'))        $('s-hoy').textContent     = fmt(recHoy);
+  if($('s-hoy-count'))  $('s-hoy-count').textContent = pagosHoyCount ? `${pagosHoyCount} pago${pagosHoyCount>1?'s':''} registrado${pagosHoyCount>1?'s':''}` : 'Sin pagos hoy';
+  if($('s-grua'))       $('s-grua').textContent    = gruaCount ?? '—';
+  if($('s-grua-sub'))   $('s-grua-sub').textContent = gruaCount ? 'vehículos retenidos actualmente' : 'corralón vacío';
+  if($('s-inf-delta'))  $('s-inf-delta').innerHTML = delta(infMesCount - prevCount);
+  if($('s-pend-delta')) $('s-pend-delta').innerHTML = `<span style="color:var(--muted)">${infPend} sin cobrar en total</span>`;
+  if($('s-rec-delta'))  $('s-rec-delta').innerHTML = delta(recMes - prevRec);
   if($('s-per-delta'))  $('s-per-delta').textContent = '';
   if($('badge-pendientes')) $('badge-pendientes').textContent = infPend || '';
 
@@ -292,18 +307,19 @@ async function renderDashboard() {
   const estados = {};
   inf.forEach(r=>{ estados[r.estado]=(estados[r.estado]||0)+1; });
   const sorted = Object.entries(estados).sort((a,b)=>b[1]-a[1]);
-  const total = inf.length || 1;
+  const totalInf = inf.length || 1;
   let conic = '', deg = 0;
   const donutEl = $('main-donut');
   if (donutEl) {
     sorted.forEach(([k,v])=>{
-      const pct = v/total*360;
-      const color = estadoColors[k] || '#9CA3AF';
-      conic += `${color} ${deg}deg ${deg+pct}deg,`;
+      const pct = v/totalInf*360;
+      conic += `${estadoColors[k]||'#9CA3AF'} ${deg}deg ${deg+pct}deg,`;
       deg += pct;
     });
     donutEl.style.background = `conic-gradient(${conic.slice(0,-1)})`;
-    if($('donut-center-txt')) $('donut-center-txt').textContent = total;
+    if($('donut-center-txt')) {
+      $('donut-center-txt').innerHTML = `<div style="font-size:.9rem;font-weight:800;color:var(--ink)">${inf.length}</div><div style="font-size:.6rem;color:var(--muted)">total</div>`;
+    }
   }
   if($('dash-legend')) {
     $('dash-legend').innerHTML = sorted.map(([k,v])=>`
@@ -314,27 +330,52 @@ async function renderDashboard() {
       </div>`).join('');
   }
 
-  // Recent infractions table (5 cols: Folio, Fecha, Tipo, Monto, Estado)
-  const recent = [...inf].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).slice(0,5);
+  // Top tipos del mes
+  if ($('dash-tipos-body')) {
+    const tipoCount = {};
+    infM.forEach(r=>{ if(r.tipo) tipoCount[r.tipo]=(tipoCount[r.tipo]||0)+1; });
+    const topTipos = Object.entries(tipoCount).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    const maxT = topTipos[0]?.[1] || 1;
+    if ($('dash-tipos-mes')) $('dash-tipos-mes').textContent = mesNombre;
+    $('dash-tipos-body').innerHTML = topTipos.length ? topTipos.map(([t,c])=>`
+      <div style="margin-bottom:.65rem">
+        <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:.25rem">
+          <span style="color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${t}</span>
+          <span style="color:var(--muted);flex-shrink:0;margin-left:.4rem">${c}</span>
+        </div>
+        <div style="height:6px;background:var(--stone);border-radius:3px;overflow:hidden">
+          <div style="width:${Math.round(c/maxT*100)}%;height:100%;background:var(--ac);border-radius:3px;transition:width .4s"></div>
+        </div>
+      </div>`).join('') : '<div style="color:var(--muted);font-size:.8rem;padding:.25rem 0">Sin infracciones este mes</div>';
+  }
+
+  // Infracciones recientes (8 filas, con placa, clickeables)
+  const recent = [...inf].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).slice(0,8);
+  if($('dash-rec-sub')) $('dash-rec-sub').textContent = `Últimas ${recent.length} registradas`;
   if($('dash-tbody')) {
     $('dash-tbody').innerHTML = recent.length ? recent.map(r=>`
-      <tr>
-        <td class="mono">${r.folio||'—'}</td>
-        <td>${fmtDateShort(r.fecha)}</td>
-        <td>${r.tipo}</td>
-        <td>${fmt(r.monto)}</td>
+      <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
+        <td class="mono" style="font-size:.72rem">${r.folio||'—'}</td>
+        <td style="font-weight:600;font-family:monospace;font-size:.78rem">${r.placa||'—'}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</td>
+        <td style="font-weight:600">${fmt(r.monto)}</td>
         <td>${estadoBadge(r.estado)}</td>
       </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
   }
 
   // Activity feed
+  const actColors = { infraccion:'#DC2626', permiso:'#1A7A82', config:'#6B7280', info:'#2563EB', pago:'#059669' };
   if($('dash-activity')) {
     $('dash-activity').innerHTML = (act||[]).map(a=>`
       <div class="act-row">
-        <span class="act-dot act-dot-${a.tipo||'info'}"></span>
-        <span class="act-txt">${a.texto}</span>
-        <span class="act-time">${fmtDateShort(a.ts)}</span>
-      </div>`).join('') || '<div style="color:var(--muted);font-size:.8rem">Sin actividad reciente</div>';
+        <span class="act-dot" style="background:${actColors[a.tipo]||'#9CA3AF'}33;color:${actColors[a.tipo]||'#9CA3AF'}">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
+        </span>
+        <div style="flex:1;min-width:0">
+          <div class="act-txt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.texto}</div>
+          <div class="act-time">${fmtDateShort(a.ts)}</div>
+        </div>
+      </div>`).join('') || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sin actividad reciente</div>';
   }
 
   renderBarChart(infAll);
@@ -412,6 +453,7 @@ async function renderBarChart(infAll) {
   if (!el) return;
   const yearEl = $('dash-chart-year');
   const year = yearEl ? parseInt(yearEl.textContent)||new Date().getFullYear() : new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
   const inf = infAll || [];
   const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const counts = Array(12).fill(0);
@@ -420,11 +462,15 @@ async function renderBarChart(infAll) {
     if (d.getFullYear()===year) counts[d.getMonth()]++;
   });
   const max = Math.max(...counts, 1);
-  el.innerHTML = counts.map((c,i)=>`
-    <div class="bar-col">
-      <div class="bar-fill" style="height:${Math.round(c/max*100)}%" title="${c} infracciones"></div>
-      <div class="bar-label">${months[i]}</div>
-    </div>`).join('');
+  el.innerHTML = counts.map((c,i)=>{
+    const isCurrent = (i === currentMonth && year === new Date().getFullYear());
+    const h = Math.max(Math.round(c/max*100), c > 0 ? 4 : 0);
+    return `
+    <div class="bar-col" title="${months[i]}: ${c} infracción${c!==1?'es':''}" onclick="navigate('calendario')">
+      <div class="bar-val ${isCurrent?'current':''}">${c > 0 ? c : ''}</div>
+      <div class="bar-fill ${isCurrent?'current':''}" style="height:${h}%"></div>
+      <div class="bar-label ${isCurrent?'current':''}">${months[i]}</div>
+    </div>`}).join('');
 }
 
 // ── Infracciones ──────────────────────────────────────────

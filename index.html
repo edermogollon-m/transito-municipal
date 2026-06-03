@@ -62,8 +62,11 @@
     .view { display:none; }
     .view.active { display:block; }
 
+    /* QUICK ACTIONS */
+    .quick-actions { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.2rem; }
+
     /* STATS */
-    .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1.5rem; }
+    .stats-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem; }
     .stat-card { background:var(--white); border-radius:var(--r); border:1px solid var(--border); padding:1.2rem 1.3rem; display:flex; flex-direction:column; gap:.6rem; }
     .stat-top { display:flex; align-items:flex-start; justify-content:space-between; }
     .stat-icon { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -132,11 +135,15 @@
     .donut-legend { display:flex; flex-direction:column; gap:.5rem; }
     .legend-item { display:flex; align-items:center; gap:.5rem; font-size:.75rem; color:var(--text); }
     .legend-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .bar-chart { display:flex; align-items:flex-end; gap:.5rem; height:80px; margin:.5rem 0; }
-    .bar-col { display:flex; flex-direction:column; align-items:center; gap:.3rem; flex:1; }
-    .bar { width:100%; border-radius:4px 4px 0 0; background:var(--ac-gl); transition:background .2s; cursor:default; min-height:4px; }
-    .bar:hover { background:var(--ac); }
+    .bar-chart { display:flex; align-items:flex-end; gap:.4rem; height:130px; margin:.5rem 0; }
+    .bar-col { display:flex; flex-direction:column; align-items:center; gap:.25rem; flex:1; cursor:default; }
+    .bar-col:hover .bar-fill { opacity:.8; }
+    .bar-fill { width:100%; border-radius:4px 4px 0 0; background:var(--ac-gl); transition:all .2s; min-height:4px; }
+    .bar-fill.current { background:var(--ac); }
+    .bar-val { font-size:.58rem; font-weight:700; color:var(--muted); min-height:.85rem; }
+    .bar-val.current { color:var(--ac); }
     .bar-label { font-size:.6rem; color:var(--subtle); }
+    .bar-label.current { color:var(--ac); font-weight:700; }
 
     /* PAGE HEADER */
     .page-header { margin-bottom:1.4rem; }
@@ -169,6 +176,7 @@
     /* Tablet (≤1024px) */
     @media (max-width:1024px) {
       .stats-grid { grid-template-columns:repeat(2,1fr); }
+      .quick-actions { gap:.4rem; }
       .dash-grid   { grid-template-columns:1fr; }
       .ticket-split { grid-template-columns:1fr; height:auto; }
     }
@@ -505,6 +513,40 @@
 
       <!-- DASHBOARD -->
       <div class="view active" id="view-dashboard">
+
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;flex-wrap:wrap;gap:.75rem">
+          <div>
+            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Panel general</h2>
+            <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem" id="dash-fecha-hoy"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="renderDashboard()" title="Actualizar datos">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            Actualizar
+          </button>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+          <button class="btn btn-primary" onclick="openNewInfraccion()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nueva infracción
+          </button>
+          <button class="btn btn-ghost" onclick="openModal('modal-buscar-pago')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            Cobrar / Escanear QR
+          </button>
+          <button class="btn btn-ghost" onclick="navigate('caja')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Pendientes de pago
+          </button>
+          <button class="btn btn-ghost" onclick="printCorteCaja()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Corte de caja
+          </button>
+        </div>
+
+        <!-- 6 stat cards -->
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-top">
@@ -519,8 +561,28 @@
           <div class="stat-card">
             <div class="stat-top">
               <div>
+                <div class="stat-num" id="s-rec">—</div>
+                <div class="stat-label" id="s-rec-label">Recaudación este mes</div>
+              </div>
+              <div class="stat-icon" style="background:rgba(26,122,130,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+            </div>
+            <div class="stat-delta up" id="s-rec-delta"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top">
+              <div>
+                <div class="stat-num" id="s-hoy">—</div>
+                <div class="stat-label">Cobrado hoy</div>
+              </div>
+              <div class="stat-icon" style="background:var(--green-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
+            </div>
+            <div class="stat-delta" id="s-hoy-count" style="color:var(--muted)"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top">
+              <div>
                 <div class="stat-num" id="s-pend">—</div>
-                <div class="stat-label" id="s-pend-label">Pendientes · acumulado total</div>
+                <div class="stat-label" id="s-pend-label">Pendientes · acumulado</div>
               </div>
               <div class="stat-icon" style="background:#FFFBEB"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
             </div>
@@ -530,52 +592,59 @@
             <div class="stat-top">
               <div>
                 <div class="stat-num" id="s-per">—</div>
-                <div class="stat-label" id="s-per-label">Permisos vigentes · activos</div>
+                <div class="stat-label" id="s-per-label">Permisos vigentes</div>
               </div>
               <div class="stat-icon" style="background:rgba(26,122,130,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
             </div>
             <div class="stat-delta neutral" id="s-per-delta"></div>
           </div>
-          <div class="stat-card">
+          <div class="stat-card" style="cursor:pointer" onclick="navigate('grua')" title="Ver corralón">
             <div class="stat-top">
               <div>
-                <div class="stat-num" id="s-rec">—</div>
-                <div class="stat-label" id="s-rec-label">Recaudación este mes</div>
+                <div class="stat-num" id="s-grua">—</div>
+                <div class="stat-label">En corralón</div>
               </div>
-              <div class="stat-icon" style="background:rgba(26,122,130,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+              <div class="stat-icon" style="background:#FEF2F2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
             </div>
-            <div class="stat-delta up" id="s-rec-delta"></div>
+            <div class="stat-delta" style="color:var(--muted);font-size:.7rem" id="s-grua-sub"></div>
           </div>
         </div>
 
         <div id="alertas-panel" class="alertas-grid" style="display:none"></div>
         <div id="dash-alerts"></div>
+
         <div class="dash-grid">
+          <!-- Infracciones recientes -->
           <div class="card">
             <div class="card-header">
               <div>
                 <div class="card-title">Infracciones recientes</div>
-                <div class="card-subtitle">Últimas registradas</div>
+                <div class="card-subtitle" id="dash-rec-sub">Últimas registradas</div>
               </div>
-              <button class="btn btn-ghost btn-sm" onclick="navigate('infracciones',document.querySelectorAll('.nav-item')[1])">Ver todas</button>
+              <button class="btn btn-ghost btn-sm" onclick="navigate('infracciones')">Ver todas</button>
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
                 <tbody id="dash-tbody"></tbody>
               </table>
             </div>
           </div>
 
+          <!-- Columna derecha -->
           <div>
-            <div class="card">
-              <div class="card-header"><div class="card-title">Infracciones por estado</div></div>
+            <div class="card" style="margin-bottom:1rem">
+              <div class="card-header"><div class="card-title">Por estado</div></div>
               <div class="donut-wrap">
                 <div class="donut" id="main-donut" style="background:conic-gradient(var(--amber) 0% 40%,var(--blue) 40% 65%,var(--green) 65% 100%)">
-                  <div class="donut-center" id="donut-center-txt">0<br>total</div>
+                  <div class="donut-center" id="donut-center-txt">—</div>
                 </div>
                 <div class="donut-legend" id="dash-legend"></div>
               </div>
+            </div>
+            <div class="card" style="margin-bottom:1rem">
+              <div class="card-header"><div class="card-title">Tipos más frecuentes</div><div class="card-subtitle" id="dash-tipos-mes"></div></div>
+              <div id="dash-tipos-body"></div>
             </div>
             <div class="card">
               <div class="card-header"><div class="card-title">Actividad reciente</div></div>
@@ -584,9 +653,13 @@
           </div>
         </div>
 
+        <!-- Gráfica anual -->
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Infracciones por mes · <span id="dash-chart-year">2026</span></div><div class="card-subtitle">Comparativo anual</div></div>
+            <div>
+              <div class="card-title">Infracciones por mes · <span id="dash-chart-year">2026</span></div>
+              <div class="card-subtitle">Comparativo anual — haz clic en la barra para filtrar</div>
+            </div>
           </div>
           <div class="bar-chart" id="dash-bar-chart"></div>
         </div>
