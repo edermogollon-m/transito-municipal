@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Iniciar sesión — Tránsito Municipal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --ac: #1A7A82; --ac-lt: #229099; --ac-gl: rgba(26,122,130,.15);
+      --dark: #161E28; --border: #E5E7EB; --ink: #1A1F2B;
+      --text: #374151; --muted: #6B7280; --stone: #F9FAFB;
+      --red: #DC2626; --red-bg: #FEF2F2; --r: 10px;
+    }
+    html, body { height: 100%; font-family: 'DM Sans', sans-serif; background: var(--dark); }
+
+    .login-page {
+      min-height: 100vh; display: flex;
+      background: linear-gradient(135deg, #161E28 0%, #1D2A35 50%, #122229 100%);
+    }
+
+    /* Left panel */
+    .login-panel {
+      width: 420px; flex-shrink: 0;
+      background: #fff; display: flex; flex-direction: column;
+      justify-content: center; padding: 3rem 2.5rem;
+      box-shadow: 4px 0 40px rgba(0,0,0,.35);
+    }
+
+    .login-logo { display: flex; align-items: center; gap: .75rem; margin-bottom: 2.5rem; }
+    .logo-badge {
+      width: 42px; height: 42px; border-radius: 10px; background: var(--ac);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .75rem; font-weight: 800; color: #fff; letter-spacing: .04em;
+    }
+    .logo-info { line-height: 1.25; }
+    .logo-title { font-size: .95rem; font-weight: 700; color: var(--ink); }
+    .logo-sub   { font-size: .72rem; color: var(--muted); }
+
+    h1 { font-size: 1.5rem; font-weight: 700; color: var(--ink); margin-bottom: .4rem; }
+    .login-desc { font-size: .85rem; color: var(--muted); margin-bottom: 2rem; line-height: 1.5; }
+
+    .form-field { margin-bottom: 1.1rem; }
+    .form-field label { display: block; font-size: .78rem; font-weight: 600; color: var(--ink); margin-bottom: .4rem; }
+    .form-input {
+      width: 100%; padding: .65rem .9rem; border: 1.5px solid var(--border);
+      border-radius: var(--r); font-family: 'DM Sans', sans-serif;
+      font-size: .85rem; color: var(--ink); background: var(--stone);
+      outline: none; transition: border-color .15s, box-shadow .15s;
+    }
+    .form-input:focus { border-color: var(--ac); box-shadow: 0 0 0 3px var(--ac-gl); background: #fff; }
+
+    .btn-login {
+      width: 100%; padding: .75rem; border-radius: var(--r); border: none;
+      background: var(--ac); color: #fff; font-family: 'DM Sans', sans-serif;
+      font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s;
+      margin-top: .5rem; letter-spacing: .01em;
+    }
+    .btn-login:hover { background: var(--ac-lt); }
+    .btn-login:active { transform: translateY(1px); }
+
+    .error-msg {
+      background: var(--red-bg); color: var(--red); border: 1px solid #FECACA;
+      border-radius: 8px; padding: .65rem .9rem; font-size: .8rem; font-weight: 600;
+      margin-bottom: 1.2rem; display: none;
+    }
+    .error-msg.show { display: block; }
+
+    .hint {
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
+      font-size: .75rem; color: var(--muted); line-height: 1.7;
+    }
+    .hint strong { color: var(--ink); font-weight: 600; }
+
+    /* Right decorative panel */
+    .login-deco {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 3rem;
+      position: relative; overflow: hidden;
+    }
+    .deco-content { text-align: center; position: relative; z-index: 1; }
+    .deco-icon {
+      width: 80px; height: 80px; border-radius: 20px;
+      background: rgba(26,122,130,.2); border: 1px solid rgba(26,122,130,.3);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.5rem;
+    }
+    .deco-title { font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: .75rem; line-height: 1.3; }
+    .deco-sub { font-size: .9rem; color: rgba(255,255,255,.45); line-height: 1.6; max-width: 340px; }
+    .deco-modules {
+      display: flex; gap: .75rem; margin-top: 2rem; flex-wrap: wrap; justify-content: center;
+    }
+    .deco-chip {
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 20px; padding: .4rem .9rem; font-size: .75rem; color: rgba(255,255,255,.55);
+    }
+    .deco-circles {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .deco-circles::before, .deco-circles::after {
+      content: ''; position: absolute; border-radius: 50%;
+      border: 1px solid rgba(26,122,130,.15);
+    }
+    .deco-circles::before { width: 500px; height: 500px; top: -100px; right: -150px; }
+    .deco-circles::after  { width: 300px; height: 300px; bottom: -50px; left: -50px; }
+
+    @media (max-width: 700px) {
+      .login-deco { display: none; }
+      .login-panel { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<div class="login-page">
+
+  <!-- Form panel -->
+  <div class="login-panel">
+    <div class="login-logo">
+      <div class="logo-badge">HCE</div>
+      <div class="logo-info">
+        <div class="logo-title">Tránsito Municipal</div>
+        <div class="logo-sub">Sistema de Movilidad · HCE Consultoría</div>
+      </div>
+    </div>
+
+    <h1>Bienvenido</h1>
+    <p class="login-desc">Ingresa tus credenciales para acceder al sistema de gestión de tránsito y movilidad municipal.</p>
+
+    <div class="error-msg" id="error-msg">Usuario o contraseña incorrectos. Intenta de nuevo.</div>
+
+    <form onsubmit="doLogin(event)">
+      <div class="form-field">
+        <label for="username">Usuario</label>
+        <input id="username" class="form-input" type="text" placeholder="Ej. admin" autocomplete="username" required/>
+      </div>
+      <div class="form-field">
+        <label for="password">Contraseña</label>
+        <input id="password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <button class="btn-login" type="submit">Iniciar sesión</button>
+    </form>
+
+    <div class="hint">
+      <strong>Accesos de prueba:</strong><br>
+      Director — <strong>admin</strong> / <strong>admin123</strong><br>
+      Supervisor — <strong>supervisor</strong> / <strong>super789</strong><br>
+      Operador — <strong>operador</strong> / <strong>oper456</strong>
+    </div>
+  </div>
+
+  <!-- Decorative panel -->
+  <div class="login-deco">
+    <div class="deco-circles"></div>
+    <div class="deco-content">
+      <div class="deco-icon">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="1.5">
+          <rect x="1" y="3" width="15" height="13" rx="2"/>
+          <path d="M16 8h4l3 5v3h-7V8z"/>
+          <circle cx="5.5" cy="18.5" r="2.5"/>
+          <circle cx="18.5" cy="18.5" r="2.5"/>
+        </svg>
+      </div>
+      <div class="deco-title">Sistema de Tránsito<br>y Movilidad Municipal</div>
+      <div class="deco-sub">Gestión integral de infracciones, registro vehicular, licencias de conducir y permisos de circulación.</div>
+      <div class="deco-modules">
+        <div class="deco-chip">Infracciones</div>
+        <div class="deco-chip">Vehículos</div>
+        <div class="deco-chip">Licencias</div>
+        <div class="deco-chip">Permisos</div>
+        <div class="deco-chip">Reportes</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const USERS = [
+    { user:'admin',      pass:'admin123',  name:'Carlos Alvarado',   role:'Director de Tránsito',    initials:'CA' },
+    { user:'operador',   pass:'oper456',   name:'Laura Sánchez T.',   role:'Operador de Tránsito',    initials:'LS' },
+    { user:'supervisor', pass:'super789',  name:'Miguel Fuentes R.',  role:'Supervisor de Tránsito',  initials:'MF' },
+  ];
+
+  // Redirect if already logged in
+  if (localStorage.getItem('tm_session')) window.location.replace('index.html');
+
+  function doLogin(e) {
+    e.preventDefault();
+    const user = document.getElementById('username').value.trim();
+    const pass = document.getElementById('password').value;
+    const found = USERS.find(u => u.user === user && u.pass === pass);
+    if (found) {
+      localStorage.setItem('tm_session', JSON.stringify(found));
+      window.location.href = 'index.html';
+    } else {
+      document.getElementById('error-msg').classList.add('show');
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    }
+  }
+</script>
+</body>
+</html>
