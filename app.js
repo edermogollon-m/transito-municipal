@@ -546,6 +546,10 @@ async function viewDetail(tabla, id) {
       </select>
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('permisos','${r.id}')">Guardar estado</button>
       <button class="btn btn-secondary btn-sm" onclick="editPermiso('${r.id}');closeModal('modal-detail')">Editar</button>
+      <button class="btn btn-ghost btn-sm" onclick="printPermiso('${r.id}')" title="Imprimir permiso en hoja carta">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir permiso
+      </button>
       <button class="btn btn-danger btn-sm" onclick="deleteDetail('permisos','${r.id}')">Eliminar</button>
     </div>`;
   openModal('modal-detail');
@@ -809,6 +813,220 @@ async function printInfraccion(id) {
   const win = window.open('', '_blank', 'width=870,height=960');
   win.document.write(html);
   win.document.close();
+}
+
+// ── Permiso — impresión hoja carta ───────────────────────
+async function printPermiso(id) {
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('permisos').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!r) return;
+
+  const mun      = cfg?.municipio || 'Municipio';
+  const estMun   = cfg?.estado    || '';
+  const director = cfg?.director  || 'Director de Tránsito';
+  const correo   = cfg?.correo    || '';
+
+  const hoy      = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const inicioStr = r.inicio      ? new Date(r.inicio).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+  const vencStr   = r.vencimiento ? new Date(r.vencimiento).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+
+  const vigente  = r.estado === 'vigente';
+  const estadoLabel = { vigente:'VIGENTE', vencido:'VENCIDO', 'por-vencer':'POR VENCER', suspendido:'SUSPENDIDO' }[r.estado] || r.estado.toUpperCase();
+  const estadoColor = { vigente:'#059669', vencido:'#DC2626', 'por-vencer':'#D97706', suspendido:'#DC2626' }[r.estado] || '#6B7280';
+
+  const ref = (r.num||'PER').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Permiso ${r.num||''} — ${r.titular}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;background:#f0f0f0;color:#222;font-size:11px}
+    .page{width:215.9mm;min-height:279.4mm;margin:0 auto;background:#fff;padding:12mm 14mm;display:flex;flex-direction:column;gap:0}
+    .no-print{text-align:center;padding:8px 0 12px;background:#f0f0f0}
+    .no-print button{padding:7px 20px;background:#1A7A82;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;margin:0 4px}
+    .no-print button:hover{background:#229099}
+
+    /* HEADER */
+    .header{display:flex;align-items:center;gap:8mm;padding-bottom:5mm;border-bottom:3px solid #1A7A82;margin-bottom:5mm}
+    .seal{width:22mm;height:22mm;border-radius:50%;border:2.5px solid #1A7A82;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#1A7A82;flex-shrink:0;letter-spacing:.5px}
+    .header-center{flex:1}
+    .gov-line{font-size:8.5px;font-weight:700;color:#1A7A82;letter-spacing:.8px;text-transform:uppercase}
+    .dept-line{font-size:15px;font-weight:900;color:#1A1F2B;margin:2px 0;letter-spacing:.3px}
+    .state-line{font-size:9px;color:#6B7280}
+    .doc-type{text-align:right;flex-shrink:0}
+    .doc-type-label{font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.8px}
+    .doc-num{font-size:18px;font-weight:900;color:#1A7A82;font-family:'Courier New',monospace;letter-spacing:2px;margin-top:2px}
+
+    /* STATUS STAMP */
+    .stamp-wrap{display:flex;justify-content:flex-end;margin-bottom:3mm}
+    .stamp{display:inline-flex;align-items:center;justify-content:center;border:3px solid ${estadoColor};color:${estadoColor};font-size:16px;font-weight:900;letter-spacing:3px;padding:3mm 6mm;border-radius:4px;transform:rotate(-4deg);opacity:.85}
+
+    /* TITLE BAR */
+    .title-bar{background:#1A7A82;color:#fff;text-align:center;padding:3.5mm 0;margin-bottom:6mm}
+    .title-bar h1{font-size:13px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase}
+    .title-bar p{font-size:9px;margin-top:1px;opacity:.85}
+
+    /* SECTIONS */
+    .section{margin-bottom:5mm}
+    .sec-title{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#1A7A82;border-bottom:1.5px solid #1A7A82;padding-bottom:1.5mm;margin-bottom:3mm}
+    .fields{display:flex;flex-wrap:wrap;gap:2.5mm 4mm}
+    .field{display:flex;flex-direction:column;min-width:55mm}
+    .field.w-full{width:100%;flex:1 0 100%}
+    .field.w-half{flex:1;min-width:80mm}
+    .field label{font-size:7px;text-transform:uppercase;letter-spacing:.5px;color:#9CA3AF;margin-bottom:1mm}
+    .field span{font-size:11px;color:#1A1F2B;font-weight:500;border-bottom:1px solid #E5E7EB;padding-bottom:1mm}
+    .field span.bold{font-weight:800;font-size:13px}
+    .field span.mono{font-family:'Courier New',monospace;font-size:10px}
+    .field span.big{font-size:14px;font-weight:900;color:#1A7A82}
+
+    /* VALIDITY BOX */
+    .validity-box{display:flex;gap:4mm;margin-bottom:5mm}
+    .validity-item{flex:1;border:1.5px solid #E5E7EB;border-radius:5px;padding:3mm 4mm;text-align:center}
+    .validity-item.start{border-color:#1A7A82;background:#f0fafa}
+    .validity-item.end{border-color:${vigente?'#059669':'#DC2626'};background:${vigente?'#f0fdf4':'#fef2f2'}}
+    .vi-label{font-size:7px;text-transform:uppercase;letter-spacing:.8px;color:#6B7280;margin-bottom:1.5mm}
+    .vi-date{font-size:13px;font-weight:900;color:#1A1F2B}
+    .vi-sub{font-size:8px;color:#6B7280;margin-top:.5mm}
+
+    /* TERMS */
+    .terms{background:#F9FAFB;border:1px solid #E5E7EB;border-radius:4px;padding:3mm 4mm;margin-bottom:5mm}
+    .terms p{font-size:8px;color:#6B7280;line-height:1.6;text-align:justify}
+
+    /* SIGNATURES */
+    .signatures{display:flex;gap:12mm;margin-top:auto;padding-top:6mm}
+    .sig-block{flex:1;text-align:center}
+    .sig-line{height:10mm;border-bottom:1.5px solid #374151;margin-bottom:1.5mm}
+    .sig-name{font-size:9px;font-weight:700;color:#1A1F2B}
+    .sig-title{font-size:8px;color:#6B7280}
+
+    /* FOOTER */
+    .footer{text-align:center;font-size:7.5px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:3mm;margin-top:4mm}
+    .barcode-ref{font-family:'Courier New',monospace;font-size:8px;letter-spacing:3px;color:#374151;margin:2mm 0;display:block;text-align:center}
+
+    @media print{
+      body{background:#fff}
+      .no-print{display:none!important}
+      .page{margin:0;padding:12mm 14mm;width:100%}
+      @page{margin:0;size:letter portrait}
+    }
+  </style></head><body>
+  <div class="no-print">
+    <button onclick="window.print()">Imprimir permiso</button>
+    <button onclick="window.close()">Cerrar</button>
+  </div>
+  <div class="page">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="seal">HCE</div>
+      <div class="header-center">
+        <div class="gov-line">Gobierno Municipal · ${mun}</div>
+        <div class="dept-line">Dirección de Tránsito y Movilidad</div>
+        <div class="state-line">${estMun}</div>
+      </div>
+      <div class="doc-type">
+        <div class="doc-type-label">Núm. de permiso</div>
+        <div class="doc-num">${r.num||'—'}</div>
+      </div>
+    </div>
+
+    <!-- STAMP + TITLE -->
+    <div class="stamp-wrap"><div class="stamp">${estadoLabel}</div></div>
+    <div class="title-bar">
+      <h1>Permiso de Circulación</h1>
+      <p>${r.tipo}</p>
+    </div>
+
+    <!-- TITULAR -->
+    <div class="section">
+      <div class="sec-title">Datos del titular</div>
+      <div class="fields">
+        <div class="field w-full"><label>Nombre completo / Razón social</label><span class="bold">${r.titular}</span></div>
+      </div>
+    </div>
+
+    <!-- VEHÍCULO -->
+    <div class="section">
+      <div class="sec-title">Datos del vehículo y ruta</div>
+      <div class="fields">
+        <div class="field"><label>Placas del vehículo</label><span class="mono bold">${r.placa||'—'}</span></div>
+        <div class="field"><label>Tipo de permiso</label><span>${r.tipo}</span></div>
+        <div class="field w-full"><label>Ruta / Zona de circulación autorizada</label><span class="big">${r.ruta||'—'}</span></div>
+      </div>
+    </div>
+
+    <!-- VIGENCIA -->
+    <div class="section">
+      <div class="sec-title">Periodo de vigencia</div>
+      <div class="validity-box">
+        <div class="validity-item start">
+          <div class="vi-label">Fecha de inicio</div>
+          <div class="vi-date">${inicioStr}</div>
+          <div class="vi-sub">Inicio de validez</div>
+        </div>
+        <div class="validity-item end">
+          <div class="vi-label">Fecha de vencimiento</div>
+          <div class="vi-date">${vencStr}</div>
+          <div class="vi-sub">${vigente?'Permiso vigente':'Vence / venció esta fecha'}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TERMS -->
+    <div class="terms">
+      <p><strong>Condiciones del permiso:</strong> El presente permiso de circulación es personal e intransferible y autoriza
+      exclusivamente la operación del vehículo con placas <strong>${r.placa||'indicadas'}</strong> en la ruta o zona señalada.
+      Queda estrictamente prohibido ceder, transferir o hacer uso del mismo para fines distintos a los aquí autorizados.
+      La dirección de Tránsito y Movilidad de ${mun} se reserva el derecho de suspender o cancelar este permiso en caso de
+      incumplimiento de la normativa municipal vigente. El titular deberá portar este documento en todo momento durante la
+      operación del vehículo. Vigencia sujeta a revisión periódica conforme a la Ley de Tránsito Municipal.</p>
+    </div>
+
+    <!-- EMISSION INFO -->
+    <div class="section">
+      <div class="sec-title">Información de emisión</div>
+      <div class="fields">
+        <div class="field"><label>Fecha de expedición</label><span>${hoy}</span></div>
+        <div class="field"><label>Estado del permiso</label><span style="color:${estadoColor};font-weight:700">${estadoLabel}</span></div>
+        ${correo?`<div class="field"><label>Contacto</label><span>${correo}</span></div>`:''}
+      </div>
+    </div>
+
+    <!-- REFERENCE -->
+    <div class="footer">
+      <span class="barcode-ref">${ref}</span>
+      Permiso expedido por la Dirección de Tránsito y Movilidad de ${mun}, ${estMun}.
+      Para verificar la autenticidad de este documento comuníquese con la dirección.
+    </div>
+
+    <!-- SIGNATURES -->
+    <div class="signatures">
+      <div class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-name">${director}</div>
+        <div class="sig-title">Director de Tránsito y Movilidad</div>
+        <div class="sig-title">Gobierno Municipal de ${mun}</div>
+      </div>
+      <div class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-name">${r.titular}</div>
+        <div class="sig-title">Titular del permiso</div>
+        <div class="sig-title">Firma de recibido</div>
+      </div>
+      <div class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-name" style="visibility:hidden">.</div>
+        <div class="sig-title">Sello oficial</div>
+        <div class="sig-title">Dirección de Tránsito</div>
+      </div>
+    </div>
+  </div>
+  <script>setTimeout(()=>window.print(),600)<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  if (win) { win.document.write(html); win.document.close(); }
 }
 
 // ── Ticket 80mm (print functions) ────────────────────────
