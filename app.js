@@ -5,6 +5,7 @@
 // ── Auth (session stays in localStorage) ─────────────────
 const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
 if (!_session) window.location.replace('login.html');
+const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
 // ── Config cache (populated on first autoFillMonto call) ──
 let _cachedConfig = null;
@@ -117,7 +118,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios'];
 
 function navigate(view, btn) {
   VIEWS.forEach(v => {
@@ -131,14 +132,17 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
   if (view==='infracciones')  renderInfracciones();
   if (view==='permisos')      renderPermisos();
   if (view==='configuracion') loadConfig();
+  if (view==='caja')          renderCaja();
+  if (view==='oficiales')     renderOficiales();
+  if (view==='usuarios')      renderUsuarios();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -236,6 +240,34 @@ async function renderDashboard() {
   }
 
   renderBarChart(infAll);
+
+  // Alertas: permisos por vencer y multas por prescribir
+  const en30 = new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+  const hace25 = new Date(Date.now()-25*86400000).toISOString();
+  const todayStr = new Date().toISOString().slice(0,10);
+  const [{ data: permAlerta }, { data: infAlerta }] = await Promise.all([
+    _sb.from('permisos').select('id,num,titular,vencimiento').in('estado',['vigente','por-vencer']).lte('vencimiento',en30).gte('vencimiento',todayStr),
+    _sb.from('infracciones').select('id,folio,placa').eq('estado','pendiente').lt('fecha',hace25)
+  ]);
+  const alertsEl = $('dash-alerts');
+  if (alertsEl) {
+    let html = '';
+    if (permAlerta && permAlerta.length) {
+      const btn = `<button class="btn btn-ghost btn-sm" onclick="navigate('permisos',document.querySelector('.nav-item[onclick*=permisos]'))">Ver permisos</button>`;
+      html += `<div style="background:var(--amber-bg);border:1px solid #FDE68A;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#92400E">${permAlerta.length} permiso${permAlerta.length>1?'s':''} vence${permAlerta.length>1?'n':''} en los próximos 30 días</div>
+        <div style="font-size:.73rem;color:#D97706">${permAlerta.slice(0,2).map(p=>`${p.num||'—'} — ${p.titular}`).join(' · ')}${permAlerta.length>2?' · …':''}</div></div>${btn}</div>`;
+    }
+    if (infAlerta && infAlerta.length) {
+      const btn2 = `<button class="btn btn-ghost btn-sm" onclick="navigate('infracciones',document.querySelector('.nav-item[onclick*=infracciones]'))">Ver infracciones</button>`;
+      html += `<div style="background:var(--red-bg);border:1px solid #FECACA;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#991B1B">${infAlerta.length} infracción${infAlerta.length>1?'es':''} pendiente${infAlerta.length>1?'s':''} con más de 25 días sin pagar</div>
+        <div style="font-size:.73rem;color:#DC2626">${infAlerta.slice(0,2).map(i=>`${i.folio||'—'} (${i.placa})`).join(' · ')}${infAlerta.length>2?' · …':''}</div></div>${btn2}</div>`;
+    }
+    alertsEl.innerHTML = html;
+  }
 }
 
 async function renderBarChart(infAll) {
@@ -515,6 +547,10 @@ async function viewDetail(tabla, id) {
         <option value="cancelada"  ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
         <option value="vencida"    ${r.estado==='vencida'?'selected':''}>Vencida</option>
       </select>
+      ${r.estado==='pendiente'?`<button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green)" onclick="openRegistrarPago('${r.id}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Registrar pago
+      </button>`:''}
       <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
       <button class="btn btn-secondary btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')" title="Imprimir ticket 80mm para el infractor">
@@ -1029,6 +1065,375 @@ async function printPermiso(id) {
   if (win) { win.document.write(html); win.document.close(); }
 }
 
+// ── Vencimientos automáticos ──────────────────────────────
+async function checkAndUpdateVencidos() {
+  const today = new Date().toISOString().slice(0,10);
+  const hace30 = new Date(Date.now()-30*86400000).toISOString();
+  await Promise.all([
+    _sb.from('permisos').update({estado:'vencido'}).eq('estado','vigente').lt('vencimiento', today),
+    _sb.from('infracciones').update({estado:'vencida'}).eq('estado','pendiente').lt('fecha', hace30)
+  ]);
+}
+
+// ── Historial por placa ───────────────────────────────────
+async function checkPlacaHistory() {
+  const placa = ($('inf-placa')||{}).value?.trim().toUpperCase();
+  const panel = $('placa-history');
+  if (!panel) return;
+  if (!placa || placa.length < 3) { panel.innerHTML = ''; return; }
+  const { data } = await _sb.from('infracciones')
+    .select('id,folio,fecha,tipo,estado,monto').eq('placa', placa)
+    .order('fecha',{ascending:false}).limit(5);
+  const prevId = $('inf-id')?.value;
+  const prev = (data||[]).filter(r => String(r.id) !== String(prevId));
+  if (!prev.length) { panel.innerHTML = ''; return; }
+  panel.innerHTML = `
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:.75rem 1rem;margin:.4rem 0 .6rem">
+      <div style="font-size:.78rem;font-weight:700;color:#DC2626;margin-bottom:.45rem">
+        ⚠ Placa con ${prev.length} infracción${prev.length>1?'es':''} previa${prev.length>1?'s':''} — REINCIDENTE
+      </div>
+      ${prev.slice(0,3).map(r=>`
+        <div style="font-size:.73rem;color:#374151;display:flex;gap:.6rem;margin-bottom:.2rem;flex-wrap:wrap;align-items:center">
+          <span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span>
+          <span>${fmtDateShort(r.fecha)}</span>
+          <span>${r.tipo}</span>
+          <span style="font-weight:600">${fmt(r.monto)}</span>
+          ${estadoBadge(r.estado)}
+        </div>`).join('')}
+      ${prev.length>3?`<div style="font-size:.7rem;color:#9CA3AF;margin-top:.2rem">+ ${prev.length-3} más</div>`:''}
+    </div>`;
+}
+
+// ── Pagos / Caja ──────────────────────────────────────────
+let _cajaPage = 1, _cajaSearch = '', _cajaFecha = '', _cajaMetodo = '';
+const CAJA_PAGE_SIZE = 15;
+
+async function renderCaja() {
+  // Set today as default date filter if empty
+  if (!_cajaFecha) {
+    const hoy = new Date().toISOString().slice(0,10);
+    const fechaEl = $('caja-fecha-filter');
+    if (fechaEl && !fechaEl.value) { fechaEl.value = hoy; _cajaFecha = hoy; }
+  }
+  await Promise.all([renderCajaStats(), renderCajaTable()]);
+}
+
+async function renderCajaStats() {
+  const today = new Date().toISOString().slice(0,10);
+  const { data: hoyData } = await _sb.from('pagos').select('monto_final,metodo')
+    .gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59');
+  const h = hoyData || [];
+  const total   = h.reduce((a,r)=>a+Number(r.monto_final),0);
+  const efect   = h.filter(r=>r.metodo==='efectivo').reduce((a,r)=>a+Number(r.monto_final),0);
+  const tarj    = h.filter(r=>r.metodo==='tarjeta').reduce((a,r)=>a+Number(r.monto_final),0);
+  const transf  = h.filter(r=>r.metodo==='transferencia').reduce((a,r)=>a+Number(r.monto_final),0);
+  const el = $('caja-stats'); if (!el) return;
+  const card = (num, label, icon, bg, color) => `<div class="stat-card"><div class="stat-top"><div>
+    <div class="stat-num" style="font-size:1.3rem">${num}</div><div class="stat-label">${label}</div></div>
+    <div class="stat-icon" style="background:${bg}">${icon}</div></div></div>`;
+  el.innerHTML =
+    card(fmt(total),'Total cobrado hoy',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color||'#1A7A82'}" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,'rgba(26,122,130,.1)','#1A7A82')+
+    card(fmt(efect),'Efectivo',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,'var(--green-bg)')+
+    card(fmt(tarj),'Tarjeta',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`,'var(--blue-bg)')+
+    card(fmt(transf),'Transferencia',`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>`,'var(--amber-bg)');
+}
+
+async function renderCajaTable() {
+  const tbody = $('caja-table'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  let q = _sb.from('pagos').select('*, infracciones(placa,infractor)').order('created_at',{ascending:false});
+  if (_cajaFecha) q = q.gte('created_at',_cajaFecha+'T00:00:00').lte('created_at',_cajaFecha+'T23:59:59');
+  if (_cajaMetodo) q = q.eq('metodo', _cajaMetodo);
+  if (_cajaSearch) q = q.or(`folio_inf.ilike.%${_cajaSearch}%,cajero.ilike.%${_cajaSearch}%`);
+  const { data, error } = await q;
+  if (error) { tbody.innerHTML=`<tr><td colspan="10" style="color:red">${error.message}</td></tr>`; return; }
+  const all = data||[];
+  const pages = Math.max(1,Math.ceil(all.length/CAJA_PAGE_SIZE));
+  if (_cajaPage>pages) _cajaPage=pages;
+  const rows = all.slice((_cajaPage-1)*CAJA_PAGE_SIZE, _cajaPage*CAJA_PAGE_SIZE);
+  tbody.innerHTML = rows.length ? rows.map(r=>{
+    const inf = r.infracciones||{};
+    return `<tr>
+      <td class="mono">${r.folio_inf||'—'}</td>
+      <td>${fmtDateShort(r.created_at)}</td>
+      <td>${inf.placa||'—'}</td>
+      <td>${inf.infractor||'—'}</td>
+      <td>${fmt(r.monto_original)}</td>
+      <td>${r.descuento_pct>0?`<span class="badge-green">${r.descuento_pct}%</span>`:'—'}</td>
+      <td style="font-weight:700;color:var(--green)">${fmt(r.monto_final)}</td>
+      <td><span class="badge-muted">${r.metodo}</span></td>
+      <td>${r.cajero||'—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--muted)">Sin pagos registrados</td></tr>';
+  renderPager('caja-pager', _cajaPage, pages, 'goCajaPage');
+}
+
+function filterCaja() {
+  _cajaSearch = ($('caja-search')||{}).value||'';
+  _cajaFecha  = ($('caja-fecha-filter')||{}).value||'';
+  _cajaMetodo = ($('caja-metodo-filter')||{}).value||'';
+  _cajaPage = 1; renderCajaTable();
+}
+
+function goCajaPage(p) { _cajaPage = p; renderCajaTable(); }
+
+async function openBuscarParaPago() {
+  if ($('buscar-pago-input')) $('buscar-pago-input').value = '';
+  if ($('buscar-pago-results')) $('buscar-pago-results').innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe para buscar una infracción pendiente</div>';
+  openModal('modal-buscar-pago');
+}
+
+async function buscarInfPago() {
+  const q = ($('buscar-pago-input')||{}).value?.trim()||'';
+  const el = $('buscar-pago-results'); if (!el) return;
+  if (q.length < 2) { el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe al menos 2 caracteres</div>'; return; }
+  const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado')
+    .eq('estado','pendiente').or(`placa.ilike.%${q}%,infractor.ilike.%${q}%,folio.ilike.%${q}%`).order('fecha',{ascending:false}).limit(10);
+  const rows = data||[];
+  el.innerHTML = rows.length ? rows.map(r=>`
+    <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')">
+      <div style="flex:1">
+        <div style="font-size:.82rem;font-weight:700;font-family:monospace">${r.folio||'—'}</div>
+        <div style="font-size:.78rem;color:var(--text)">${r.infractor} · ${r.placa}</div>
+        <div style="font-size:.73rem;color:var(--muted)">${r.tipo} · ${fmtDateShort(r.fecha)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:.9rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</div>
+        ${estadoBadge(r.estado)}
+      </div>
+    </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados pendientes</div>';
+}
+
+async function openRegistrarPago(infId) {
+  const { data: r } = await _sb.from('infracciones').select('*').eq('id', infId).single();
+  if (!r) return;
+  $('pago-inf-id').value = infId;
+  const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
+  const desc20ok = dias <= 15;
+  const infoEl = $('pago-inf-info');
+  if (infoEl) infoEl.innerHTML = `
+    <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.35rem">Infracción</div>
+    <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${r.folio||'—'} — ${r.tipo}</div>
+    <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${r.infractor} · Placa: <strong>${r.placa}</strong></div>
+    <div style="font-size:.8rem;color:var(--text)">${fmtDateShort(r.fecha)} · <strong>${fmt(r.monto)}</strong></div>
+    ${desc20ok?'<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del 20% (pronto pago — menos de 15 días)</div>':'<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Sin descuento disponible (más de 15 días)</div>'}`;
+  const descEl = $('pago-descuento');
+  if (descEl) { Array.from(descEl.options).forEach(o=>{ if(o.value==='20') o.disabled=!desc20ok; }); descEl.value='0'; }
+  if ($('pago-metodo'))  $('pago-metodo').value = 'efectivo';
+  if ($('pago-cajero'))  $('pago-cajero').value = _session?.name||'';
+  if ($('pago-notas'))   $('pago-notas').value  = '';
+  window._pagoMontoOriginal = r.monto;
+  calcularMontoPago();
+  openModal('modal-pago');
+}
+
+function calcularMontoPago() {
+  const desc = parseInt(($('pago-descuento')||{}).value||'0');
+  const final = Math.round((window._pagoMontoOriginal||0)*(1-desc/100));
+  const el = $('pago-monto-display'); if (el) el.textContent = fmt(final);
+}
+
+async function submitPago() {
+  const infId = $('pago-inf-id')?.value; if (!infId) return;
+  const btn = $('pago-submit-btn');
+  if (btn) { btn.disabled=true; btn.textContent='Registrando…'; }
+  const desc = parseInt(($('pago-descuento')||{}).value||'0');
+  const monto = window._pagoMontoOriginal||0;
+  const final = Math.round(monto*(1-desc/100));
+  const { data: inf } = await _sb.from('infracciones').select('folio').eq('id',infId).single();
+  const payload = {
+    infraccion_id: parseInt(infId), folio_inf: inf?.folio||'',
+    monto_original: monto, descuento_pct: desc, monto_final: final,
+    metodo: $('pago-metodo')?.value||'efectivo',
+    cajero: $('pago-cajero')?.value?.trim()||'',
+    notas:  $('pago-notas')?.value?.trim()||''
+  };
+  const { data: pago, error } = await _sb.from('pagos').insert(payload).select().single();
+  if (btn) { btn.disabled=false; btn.textContent='Registrar pago'; }
+  if (error) { alert('Error: '+error.message); return; }
+  await _sb.from('infracciones').update({estado:'pagada'}).eq('id',infId);
+  await logActivity('infraccion',`Pago registrado — ${inf?.folio||'infracción'}: ${fmt(final)} (${payload.metodo})`);
+  closeModal('modal-pago'); closeModal('modal-detail');
+  showToast(`Pago registrado: ${fmt(final)} — ${payload.metodo}`);
+  printReciboPago(pago.id);
+  renderInfracciones(); renderDashboard();
+  if ($('view-caja')?.style.display==='block') renderCaja();
+}
+
+async function printReciboPago(pagoId) {
+  const { data: p } = await _sb.from('pagos').select('*, infracciones(folio,tipo,placa,infractor,fecha,ubicacion)').eq('id',pagoId).single();
+  const { data: cfg } = await _sb.from('configuracion').select('*').eq('id',1).single();
+  if (!p) return;
+  const inf = p.infracciones||{};
+  const mun = cfg?.municipio||'Municipio', est = cfg?.estado||'';
+  const fechaPago = new Date(p.created_at).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const horaPago  = new Date(p.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Recibo ${p.folio_inf||''}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#f5f5f5;font-size:11px}
+    .page{width:215.9mm;min-height:139.7mm;margin:0 auto;background:#fff;padding:12mm 14mm}
+    .no-print{text-align:center;padding:8px 0 10px;background:#f5f5f5}
+    .no-print button{padding:6px 18px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;margin:0 3px}
+    .hdr{display:flex;align-items:center;gap:6mm;padding-bottom:4mm;border-bottom:3px solid #059669;margin-bottom:5mm}
+    .seal{width:14mm;height:14mm;border-radius:50%;border:2px solid #059669;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#059669;flex-shrink:0}
+    .ht{flex:1}.gov{font-size:7.5px;font-weight:700;color:#059669;text-transform:uppercase;letter-spacing:.5px}
+    .dept{font-size:12px;font-weight:900;color:#1A1F2B;margin:1px 0}.sub{font-size:8px;color:#6B7280}
+    .rn{text-align:right}.rnl{font-size:7px;color:#9CA3AF;text-transform:uppercase}.rnv{font-size:14px;font-weight:900;color:#059669;font-family:'Courier New',monospace}
+    .tbar{background:#059669;color:#fff;text-align:center;padding:2.5mm 0;margin-bottom:4mm;border-radius:3px}
+    .tbar h1{font-size:12px;font-weight:900;letter-spacing:1px;text-transform:uppercase}.tbar p{font-size:8px;opacity:.85;margin-top:1px}
+    .cols{display:flex;gap:6mm;margin-bottom:4mm}
+    .col{flex:1}.sec{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#059669;border-bottom:1.5px solid #059669;padding-bottom:1mm;margin-bottom:2.5mm}
+    .f{margin-bottom:2mm}.fl{font-size:6.5px;text-transform:uppercase;color:#9CA3AF;letter-spacing:.3px;margin-bottom:.3mm}.fv{font-size:10px;color:#1A1F2B;font-weight:500}
+    .amount{background:#f0fdf4;border:2px solid #059669;border-radius:4px;text-align:center;padding:3mm;margin:3mm 0}
+    .al{font-size:7px;text-transform:uppercase;letter-spacing:1px;color:#059669;font-weight:700;margin-bottom:1mm}
+    .av{font-size:24px;font-weight:900;color:#059669}.as{font-size:8px;color:#6B7280;margin-top:.5mm}
+    .stamp{position:absolute;right:18mm;top:45mm;border:3px solid #059669;color:#059669;font-size:18px;font-weight:900;letter-spacing:3px;padding:2mm 5mm;border-radius:3px;transform:rotate(-8deg);opacity:.65}
+    .page{position:relative}
+    .sig{display:flex;gap:10mm;margin-top:6mm}.sb{flex:1;text-align:center}.sl{height:8mm;border-bottom:1.5px solid #374151;margin-bottom:1mm}.sn{font-size:8.5px;font-weight:700}.st{font-size:7px;color:#6B7280}
+    .foot{text-align:center;font-size:7px;color:#9CA3AF;border-top:1px solid #E5E7EB;padding-top:2.5mm;margin-top:4mm}
+    @media print{body{background:#fff}.no-print{display:none!important}.page{margin:0;padding:10mm 12mm;width:100%}@page{margin:0;size:letter portrait}}
+  </style></head><body>
+  <div class="no-print"><button onclick="window.print()">Imprimir recibo</button><button onclick="window.close()">Cerrar</button></div>
+  <div class="page">
+    <div class="stamp">PAGADO</div>
+    <div class="hdr">
+      <div class="seal">HCE</div>
+      <div class="ht"><div class="gov">Gobierno Municipal · ${mun}</div><div class="dept">Dirección de Tránsito y Movilidad</div><div class="sub">${est}</div></div>
+      <div class="rn"><div class="rnl">Núm. de recibo</div><div class="rnv">REC-${String(p.id).padStart(6,'0')}</div></div>
+    </div>
+    <div class="tbar"><h1>Recibo de Pago de Infracción</h1><p>Emitido el ${fechaPago} a las ${horaPago}</p></div>
+    <div class="cols">
+      <div class="col">
+        <div class="sec">Infracción pagada</div>
+        <div class="f"><div class="fl">Folio</div><div class="fv" style="font-family:monospace;font-weight:700">${p.folio_inf||'—'}</div></div>
+        <div class="f"><div class="fl">Tipo</div><div class="fv">${inf.tipo||'—'}</div></div>
+        <div class="f"><div class="fl">Fecha infracción</div><div class="fv">${fmtDateShort(inf.fecha)}</div></div>
+        <div class="f"><div class="fl">Infractor</div><div class="fv" style="font-weight:700">${inf.infractor||'—'}</div></div>
+        <div class="f"><div class="fl">Placa</div><div class="fv" style="font-family:monospace">${inf.placa||'—'}</div></div>
+      </div>
+      <div class="col">
+        <div class="sec">Detalle del pago</div>
+        <div class="f"><div class="fl">Monto original</div><div class="fv">${fmt(p.monto_original)}</div></div>
+        <div class="f"><div class="fl">Descuento</div><div class="fv" style="color:#059669">${p.descuento_pct>0?p.descuento_pct+'%':'Sin descuento'}</div></div>
+        <div class="f"><div class="fl">Método de pago</div><div class="fv" style="text-transform:capitalize">${p.metodo}</div></div>
+        <div class="f"><div class="fl">Cajero</div><div class="fv">${p.cajero||'—'}</div></div>
+        <div class="amount"><div class="al">Total cobrado</div><div class="av">${fmt(p.monto_final)}</div><div class="as">MXN — ${p.metodo.charAt(0).toUpperCase()+p.metodo.slice(1)}</div></div>
+      </div>
+    </div>
+    <div class="sig">
+      <div class="sb"><div class="sl"></div><div class="sn">${p.cajero||'Cajero'}</div><div class="st">Cajero que recibe</div></div>
+      <div class="sb"><div class="sl"></div><div class="sn">${inf.infractor||'Infractor'}</div><div class="st">Firma de conformidad</div></div>
+    </div>
+    <div class="foot">Recibo REC-${String(p.id).padStart(6,'0')} · Infracción ${p.folio_inf||''}. Este documento acredita el pago total. Expedido por Dirección de Tránsito, ${mun}.</div>
+  </div>
+  <script>setTimeout(()=>window.print(),600)<\/script>
+  </body></html>`;
+  const win = window.open('','_blank','width=900,height=700');
+  if (win) { win.document.write(html); win.document.close(); }
+}
+
+// ── Oficiales ─────────────────────────────────────────────
+async function renderOficiales() {
+  const tbody = $('oficiales-table'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  const { data, error } = await _sb.from('infracciones').select('oficial,monto,estado,fecha');
+  if (error) { tbody.innerHTML=`<tr><td colspan="6" style="color:red">${error.message}</td></tr>`; return; }
+  const map = {};
+  (data||[]).forEach(r => {
+    const k = r.oficial?.trim() || '(Sin asignar)';
+    if (!map[k]) map[k]={ total:0, monto:0, pend:0, pag:0, ultima:null };
+    map[k].total++;
+    map[k].monto += Number(r.monto||0);
+    if (r.estado==='pendiente') map[k].pend++;
+    if (r.estado==='pagada')    map[k].pag++;
+    if (!map[k].ultima || new Date(r.fecha)>new Date(map[k].ultima)) map[k].ultima = r.fecha;
+  });
+  const sorted = Object.entries(map).sort((a,b)=>b[1].total-a[1].total);
+  tbody.innerHTML = sorted.length ? sorted.map(([n,s])=>`
+    <tr>
+      <td style="font-weight:600">${n}</td>
+      <td style="text-align:center;font-weight:700">${s.total}</td>
+      <td>${fmt(s.monto)}</td>
+      <td>${s.pend>0?`<span class="badge-yellow">${s.pend}</span>`:'<span class="badge-muted">0</span>'}</td>
+      <td>${s.pag>0?`<span class="badge-green">${s.pag}</span>`:'<span class="badge-muted">0</span>'}</td>
+      <td>${fmtDateShort(s.ultima)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin datos — agrega el nombre del oficial al registrar infracciones</td></tr>';
+}
+
+// ── Usuarios ──────────────────────────────────────────────
+async function renderUsuarios() {
+  const tbody = $('usuarios-table'); if (!tbody) return;
+  if (_rol !== 'admin') {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.5rem">Acceso restringido a administradores</td></tr>';
+    const navUsr = $('nav-usuarios'); if (navUsr) navUsr.style.opacity = '.4';
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  const { data, error } = await _sb.from('usuarios').select('*').order('id');
+  if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${error.message}</td></tr>`; return; }
+  const labels = { admin:'Administrador', supervisor:'Supervisor', oficial:'Oficial' };
+  tbody.innerHTML = (data||[]).map(u=>`
+    <tr>
+      <td style="font-weight:600">${u.nombre}</td>
+      <td class="mono">${u.usuario}</td>
+      <td>${labels[u.rol]||u.rol}</td>
+      <td>${u.activo?'<span class="badge-green">Activo</span>':'<span class="badge-muted">Inactivo</span>'}</td>
+      <td style="display:flex;gap:.4rem">
+        <button class="btn btn-ghost btn-sm" onclick="editUsuario(${u.id})">Editar</button>
+        ${u.usuario!=='admin'?`<button class="btn btn-ghost btn-sm" onclick="toggleUsuario(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>`:''}
+      </td>
+    </tr>`).join('');
+}
+
+function openNewUsuario() {
+  $('modal-usr-title').textContent = 'Nuevo usuario';
+  ['usr-id','usr-nombre','usr-usuario','usr-pass','usr-iniciales'].forEach(id=>{ if($(id)) $(id).value=''; });
+  if ($('usr-rol')) $('usr-rol').value = 'oficial';
+  if ($('usr-pass')) $('usr-pass').placeholder = 'Contraseña requerida';
+  openModal('modal-usuario');
+}
+
+async function editUsuario(id) {
+  const { data } = await _sb.from('usuarios').select('*').eq('id',id).single();
+  if (!data) return;
+  $('modal-usr-title').textContent = 'Editar usuario';
+  $('usr-id').value        = data.id;
+  $('usr-nombre').value    = data.nombre;
+  $('usr-usuario').value   = data.usuario;
+  $('usr-pass').value      = '';
+  $('usr-iniciales').value = data.iniciales||'';
+  $('usr-rol').value       = data.rol;
+  if ($('usr-pass')) $('usr-pass').placeholder = 'Dejar vacío para no cambiar';
+  openModal('modal-usuario');
+}
+
+async function submitUsuario() {
+  const id = $('usr-id')?.value;
+  const nombre = $('usr-nombre')?.value?.trim();
+  const usuario = $('usr-usuario')?.value?.trim().toLowerCase();
+  const pass = $('usr-pass')?.value;
+  const iniciales = $('usr-iniciales')?.value?.trim().toUpperCase() || nombre.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+  const rol = $('usr-rol')?.value;
+  if (!nombre||!usuario) { alert('Nombre y usuario son requeridos'); return; }
+  if (!id && !pass) { alert('La contraseña es requerida para nuevos usuarios'); return; }
+  const payload = { nombre, usuario, rol, iniciales };
+  if (pass) payload.contrasena = pass;
+  const { error } = id
+    ? await _sb.from('usuarios').update(payload).eq('id', id)
+    : await _sb.from('usuarios').insert(payload);
+  if (error) { alert('Error: '+error.message); return; }
+  closeModal('modal-usuario');
+  renderUsuarios();
+  showToast('Usuario '+(id?'actualizado':'creado')+' correctamente');
+}
+
+async function toggleUsuario(id, activo) {
+  const { error } = await _sb.from('usuarios').update({activo}).eq('id',id);
+  if (error) { alert('Error: '+error.message); return; }
+  renderUsuarios();
+}
+
 // ── Ticket 80mm (print functions) ────────────────────────
 function buildTicket80(r, cfg) {
   const mun = cfg?.municipio || 'Municipio';
@@ -1288,5 +1693,6 @@ async function initData() {
 document.addEventListener('DOMContentLoaded', async () => {
   initUI();
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
+  try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
   navigate('dashboard');
 });

@@ -144,8 +144,8 @@
     </form>
 
     <div class="hint">
-      <strong>Accesos de prueba:</strong><br>
-      Director — <strong>admin</strong> / <strong>admin123</strong><br>
+      <strong>Accesos iniciales:</strong><br>
+      Administrador — <strong>admin</strong> / <strong>admin123</strong><br>
       Supervisor — <strong>supervisor</strong> / <strong>super789</strong><br>
       Operador — <strong>operador</strong> / <strong>oper456</strong>
     </div>
@@ -177,29 +177,48 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="supabase.js"></script>
 <script>
-  const USERS = [
-    { user:'admin',      pass:'admin123',  name:'Carlos Alvarado',   role:'Director de Tránsito',    initials:'CA' },
-    { user:'operador',   pass:'oper456',   name:'Laura Sánchez T.',   role:'Operador de Tránsito',    initials:'LS' },
-    { user:'supervisor', pass:'super789',  name:'Miguel Fuentes R.',  role:'Supervisor de Tránsito',  initials:'MF' },
-  ];
-
-  // Redirect if already logged in
   if (localStorage.getItem('tm_session')) window.location.replace('index.html');
 
-  function doLogin(e) {
+  const roleNames = { admin:'Director de Tránsito', supervisor:'Supervisor de Tránsito', oficial:'Operador de Tránsito' };
+
+  async function doLogin(e) {
     e.preventDefault();
-    const user = document.getElementById('username').value.trim();
+    const btn = document.querySelector('.btn-login');
+    const errEl = document.getElementById('error-msg');
+    errEl.classList.remove('show');
+    btn.disabled = true;
+    btn.textContent = 'Verificando…';
+
+    const user = document.getElementById('username').value.trim().toLowerCase();
     const pass = document.getElementById('password').value;
-    const found = USERS.find(u => u.user === user && u.pass === pass);
-    if (found) {
-      localStorage.setItem('tm_session', JSON.stringify(found));
-      window.location.href = 'index.html';
-    } else {
-      document.getElementById('error-msg').classList.add('show');
+
+    const { data, error } = await _sb.from('usuarios')
+      .select('*').eq('usuario', user).eq('contrasena', pass).eq('activo', true).single();
+
+    btn.disabled = false;
+    btn.textContent = 'Iniciar sesión';
+
+    if (error || !data) {
+      errEl.textContent = 'Usuario o contraseña incorrectos.';
+      errEl.classList.add('show');
       document.getElementById('password').value = '';
       document.getElementById('password').focus();
+      return;
     }
+
+    localStorage.setItem('tm_session', JSON.stringify({
+      id:       data.id,
+      user:     data.usuario,
+      name:     data.nombre,
+      role:     roleNames[data.rol] || data.rol,
+      rol:      data.rol,
+      initials: data.iniciales || data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()
+    }));
+    window.location.href = 'index.html';
   }
 </script>
 </body>

@@ -287,6 +287,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Permisos de Circulación
       </button>
+      <button class="nav-item" onclick="navigate('caja',this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Pagos / Caja
+      </button>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-section-label">Sistema</div>
@@ -294,9 +298,17 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         Reportes
       </button>
+      <button class="nav-item" onclick="navigate('oficiales',this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        Oficiales
+      </button>
       <button class="nav-item" onclick="navigate('configuracion',this)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Configuración
+      </button>
+      <button class="nav-item" id="nav-usuarios" onclick="navigate('usuarios',this)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Usuarios
       </button>
     </div>
     <div class="sidebar-footer">
@@ -374,6 +386,7 @@
           </div>
         </div>
 
+        <div id="dash-alerts"></div>
         <div class="dash-grid">
           <div class="card">
             <div class="card-header">
@@ -565,6 +578,71 @@
       </div>
 
 
+      <!-- PAGOS / CAJA -->
+      <div class="view" id="view-caja">
+        <div class="page-header"><h2>Pagos / Caja</h2><p>Registro de cobros y cierre de caja diario</p></div>
+        <div class="stats-grid" id="caja-stats" style="margin-bottom:1.2rem"></div>
+        <div class="filter-bar">
+          <div class="search-wrap">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="search-input" id="caja-search" type="text" placeholder="Buscar por folio, cajero…" oninput="filterCaja()">
+          </div>
+          <input type="date" id="caja-fecha-filter" class="filter-select" onchange="filterCaja()">
+          <select class="filter-select" id="caja-metodo-filter" onchange="filterCaja()">
+            <option value="">Todos los métodos</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+          <button class="btn btn-primary" onclick="openBuscarParaPago()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Registrar pago
+          </button>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Folio inf.</th><th>Fecha pago</th><th>Placa</th><th>Infractor</th><th>Monto orig.</th><th>Descuento</th><th>Cobrado</th><th>Método</th><th>Cajero</th><th></th></tr></thead>
+              <tbody id="caja-table"></tbody>
+            </table>
+          </div>
+          <div class="pager" id="caja-pager"></div>
+        </div>
+      </div>
+
+      <!-- OFICIALES -->
+      <div class="view" id="view-oficiales">
+        <div class="page-header"><h2>Desempeño de Oficiales</h2><p>Infracciones levantadas por cada agente de tránsito</p></div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Oficial</th><th>Total inf.</th><th>Monto total</th><th>Pendientes</th><th>Pagadas</th><th>Última actividad</th></tr></thead>
+              <tbody id="oficiales-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- USUARIOS -->
+      <div class="view" id="view-usuarios">
+        <div class="page-header"><h2>Gestión de Usuarios</h2><p>Control de accesos al sistema (solo administradores)</p></div>
+        <div class="filter-bar">
+          <span style="flex:1"></span>
+          <button class="btn btn-primary" onclick="openNewUsuario()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nuevo usuario
+          </button>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="usuarios-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -581,9 +659,10 @@
 
       <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.6rem">Datos del vehículo</div>
       <div class="form-row">
-        <div class="form-field"><label>Placa *</label><input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required/></div>
+        <div class="form-field"><label>Placa *</label><input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required onblur="checkPlacaHistory()"/></div>
         <div class="form-field"><label>Color del vehículo</label><input id="inf-color" class="form-input" placeholder="Ej. Blanco" type="text"/></div>
       </div>
+      <div id="placa-history"></div>
       <div class="form-field"><label>Marca y modelo</label><input id="inf-vehiculo" class="form-input" placeholder="Ej. Toyota Corolla 2020" type="text"/></div>
 
       <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:.8rem 0 .6rem">Datos del infractor</div>
@@ -684,6 +763,102 @@
       <button class="modal-close" onclick="closeModal('modal-detail')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="detail-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Registrar Pago -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <div class="modal-title">Registrar pago de infracción</div>
+      <button class="modal-close" onclick="closeModal('modal-pago')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="pago-inf-info" style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;margin-bottom:1rem"></div>
+    <input type="hidden" id="pago-inf-id"/>
+    <div class="form-row">
+      <div class="form-field">
+        <label>Descuento aplicado</label>
+        <select id="pago-descuento" class="form-select" onchange="calcularMontoPago()">
+          <option value="0">Sin descuento (100%)</option>
+          <option value="20">20% — pronto pago</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Total a cobrar</label>
+        <div id="pago-monto-display" style="font-size:1.5rem;font-weight:800;color:var(--ac);padding:.3rem 0;font-family:'DM Mono',monospace">—</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>Método de pago</label>
+        <select id="pago-metodo" class="form-select">
+          <option value="efectivo">Efectivo</option>
+          <option value="tarjeta">Tarjeta</option>
+          <option value="transferencia">Transferencia</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Cajero / Oficial</label>
+        <input id="pago-cajero" class="form-input" placeholder="Nombre del cajero" type="text"/>
+      </div>
+    </div>
+    <div class="form-field">
+      <label>Notas del pago</label>
+      <input id="pago-notas" class="form-input" placeholder="Observaciones opcionales" type="text"/>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
+      <button type="button" id="pago-submit-btn" class="btn btn-primary" onclick="submitPago()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Registrar pago
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Usuario -->
+<div class="modal-overlay" id="modal-usuario">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-usr-title">Nuevo usuario</div>
+      <button class="modal-close" onclick="closeModal('modal-usuario')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <input type="hidden" id="usr-id"/>
+    <div class="form-row">
+      <div class="form-field"><label>Nombre completo</label><input id="usr-nombre" class="form-input" type="text" placeholder="Nombre y apellidos"/></div>
+      <div class="form-field"><label>Usuario (login)</label><input id="usr-usuario" class="form-input" type="text" placeholder="ej. jperez"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Contraseña</label><input id="usr-pass" class="form-input" type="password" placeholder="Contraseña requerida"/></div>
+      <div class="form-field"><label>Iniciales</label><input id="usr-iniciales" class="form-input" type="text" maxlength="3" placeholder="JP"/></div>
+    </div>
+    <div class="form-field">
+      <label>Rol</label>
+      <select id="usr-rol" class="form-select">
+        <option value="oficial">Oficial</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="admin">Administrador</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-usuario')">Cancelar</button>
+      <button type="button" class="btn btn-primary" onclick="submitUsuario()">Guardar usuario</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Buscar infracción para pago -->
+<div class="modal-overlay" id="modal-buscar-pago">
+  <div class="modal" style="width:580px">
+    <div class="modal-header">
+      <div class="modal-title">Seleccionar infracción a pagar</div>
+      <button class="modal-close" onclick="closeModal('modal-buscar-pago')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="search-wrap" style="margin-bottom:.85rem">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search-input" id="buscar-pago-input" type="text" placeholder="Buscar por folio, placa o infractor…" oninput="buscarInfPago()">
+    </div>
+    <div id="buscar-pago-results" style="max-height:320px;overflow-y:auto"></div>
   </div>
 </div>
 
