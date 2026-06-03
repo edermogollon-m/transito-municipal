@@ -118,7 +118,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','mapa','rendimiento'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','mapa','rendimiento','calendario'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -204,8 +204,8 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', mapa:'Mapa', rendimiento:'Rendimiento' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
@@ -219,6 +219,7 @@ function navigate(view, btn) {
   if (view==='grua')          renderGrua();
   if (view==='mapa')          renderMapa();
   if (view==='rendimiento')   renderRendimiento();
+  if (view==='calendario')    renderCalendario();
   if (window.innerWidth <= 768) closeSidebar();
 }
 
@@ -1179,10 +1180,9 @@ async function printPermiso(id) {
 // ── Vencimientos automáticos ──────────────────────────────
 async function checkAndUpdateVencidos() {
   const today = new Date().toISOString().slice(0,10);
-  const hace30 = new Date(Date.now()-30*86400000).toISOString();
   await Promise.all([
     _sb.from('permisos').update({estado:'vencido'}).eq('estado','vigente').lt('vencimiento', today),
-    _sb.from('infracciones').update({estado:'vencida'}).eq('estado','pendiente').lt('fecha', hace30)
+    _sb.rpc('marcar_infracciones_vencidas')
   ]);
 }
 
@@ -2105,6 +2105,53 @@ function initUI() {
   document.querySelectorAll('.modal-overlay').forEach(m=>{
     m.addEventListener('click', e=>{ if(e.target===m) closeModal(m.id); });
   });
+
+  // ── Permisos granulares por rol ──────────────────────────
+  if (_rol === 'oficial') {
+    // Ocultar sección Análisis y Sistema (excepto Reportes no aplica)
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      const view = (btn.getAttribute('onclick')||'').match(/'(\w+)'/)?.[1];
+      if (['mapa','rendimiento','configuracion','usuarios'].includes(view)) {
+        btn.style.display = 'none';
+      }
+    });
+    // Ocultar labels de sección si todos sus items están ocultos
+    document.querySelectorAll('.sidebar-section').forEach(sec => {
+      const visible = [...sec.querySelectorAll('.nav-item')].some(b=>b.style.display!=='none');
+      if (!visible) sec.style.display = 'none';
+    });
+  } else if (_rol === 'supervisor') {
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      const view = (btn.getAttribute('onclick')||'').match(/'(\w+)'/)?.[1];
+      if (['usuarios'].includes(view)) btn.style.display = 'none';
+    });
+  }
+  // Ocultar nav Usuarios del DOM si no es admin (evita acceso directo)
+  if (_rol !== 'admin') {
+    const navUsr = $('nav-usuarios'); if(navUsr) navUsr.style.display = 'none';
+  }
+
+  // ── Realtime: refrescar dashboard al recibir cambios ─────
+  _sb.channel('rt-infracciones')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'infracciones' }, () => {
+      const dash = $('view-dashboard');
+      if (dash && dash.style.display !== 'none') renderDashboard();
+      const badge = $('badge-pendientes');
+      if (badge) _sb.from('infracciones').select('id',{count:'exact',head:true}).eq('estado','pendiente')
+        .then(({count}) => { if(count!=null){badge.textContent=count;badge.style.display=count?'inline':'none';} });
+    })
+    .subscribe();
+
+  // ── Búsqueda global ⌘K / Ctrl+K ─────────────────────────
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      openGlobalSearch();
+    }
+    if (e.key === 'Escape') {
+      closeModal('modal-search');
+    }
+  });
 }
 
 function logout() {
@@ -2344,8 +2391,6 @@ async function submitGrua(e) {
     fecha: $('grua-fecha').value ? new Date($('grua-fecha').value).toISOString() : new Date().toISOString()
   };
   if (!id) {
-    const seq = String(n).slice(-5);
-    payload.folio = `GRU-${new Date().getFullYear()}-${seq}`;
     payload.estado = 'retenido';
   }
   const { error } = id
@@ -2497,6 +2542,149 @@ async function renderRendimiento() {
     if (labelsEl) labelsEl.innerHTML = sorted.slice(0,8).map(o=>
       `<span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${o.nombre.split(' ')[0]}</span>`).join('');
   }
+}
+
+// ══════════════════════════════════════════════════════════
+// BÚSQUEDA GLOBAL ⌘K
+// ══════════════════════════════════════════════════════════
+let _searchTimeout = null;
+
+function openGlobalSearch() {
+  openModal('modal-search');
+  const inp = $('global-search-input');
+  if (inp) { inp.value = ''; inp.focus(); $('global-search-results').innerHTML = ''; }
+}
+
+async function runGlobalSearch() {
+  clearTimeout(_searchTimeout);
+  _searchTimeout = setTimeout(async () => {
+    const q = ($('global-search-input').value || '').trim();
+    const res = $('global-search-results');
+    if (q.length < 2) { res.innerHTML = '<div style="padding:1.2rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe al menos 2 caracteres…</div>'; return; }
+    res.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Buscando…</div>';
+
+    const [{ data: infs }, { data: vehs }, { data: pers }, { data: gru }] = await Promise.all([
+      _sb.from('infracciones').select('id,folio,placa,infractor,tipo,estado,monto').or(`folio.ilike.%${q}%,placa.ilike.%${q}%,infractor.ilike.%${q}%`).limit(5),
+      _sb.from('vehiculos').select('id,placa,propietario,marca,modelo,estado').or(`placa.ilike.%${q}%,propietario.ilike.%${q}%`).limit(4),
+      _sb.from('permisos').select('id,num,titular,tipo,placa,estado').or(`num.ilike.%${q}%,titular.ilike.%${q}%,placa.ilike.%${q}%`).limit(4),
+      _sb.from('grua').select('id,folio,placa,propietario,motivo,estado').or(`folio.ilike.%${q}%,placa.ilike.%${q}%,propietario.ilike.%${q}%`).limit(3),
+    ]);
+
+    const sections = [];
+
+    if (infs?.length) sections.push(`
+      <div class="gs-section-label">Infracciones</div>
+      ${infs.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('infracciones');setTimeout(()=>viewDetail('infracciones','${r.id}'),300)">
+        <div class="gs-item-icon" style="background:#FEF2F2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+        <div class="gs-item-body"><div class="gs-item-title">${r.folio||'—'} · ${r.placa}</div><div class="gs-item-sub">${r.infractor} · ${r.tipo}</div></div>
+        <div>${estadoBadge(r.estado)}</div>
+      </div>`).join('')}`);
+
+    if (vehs?.length) sections.push(`
+      <div class="gs-section-label">Vehículos</div>
+      ${vehs.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('vehiculos');setTimeout(()=>viewVehiculoDetalle('${r.id}'),300)">
+        <div class="gs-item-icon" style="background:var(--ac-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
+        <div class="gs-item-body"><div class="gs-item-title">${r.placa}</div><div class="gs-item-sub">${r.propietario} · ${[r.marca,r.modelo].filter(Boolean).join(' ')||'—'}</div></div>
+        <div>${estadoBadge(r.estado)}</div>
+      </div>`).join('')}`);
+
+    if (pers?.length) sections.push(`
+      <div class="gs-section-label">Permisos</div>
+      ${pers.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('permisos');setTimeout(()=>viewDetail('permisos','${r.id}'),300)">
+        <div class="gs-item-icon" style="background:#EFF6FF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+        <div class="gs-item-body"><div class="gs-item-title">${r.num||'—'} · ${r.placa||'—'}</div><div class="gs-item-sub">${r.titular} · ${r.tipo}</div></div>
+        <div>${estadoBadge(r.estado)}</div>
+      </div>`).join('')}`);
+
+    if (gru?.length) sections.push(`
+      <div class="gs-section-label">Grúa / Corralón</div>
+      ${gru.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('grua')">
+        <div class="gs-item-icon" style="background:#FFFBEB"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M18 8h2a2 2 0 012 2v6h-4M6 8H2v10h2"/></svg></div>
+        <div class="gs-item-body"><div class="gs-item-title">${r.folio||'—'} · ${r.placa}</div><div class="gs-item-sub">${r.propietario||'—'} · ${r.motivo||'—'}</div></div>
+        <div>${estadoBadge(r.estado)}</div>
+      </div>`).join('')}`);
+
+    res.innerHTML = sections.length
+      ? sections.join('')
+      : `<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.85rem">Sin resultados para <strong>${q}</strong></div>`;
+  }, 280);
+}
+
+// ══════════════════════════════════════════════════════════
+// CALENDARIO DE INFRACCIONES
+// ══════════════════════════════════════════════════════════
+let _calYear = new Date().getFullYear(), _calMonth = new Date().getMonth();
+
+async function renderCalendario() {
+  const wrap = $('calendario-wrap'); if (!wrap) return;
+  wrap.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--muted)">Cargando…</div>';
+
+  const y = _calYear, m = _calMonth;
+  const desde = new Date(y, m, 1).toISOString().slice(0,10);
+  const hasta  = new Date(y, m+1, 0).toISOString().slice(0,10);
+
+  const { data } = await _sb.from('infracciones').select('fecha,estado,monto').gte('fecha', desde+'T00:00:00').lte('fecha', hasta+'T23:59:59');
+  const byDay = {};
+  (data||[]).forEach(r => {
+    const day = r.fecha.slice(8,10);
+    if (!byDay[day]) byDay[day] = { total:0, pendiente:0, pagada:0, monto:0 };
+    byDay[day].total++;
+    if (r.estado==='pendiente') byDay[day].pendiente++;
+    if (r.estado==='pagada') byDay[day].pagada++;
+    byDay[day].monto += Number(r.monto||0);
+  });
+
+  const monthName = new Date(y,m,1).toLocaleDateString('es-MX',{month:'long',year:'numeric'});
+  const firstDay  = new Date(y,m,1).getDay();
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  let cells = '';
+  for (let i=0;i<firstDay;i++) cells += '<div class="cal-cell cal-empty"></div>';
+  for (let d=1; d<=daysInMonth; d++) {
+    const key = String(d).padStart(2,'0');
+    const info = byDay[key];
+    const isToday = `${y}-${String(m+1).padStart(2,'0')}-${key}` === todayStr;
+    const dot = info ? (info.pendiente ? 'var(--amber)' : 'var(--green)') : '';
+    cells += `<div class="cal-cell${isToday?' cal-today':''}" onclick="showCalDay(${y},${m},${d})">
+      <span class="cal-day-num">${d}</span>
+      ${info ? `<span class="cal-count">${info.total}</span>
+      <span class="cal-dot" style="background:${dot}"></span>` : ''}
+    </div>`;
+  }
+
+  wrap.innerHTML = `
+    <div class="cal-nav">
+      <button class="btn btn-ghost btn-sm" onclick="_calMonth--;if(_calMonth<0){_calMonth=11;_calYear--;}renderCalendario()">‹</button>
+      <span style="font-size:.95rem;font-weight:700;text-transform:capitalize">${monthName}</span>
+      <button class="btn btn-ghost btn-sm" onclick="_calMonth++;if(_calMonth>11){_calMonth=0;_calYear++;}renderCalendario()">›</button>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="_calYear=new Date().getFullYear();_calMonth=new Date().getMonth();renderCalendario()">Hoy</button>
+    </div>
+    <div class="cal-grid-header">${dias.map(d=>`<div class="cal-header-cell">${d}</div>`).join('')}</div>
+    <div class="cal-grid">${cells}</div>
+    <div style="display:flex;gap:1.5rem;padding:.75rem 0;font-size:.75rem">
+      <span style="display:flex;align-items:center;gap:.4rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--amber);display:inline-block"></span>Con pendientes</span>
+      <span style="display:flex;align-items:center;gap:.4rem"><span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block"></span>Solo pagadas</span>
+    </div>
+    <div id="cal-day-detail"></div>`;
+}
+
+async function showCalDay(y, m, d) {
+  const fecha = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,estado').gte('fecha',fecha+'T00:00:00').lte('fecha',fecha+'T23:59:59').order('fecha');
+  const det = $('cal-day-detail'); if(!det) return;
+  if (!data?.length) { det.innerHTML = `<div style="padding:.75rem;color:var(--muted);font-size:.82rem">Sin infracciones el ${fecha}</div>`; return; }
+  det.innerHTML = `<div class="card" style="margin-top:.75rem;padding:0">
+    <div style="padding:.8rem 1rem;border-bottom:1px solid var(--border);font-size:.82rem;font-weight:700">${data.length} infracción${data.length>1?'es':''} — ${fecha}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
+      <tbody>${data.map(r=>`<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
+        <td class="mono">${r.folio||'—'}</td><td class="mono">${r.placa}</td>
+        <td>${r.tipo}</td><td>${fmt(r.monto)}</td><td>${estadoBadge(r.estado)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
 }
 
 // ── initData (seed configuracion if empty) ────────────────
