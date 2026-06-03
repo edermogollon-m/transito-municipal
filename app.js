@@ -117,19 +117,29 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','tickets'];
 
-function navigate(view) {
+function navigate(view, btn) {
   VIEWS.forEach(v => {
     const el = $('view-'+v);
     if (el) el.style.display = v===view ? 'block' : 'none';
-    const li = document.querySelector(`[data-view="${v}"]`);
-    if (li) li.classList.toggle('active', v===view);
   });
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  if (btn) {
+    btn.classList.add('active');
+  } else {
+    const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
+    if (match) match.classList.add('active');
+  }
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', tickets:'Impresión de Ticket' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', tickets:'Tickets' };
+  if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
+  if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
   if (view==='infracciones')  renderInfracciones();
   if (view==='permisos')      renderPermisos();
   if (view==='configuracion') loadConfig();
+  if (view==='tickets')       renderTicketView();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -796,6 +806,206 @@ async function printInfraccion(id) {
   const win = window.open('', '_blank', 'width=870,height=960');
   win.document.write(html);
   win.document.close();
+}
+
+// ── Ticket view (80mm) ────────────────────────────────────
+let _tktPage = 1, _tktSearch = '', _tktEstado = '', _tktSelected = null;
+const TKT_PAGE_SIZE = 15;
+
+async function renderTicketView() {
+  _tktPage = 1; _tktSearch = ''; _tktEstado = ''; _tktSelected = null;
+  const btn80 = $('tkt-btn-80'), btnA4 = $('tkt-btn-a4');
+  if (btn80) btn80.style.display = 'none';
+  if (btnA4) btnA4.style.display = 'none';
+  const empty = $('tkt-empty'), scroll = $('tkt-preview-scroll');
+  if (empty) empty.style.display = 'flex';
+  if (scroll) { scroll.style.display = 'none'; scroll.innerHTML = ''; }
+  await renderTktList();
+}
+
+async function renderTktList() {
+  const body = $('tkt-list-body');
+  if (!body) return;
+  body.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.8rem">Cargando…</div>';
+
+  let q = _sb.from('infracciones').select('id,folio,fecha,placa,infractor,tipo,monto,estado').order('fecha',{ascending:false});
+  if (_tktEstado) q = q.eq('estado', _tktEstado);
+  if (_tktSearch) q = q.or(`placa.ilike.%${_tktSearch}%,infractor.ilike.%${_tktSearch}%,folio.ilike.%${_tktSearch}%`);
+  const { data, error } = await q;
+  if (error) { body.innerHTML = `<div style="color:var(--red);padding:1rem;font-size:.8rem">${error.message}</div>`; return; }
+
+  const all = data || [];
+  const pages = Math.max(1, Math.ceil(all.length / TKT_PAGE_SIZE));
+  if (_tktPage > pages) _tktPage = pages;
+  const rows = all.slice((_tktPage-1)*TKT_PAGE_SIZE, _tktPage*TKT_PAGE_SIZE);
+
+  if (!rows.length) {
+    body.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados</div>';
+    renderPager('tkt-pager', 1, 1, 'goTktPage');
+    return;
+  }
+
+  body.innerHTML = rows.map(r => `
+    <div class="tkt-item${_tktSelected===r.id?' selected':''}" onclick="selectTicket('${r.id}')">
+      <div class="tkt-item-info">
+        <div class="tkt-item-folio">${r.folio||'—'}</div>
+        <div class="tkt-item-name">${r.infractor}</div>
+        <div class="tkt-item-meta">${r.placa} · ${fmtDateShort(r.fecha)}</div>
+      </div>
+      <div class="tkt-item-right">
+        ${estadoBadge(r.estado)}
+        <span style="font-size:.74rem;font-weight:700;color:var(--ink)">${fmt(r.monto)}</span>
+      </div>
+    </div>`).join('');
+
+  renderPager('tkt-pager', _tktPage, pages, 'goTktPage');
+}
+
+function filterTickets() {
+  _tktSearch = ($('tkt-search')||{}).value||'';
+  _tktEstado = ($('tkt-estado-filter')||{}).value||'';
+  _tktPage = 1;
+  renderTktList();
+}
+
+function goTktPage(p) { _tktPage = p; renderTktList(); }
+
+async function selectTicket(id) {
+  _tktSelected = id;
+  document.querySelectorAll('.tkt-item').forEach(el => el.classList.remove('selected'));
+  const found = document.querySelector(`.tkt-item[onclick*="'${id}'"]`);
+  if (found) found.classList.add('selected');
+
+  const btn80 = $('tkt-btn-80'), btnA4 = $('tkt-btn-a4');
+  if (btn80) btn80.style.display = 'inline-flex';
+  if (btnA4) btnA4.style.display = 'inline-flex';
+
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('infracciones').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!r) return;
+
+  const empty = $('tkt-empty'), scroll = $('tkt-preview-scroll');
+  if (empty) empty.style.display = 'none';
+  if (scroll) { scroll.style.display = 'flex'; scroll.innerHTML = buildTicket80(r, cfg); }
+}
+
+function buildTicket80(r, cfg) {
+  const mun = cfg?.municipio || 'Municipio';
+  const est = cfg?.estado || '';
+  const fechaObj = new Date(r.fecha);
+  const fechaStr = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const horaStr  = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const descFecha = new Date(fechaObj.getTime()+15*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const limFecha  = new Date(fechaObj.getTime()+30*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const montoDesc = Math.round(r.monto*0.80).toLocaleString('es-MX');
+  const montoFmt  = Number(r.monto).toLocaleString('es-MX');
+  const ref = (r.folio||'INF').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
+
+  return `<div class="t80">
+    <div class="t-center t-bold" style="font-size:7.5pt;letter-spacing:.5px">${mun.toUpperCase()}</div>
+    ${est?`<div class="t-center" style="font-size:6.5pt">${est.toUpperCase()}</div>`:''}
+    <div class="t-center" style="font-size:7pt">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
+    <div class="t-div"></div>
+    <div class="t-invert">INFRACCIÓN DE TRÁNSITO</div>
+    <div style="margin:1.5mm 0"></div>
+    <div class="t-center t-xl">${r.folio||'—'}</div>
+    <div class="t-div"></div>
+    <div class="t-row"><span>FECHA:</span><span>${fechaStr}</span></div>
+    <div class="t-row"><span>HORA:</span><span>${horaStr}</span></div>
+    <div class="t-div"></div>
+    <div class="t-bold" style="font-size:7.5pt">INFRACTOR:</div>
+    <div>${r.infractor}</div>
+    <div class="t-row t-small"><span>LIC:</span><span>${r.licencia||'N/A'}</span></div>
+    <div style="margin:.5mm 0"></div>
+    <div class="t-bold" style="font-size:7.5pt">VEHÍCULO:</div>
+    <div class="t-row"><span>PLACA:</span><span class="t-bold">${r.placa}</span></div>
+    ${r.color_vehiculo?`<div class="t-row t-small"><span>COLOR:</span><span>${r.color_vehiculo}</span></div>`:''}
+    ${r.vehiculo?`<div class="t-small" style="word-break:break-word">${r.vehiculo}</div>`:''}
+    <div class="t-div"></div>
+    <div class="t-bold" style="font-size:7.5pt">INFRACCIÓN:</div>
+    <div>${r.tipo}</div>
+    ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${r.ubicacion}</div>`:''}
+    <div class="t-solid"></div>
+    <div class="t-center t-bold" style="font-size:7.5pt">MONTO A PAGAR</div>
+    <div class="t-amount">
+      <div class="t-xl">$${montoFmt}</div>
+      <div class="t-small">MXN</div>
+    </div>
+    <div class="t-disc">
+      <div class="t-bold">▼ 20% descuento pagando antes del</div>
+      <div>${descFecha} — solo $${montoDesc} MXN</div>
+    </div>
+    <div class="t-disc" style="border-color:#DC2626;color:#DC2626">
+      <div class="t-bold">⚠ Fecha límite de pago: ${limFecha}</div>
+    </div>
+    <div class="t-div"></div>
+    <div class="t-center t-small">Pague en Tesorería Municipal</div>
+    <div class="t-center t-small">Lunes a Viernes 8:00–15:00 hrs</div>
+    <div class="t-center t-small" style="margin-top:.5mm">Referencia de pago:</div>
+    <div class="t-barref">${ref}</div>
+    <div class="t-div"></div>
+    <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
+    <div class="t-sig"></div>
+    <div class="t-small">${r.oficial||'Agente de Tránsito'}</div>
+    <div style="margin:.5mm 0"></div>
+    <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
+    <div class="t-sig"></div>
+    <div class="t-div"></div>
+    <div class="t-center t-small">El no pago genera recargos del 2%</div>
+    <div class="t-center t-small">mensual e inmovilización del vehículo.</div>
+    <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
+  </div>`;
+}
+
+async function printTicket80(id) {
+  if (!id) return;
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('infracciones').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!r) return;
+
+  const ticketHTML = buildTicket80(r, cfg);
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  <title>Ticket ${r.folio||''}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:'Courier New',Courier,monospace}
+    .no-print{text-align:center;margin-bottom:4mm}
+    .no-print button{padding:6px 16px;background:#1A7A82;color:#fff;border:none;border-radius:5px;font-size:12px;cursor:pointer;margin:0 3px}
+    .no-print button:hover{background:#229099}
+    .t80{width:72mm;min-width:72mm;background:#fff;font-family:'Courier New',Courier,monospace;font-size:8.5pt;line-height:1.45;color:#000;padding:4mm 3mm}
+    .t80 .t-center{text-align:center}
+    .t80 .t-bold{font-weight:700}
+    .t80 .t-xl{font-size:18pt;font-weight:900;letter-spacing:-1px;text-align:center;display:block}
+    .t80 .t-small{font-size:7pt}
+    .t80 .t-div{border-top:1px dashed #555;margin:1.5mm 0}
+    .t80 .t-solid{border-top:2px solid #000;margin:1.5mm 0}
+    .t80 .t-row{display:flex;justify-content:space-between}
+    .t80 .t-invert{background:#000;color:#fff;text-align:center;font-weight:700;font-size:9pt;padding:1.5mm 0;margin:1.5mm -3mm;letter-spacing:1px}
+    .t80 .t-amount{border:2px solid #000;text-align:center;padding:2mm;margin:1.5mm 0}
+    .t80 .t-disc{border:1px solid #555;text-align:center;padding:1.5mm;margin:1mm 0;font-size:8pt}
+    .t80 .t-barref{font-family:'Courier New',monospace;font-size:7pt;letter-spacing:4px;word-break:break-all;text-align:center;margin:1mm 0;color:#333}
+    .t80 .t-sig{border-bottom:1px solid #000;height:8mm;margin-bottom:1mm}
+    @media print{
+      body{padding:0;background:#fff}
+      .no-print{display:none!important}
+      @page{margin:2mm;size:80mm auto}
+    }
+  </style></head><body>
+  <div class="no-print">
+    <button onclick="window.print()">Imprimir ticket</button>
+    <button onclick="window.close()">Cerrar</button>
+  </div>
+  ${ticketHTML}
+  <script>setTimeout(()=>window.print(),500)<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=340,height=750');
+  if (win) { win.document.write(html); win.document.close(); }
 }
 
 // ── Reportes ──────────────────────────────────────────────
