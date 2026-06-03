@@ -94,7 +94,12 @@ function fmt(n) { return new Intl.NumberFormat('es-MX',{style:'currency',currenc
 function fmtDateShort(d) { if(!d) return '—'; try { return new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); } catch(e){return d;} }
 function fmtDateInput(d) { if(!d) return ''; const dt=new Date(d); const y=dt.getFullYear(); const m=String(dt.getMonth()+1).padStart(2,'0'); const dd=String(dt.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
 function estadoBadge(e) {
-  const map = { pagada:'badge-green', pendiente:'badge-yellow', cancelada:'badge-red', vigente:'badge-green', vencido:'badge-red', suspendido:'badge-yellow' };
+  const map = {
+    pagada:'badge-green', vigente:'badge-green', activa:'badge-green',
+    pendiente:'badge-yellow', suspendido:'badge-yellow', 'por-vencer':'badge-yellow',
+    cancelada:'badge-red', vencido:'badge-red', vencida:'badge-red',
+    impugnada:'badge-blue'
+  };
   return `<span class="${map[e]||'badge-muted'}">${e||'—'}</span>`;
 }
 function $(id) { return document.getElementById(id); }
@@ -273,11 +278,11 @@ async function renderInfracciones() {
       <td>${r.tipo}</td>
       <td>${fmt(r.monto)}</td>
       <td>${estadoBadge(r.estado)}</td>
-      <td><button class="btn-sm" onclick="viewDetail('infracciones','${r.id}')">Ver</button></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="viewDetail('infracciones','${r.id}')">Ver</button></td>
     </tr>`).join('')
     : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
 
-  renderPager('inf-pager', _infPage, pages, p=>{ _infPage=p; renderInfracciones(); });
+  renderPager('inf-pager', _infPage, pages, 'goInfPage');
 }
 
 function filterInfracciones() {
@@ -390,11 +395,11 @@ async function renderPermisos() {
       <td>${r.ruta||'—'}</td>
       <td>${fmtDateShort(r.vencimiento)}</td>
       <td>${estadoBadge(r.estado)}</td>
-      <td><button class="btn-sm" onclick="viewDetail('permisos','${r.id}')">Ver</button></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="viewDetail('permisos','${r.id}')">Ver</button></td>
     </tr>`).join('')
     : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
 
-  renderPager('per-pager', _perPage, pages, p=>{ _perPage=p; renderPermisos(); });
+  renderPager('per-pager', _perPage, pages, 'goPerPage');
 }
 
 function filterPermisos() {
@@ -472,14 +477,16 @@ async function viewDetail(tabla, id) {
       ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
     </div>
     <div class="detail-actions">
-      <select id="detail-estado" class="form-input" style="width:auto">
-        <option value="pendiente" ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
-        <option value="pagada"    ${r.estado==='pagada'?'selected':''}>Pagada</option>
-        <option value="cancelada" ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
+      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px">
+        <option value="pendiente"  ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
+        <option value="pagada"     ${r.estado==='pagada'?'selected':''}>Pagada</option>
+        <option value="impugnada"  ${r.estado==='impugnada'?'selected':''}>Impugnada</option>
+        <option value="cancelada"  ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
+        <option value="vencida"    ${r.estado==='vencida'?'selected':''}>Vencida</option>
       </select>
-      <button class="btn-primary" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
-      <button class="btn-secondary" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
-      <button class="btn-danger" onclick="deleteDetail('infracciones','${r.id}')">Eliminar</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Guardar estado</button>
+      <button class="btn btn-secondary btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">Editar</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteDetail('infracciones','${r.id}')">Eliminar</button>
     </div>` : `
     <div class="detail-grid">
       <div class="detail-field"><label>Núm.</label><span>${r.num||'—'}</span></div>
@@ -492,14 +499,15 @@ async function viewDetail(tabla, id) {
       <div class="detail-field"><label>Estado</label><span>${estadoBadge(r.estado)}</span></div>
     </div>
     <div class="detail-actions">
-      <select id="detail-estado" class="form-input" style="width:auto">
+      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px">
         <option value="vigente"    ${r.estado==='vigente'?'selected':''}>Vigente</option>
+        <option value="por-vencer" ${r.estado==='por-vencer'?'selected':''}>Por vencer</option>
         <option value="vencido"    ${r.estado==='vencido'?'selected':''}>Vencido</option>
         <option value="suspendido" ${r.estado==='suspendido'?'selected':''}>Suspendido</option>
       </select>
-      <button class="btn-primary" onclick="saveDetailEstado('permisos','${r.id}')">Guardar estado</button>
-      <button class="btn-secondary" onclick="editPermiso('${r.id}');closeModal('modal-detail')">Editar</button>
-      <button class="btn-danger" onclick="deleteDetail('permisos','${r.id}')">Eliminar</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('permisos','${r.id}')">Guardar estado</button>
+      <button class="btn btn-secondary btn-sm" onclick="editPermiso('${r.id}');closeModal('modal-detail')">Editar</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteDetail('permisos','${r.id}')">Eliminar</button>
     </div>`;
   openModal('modal-detail');
 }
@@ -650,13 +658,16 @@ function closeModal(id) {
 }
 
 // ── Pager ─────────────────────────────────────────────────
-function renderPager(containerId, page, pages, cb) {
+function goInfPage(p) { _infPage = p; renderInfracciones(); }
+function goPerPage(p) { _perPage = p; renderPermisos(); }
+
+function renderPager(containerId, page, pages, fnName) {
   const el = $(containerId); if(!el) return;
   if(pages<=1){ el.innerHTML=''; return; }
   let html = '';
-  if(page>1) html+=`<button class="pager-btn" onclick="(${cb})(${page-1})">‹</button>`;
+  if(page>1) html+=`<button class="pager-btn" onclick="${fnName}(${page-1})">‹ Anterior</button>`;
   html+=`<span class="pager-info">Página ${page} de ${pages}</span>`;
-  if(page<pages) html+=`<button class="pager-btn" onclick="(${cb})(${page+1})">›</button>`;
+  if(page<pages) html+=`<button class="pager-btn" onclick="${fnName}(${page+1})">Siguiente ›</button>`;
   el.innerHTML = html;
 }
 
