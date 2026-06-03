@@ -118,7 +118,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','mapa','rendimiento'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -204,8 +204,8 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', mapa:'Mapa', rendimiento:'Rendimiento' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
@@ -215,6 +215,10 @@ function navigate(view, btn) {
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
+  if (view==='vehiculos')     renderVehiculos();
+  if (view==='grua')          renderGrua();
+  if (view==='mapa')          renderMapa();
+  if (view==='rendimiento')   renderRendimiento();
   if (window.innerWidth <= 768) closeSidebar();
 }
 
@@ -2108,6 +2112,392 @@ function logout() {
   window.location.replace('/login');
 }
 
+// ══════════════════════════════════════════════════════════
+// PADRÓN VEHICULAR
+// ══════════════════════════════════════════════════════════
+let _vehPage = 1, _vehSearch = '', _vehEstado = '';
+const VEH_PAGE = 20;
+
+async function renderVehiculos() {
+  const tbody = $('vehiculos-table'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  let q = _sb.from('vehiculos').select('*', {count:'exact'});
+  if (_vehSearch) q = q.or(`placa.ilike.%${_vehSearch}%,propietario.ilike.%${_vehSearch}%`);
+  if (_vehEstado) q = q.eq('estado', _vehEstado);
+  q = q.order('created_at', {ascending:false});
+  const { data, error, count } = await q;
+  if (error) { tbody.innerHTML=`<tr><td colspan="7" style="color:red">${error.message}</td></tr>`; return; }
+  const all = data||[];
+  const pages = Math.max(1,Math.ceil(all.length/VEH_PAGE));
+  if (_vehPage>pages) _vehPage=pages;
+  const rows = all.slice((_vehPage-1)*VEH_PAGE, _vehPage*VEH_PAGE);
+
+  // fetch infraction counts per placa in one query
+  const placas = rows.map(r=>r.placa);
+  let infCounts = {};
+  if (placas.length) {
+    const { data: infs } = await _sb.from('infracciones').select('placa,estado').in('placa', placas);
+    (infs||[]).forEach(i => { infCounts[i.placa] = (infCounts[i.placa]||{total:0,pendientes:0}); infCounts[i.placa].total++; if(i.estado==='pendiente') infCounts[i.placa].pendientes++; });
+  }
+
+  tbody.innerHTML = rows.length ? rows.map(r => {
+    const ic = infCounts[r.placa]||{total:0,pendientes:0};
+    const infBadge = ic.pendientes>0 ? `<span class="badge pendiente">${ic.pendientes} pend.</span>` : ic.total>0 ? `<span style="font-size:.75rem;color:var(--muted)">${ic.total} total</span>` : '—';
+    return `<tr onclick="viewVehiculoDetalle('${r.id}')">
+      <td class="mono" style="font-weight:700">${r.placa}</td>
+      <td>${r.propietario}</td>
+      <td>${[r.marca,r.modelo,r.anio].filter(Boolean).join(' ')||'—'}</td>
+      <td>${r.color||'—'}</td>
+      <td>${estadoBadge(r.estado)}</td>
+      <td>${infBadge}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editVehiculo('${r.id}')">Editar</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Sin vehículos registrados</td></tr>';
+  renderPager('vehiculos-pager', _vehPage, pages, 'goVehPage');
+}
+
+function filterVehiculos() {
+  _vehSearch = ($('veh-search')||{}).value||'';
+  _vehEstado = ($('veh-estado')||{}).value||'';
+  _vehPage=1; renderVehiculos();
+}
+function goVehPage(p) { _vehPage=p; renderVehiculos(); }
+
+function openNewVehiculo() {
+  $('veh-id').value=''; $('veh-placa').value=''; $('veh-propietario').value='';
+  $('veh-marca').value=''; $('veh-modelo').value=''; $('veh-anio').value='';
+  $('veh-color').value=''; $('veh-serie').value=''; $('veh-motor').value=''; $('veh-obs').value='';
+  $('veh-estado-field').value='activo';
+  $('modal-veh-title').textContent='Registrar vehículo';
+  $('veh-submit-btn').textContent='Guardar';
+  openModal('modal-vehiculo');
+}
+
+async function editVehiculo(id) {
+  const { data, error } = await _sb.from('vehiculos').select('*').eq('id',id).single();
+  if (error || !data) return;
+  $('veh-id').value=data.id; $('veh-placa').value=data.placa; $('veh-propietario').value=data.propietario;
+  $('veh-marca').value=data.marca||''; $('veh-modelo').value=data.modelo||''; $('veh-anio').value=data.anio||'';
+  $('veh-color').value=data.color||''; $('veh-serie').value=data.num_serie||''; $('veh-motor').value=data.num_motor||''; $('veh-obs').value=data.obs||'';
+  $('veh-estado-field').value=data.estado||'activo';
+  $('modal-veh-title').textContent='Editar vehículo';
+  $('veh-submit-btn').textContent='Actualizar';
+  openModal('modal-vehiculo');
+}
+
+async function submitVehiculo(e) {
+  e.preventDefault();
+  const btn = $('veh-submit-btn'); btn.disabled=true; btn.textContent='Guardando…';
+  const id = $('veh-id').value;
+  const payload = {
+    placa: $('veh-placa').value.trim().toUpperCase(),
+    propietario: $('veh-propietario').value.trim(),
+    marca: $('veh-marca').value.trim(), modelo: $('veh-modelo').value.trim(),
+    anio: $('veh-anio').value ? parseInt($('veh-anio').value) : null,
+    color: $('veh-color').value.trim(), num_serie: $('veh-serie').value.trim(),
+    num_motor: $('veh-motor').value.trim(), estado: $('veh-estado-field').value,
+    obs: $('veh-obs').value.trim()
+  };
+  const { error } = id
+    ? await _sb.from('vehiculos').update(payload).eq('id',id)
+    : await _sb.from('vehiculos').insert(payload);
+  btn.disabled=false; btn.textContent='Guardar';
+  if (error) { alert('Error: '+error.message); return; }
+  closeModal('modal-vehiculo');
+  renderVehiculos();
+  showToast(id?'Vehículo actualizado':'Vehículo registrado');
+}
+
+async function viewVehiculoDetalle(id) {
+  const { data: v, error } = await _sb.from('vehiculos').select('*').eq('id',id).single();
+  if (error || !v) return;
+  const { data: infs } = await _sb.from('infracciones').select('folio,fecha,tipo,monto,estado').eq('placa',v.placa).order('fecha',{ascending:false}).limit(20);
+  $('veh-det-title').textContent = `Vehículo — ${v.placa}`;
+  const historial = (infs||[]).length ? (infs||[]).map(i => `<tr>
+    <td class="mono">${i.folio||'—'}</td>
+    <td>${fmtDateShort(i.fecha)}</td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.tipo}</td>
+    <td style="font-weight:700">${fmt(i.monto)}</td>
+    <td>${estadoBadge(i.estado)}</td>
+  </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin infracciones registradas</td></tr>';
+  $('veh-det-body').innerHTML = `
+    <div class="detail-grid" style="margin-bottom:1rem">
+      <div class="detail-field"><label>Placa</label><span style="font-weight:700;font-family:monospace;font-size:1rem">${v.placa}</span></div>
+      <div class="detail-field"><label>Estado</label><span>${estadoBadge(v.estado)}</span></div>
+      <div class="detail-field"><label>Propietario</label><span>${v.propietario}</span></div>
+      <div class="detail-field"><label>Color</label><span>${v.color||'—'}</span></div>
+      <div class="detail-field"><label>Marca / Modelo</label><span>${[v.marca,v.modelo,v.anio].filter(Boolean).join(' ')||'—'}</span></div>
+      <div class="detail-field"><label>Núm. de serie</label><span>${v.num_serie||'—'}</span></div>
+      <div class="detail-field"><label>Núm. de motor</label><span>${v.num_motor||'—'}</span></div>
+      <div class="detail-field"><label>Registrado</label><span>${fmtDateShort(v.created_at)}</span></div>
+      ${v.obs?`<div class="detail-field full"><label>Observaciones</label><span>${v.obs}</span></div>`:''}
+    </div>
+    <div style="font-size:.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem">Historial de infracciones</div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
+      <tbody>${historial}</tbody></table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vehiculo-detalle')">Cerrar</button>
+      <button class="btn btn-secondary" onclick="editVehiculo('${v.id}');closeModal('modal-vehiculo-detalle')">Editar</button>
+    </div>`;
+  openModal('modal-vehiculo-detalle');
+}
+
+// ══════════════════════════════════════════════════════════
+// GRÚA / CORRALÓN
+// ══════════════════════════════════════════════════════════
+let _gruaPage = 1, _gruaSearch = '', _gruaEstado = '';
+const GRUA_PAGE = 20;
+
+async function renderGrua() {
+  const tbody = $('grua-table'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  let q = _sb.from('grua').select('*');
+  if (_gruaSearch) q = q.or(`placa.ilike.%${_gruaSearch}%,propietario.ilike.%${_gruaSearch}%`);
+  if (_gruaEstado) q = q.eq('estado', _gruaEstado);
+  q = q.order('fecha', {ascending:false});
+  const { data, error } = await q;
+  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  const all = data||[];
+
+  // Stats
+  const today = new Date().toISOString().slice(0,10);
+  const mesInicio = new Date().toISOString().slice(0,7)+'-01';
+  const retenidos = all.filter(r=>r.estado==='retenido').length;
+  const libHoy = all.filter(r=>r.estado==='liberado'&&r.fecha_liberacion&&r.fecha_liberacion.slice(0,10)===today).length;
+  const mesTotal = all.filter(r=>r.estado==='liberado'&&r.fecha_liberacion&&r.fecha_liberacion>=mesInicio).reduce((s,r)=>s+Number(r.costo_deposito||0),0);
+  if($('grua-stat-retenidos')) $('grua-stat-retenidos').textContent=retenidos;
+  if($('grua-stat-liberados')) $('grua-stat-liberados').textContent=libHoy;
+  if($('grua-stat-monto')) $('grua-stat-monto').textContent=fmt(mesTotal);
+  const badge=$('badge-grua'); if(badge){badge.textContent=retenidos;badge.style.display=retenidos?'inline':'none';}
+
+  const pages = Math.max(1,Math.ceil(all.length/GRUA_PAGE));
+  if(_gruaPage>pages)_gruaPage=pages;
+  const rows = all.slice((_gruaPage-1)*GRUA_PAGE,_gruaPage*GRUA_PAGE);
+  tbody.innerHTML = rows.length ? rows.map(r=>{
+    const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
+    const costoAcum = Number(r.costo_deposito||0) + dias*Number(r.costo_diario||0);
+    return `<tr>
+      <td class="mono">${r.folio||'—'}</td>
+      <td>${fmtDateShort(r.fecha)}</td>
+      <td class="mono" style="font-weight:700">${r.placa}</td>
+      <td>${r.propietario||'—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.motivo||'—'}</td>
+      <td style="font-weight:700">${fmt(costoAcum)}</td>
+      <td>${estadoBadge(r.estado)}</td>
+      <td style="white-space:nowrap">
+        ${r.estado==='retenido'?`<button class="btn btn-primary btn-sm" style="background:var(--green);border-color:var(--green)" onclick="liberarVehiculo('${r.id}')">Liberar</button>`:''}
+        <button class="btn btn-ghost btn-sm" onclick="editGrua('${r.id}')">Editar</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin registros en corralón</td></tr>';
+  renderPager('grua-pager', _gruaPage, pages, 'goGruaPage');
+}
+
+function filterGrua() {
+  _gruaSearch=($('grua-search')||{}).value||'';
+  _gruaEstado=($('grua-estado')||{}).value||'';
+  _gruaPage=1; renderGrua();
+}
+function goGruaPage(p) { _gruaPage=p; renderGrua(); }
+
+function openNewGrua() {
+  $('grua-id').value=''; $('grua-placa').value=''; $('grua-propietario').value='';
+  $('grua-motivo').value=''; $('grua-oficial').value=_session?.name||''; $('grua-ubicacion').value='';
+  $('grua-costo').value=''; $('grua-diario').value=''; $('grua-obs').value='';
+  const now = new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+  $('grua-fecha').value=now.toISOString().slice(0,16);
+  $('modal-grua-title').textContent='Registrar retención';
+  $('grua-submit-btn').textContent='Registrar';
+  openModal('modal-grua');
+}
+
+async function editGrua(id) {
+  const { data, error } = await _sb.from('grua').select('*').eq('id',id).single();
+  if (error || !data) return;
+  $('grua-id').value=data.id; $('grua-placa').value=data.placa; $('grua-propietario').value=data.propietario||'';
+  $('grua-motivo').value=data.motivo||''; $('grua-oficial').value=data.oficial||''; $('grua-ubicacion').value=data.ubicacion||'';
+  $('grua-costo').value=data.costo_deposito||''; $('grua-diario').value=data.costo_diario||''; $('grua-obs').value=data.obs||'';
+  if(data.fecha){ const d=new Date(data.fecha); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); $('grua-fecha').value=d.toISOString().slice(0,16); }
+  $('modal-grua-title').textContent='Editar registro';
+  $('grua-submit-btn').textContent='Actualizar';
+  openModal('modal-grua');
+}
+
+async function submitGrua(e) {
+  e.preventDefault();
+  const btn = $('grua-submit-btn'); btn.disabled=true; btn.textContent='Guardando…';
+  const id = $('grua-id').value;
+  const n = Date.now();
+  const payload = {
+    placa: $('grua-placa').value.trim().toUpperCase(),
+    propietario: $('grua-propietario').value.trim(),
+    motivo: $('grua-motivo').value.trim(),
+    oficial: $('grua-oficial').value.trim(),
+    ubicacion: $('grua-ubicacion').value.trim(),
+    costo_deposito: parseFloat($('grua-costo').value)||0,
+    costo_diario: parseFloat($('grua-diario').value)||0,
+    obs: $('grua-obs').value.trim(),
+    fecha: $('grua-fecha').value ? new Date($('grua-fecha').value).toISOString() : new Date().toISOString()
+  };
+  if (!id) {
+    const seq = String(n).slice(-5);
+    payload.folio = `GRU-${new Date().getFullYear()}-${seq}`;
+    payload.estado = 'retenido';
+  }
+  const { error } = id
+    ? await _sb.from('grua').update(payload).eq('id',id)
+    : await _sb.from('grua').insert(payload);
+  btn.disabled=false; btn.textContent='Registrar';
+  if (error) { alert('Error: '+error.message); return; }
+  closeModal('modal-grua');
+  logActivity('info', `Grúa: vehículo ${payload.placa} ${id?'actualizado':'retenido'}`);
+  renderGrua();
+  showToast(id?'Registro actualizado':'Vehículo retenido en corralón');
+}
+
+async function liberarVehiculo(id) {
+  if (!confirm('¿Confirmas la liberación del vehículo?')) return;
+  const { error } = await _sb.from('grua').update({ estado:'liberado', fecha_liberacion: new Date().toISOString() }).eq('id',id);
+  if (error) { alert('Error: '+error.message); return; }
+  logActivity('info', `Grúa: vehículo liberado del corralón`);
+  renderGrua();
+  showToast('Vehículo liberado del corralón');
+}
+
+// ══════════════════════════════════════════════════════════
+// MAPA DE INFRACCIONES (Leaflet.js)
+// ══════════════════════════════════════════════════════════
+let _leafletMap = null, _leafletMarkers = [];
+
+async function renderMapa() {
+  const estadoFil = ($('mapa-estado')||{}).value||'';
+  const mesFil    = ($('mapa-mes')||{}).value||'';
+
+  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,estado,fecha,lat,lng').not('lat','is',null).not('lng','is',null);
+  if (estadoFil) q = q.eq('estado', estadoFil);
+  if (mesFil)    q = q.gte('fecha', mesFil+'-01').lte('fecha', mesFil+'-31');
+  const { data } = await q;
+  const infs = (data||[]).filter(r=>r.lat&&r.lng);
+
+  if($('mapa-count')) $('mapa-count').textContent = `${infs.length} infracciones con ubicación`;
+
+  // Init map once
+  if (!_leafletMap) {
+    _leafletMap = L.map('leaflet-map').setView([19.4326,-99.1332], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      attribution:'© OpenStreetMap contributors', maxZoom:19
+    }).addTo(_leafletMap);
+  }
+
+  // Clear existing markers
+  _leafletMarkers.forEach(m=>m.remove());
+  _leafletMarkers=[];
+
+  const colorMap = { pendiente:'#D97706', pagada:'#059669', impugnada:'#2563EB', vencida:'#DC2626', cancelada:'#6B7280' };
+
+  infs.forEach(r => {
+    const color = colorMap[r.estado]||'#6B7280';
+    const icon = L.divIcon({
+      className:'',
+      html:`<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.4)"></div>`,
+      iconSize:[14,14], iconAnchor:[7,7]
+    });
+    const marker = L.marker([r.lat, r.lng], {icon}).addTo(_leafletMap);
+    marker.bindPopup(`<div style="font-family:'DM Sans',sans-serif;font-size:.8rem;min-width:180px">
+      <div style="font-weight:700;margin-bottom:.3rem">${r.folio||'—'} · ${r.placa}</div>
+      <div style="color:#374151">${r.tipo}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:.4rem">
+        <span style="color:#6B7280;font-size:.75rem">${fmtDateShort(r.fecha)}</span>
+        <strong>$${Number(r.monto).toLocaleString('es-MX')}</strong>
+      </div>
+    </div>`);
+    _leafletMarkers.push(marker);
+  });
+
+  if (infs.length) {
+    const bounds = L.latLngBounds(infs.map(r=>[r.lat,r.lng]));
+    _leafletMap.fitBounds(bounds, {padding:[40,40]});
+  }
+
+  // Trigger resize in case map was hidden when initialized
+  setTimeout(()=>_leafletMap.invalidateSize(),200);
+}
+
+// ══════════════════════════════════════════════════════════
+// RENDIMIENTO POR OFICIAL
+// ══════════════════════════════════════════════════════════
+async function renderRendimiento() {
+  const periodo = ($('rend-periodo')||{}).value||'mes';
+  const now = new Date();
+  let desde = null;
+  if (periodo==='mes') {
+    desde = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  } else if (periodo==='semana') {
+    const d = new Date(now); d.setDate(d.getDate()-d.getDay());
+    desde = d.toISOString().slice(0,10);
+  }
+
+  let q = _sb.from('infracciones').select('oficial,monto,estado,fecha');
+  if (desde) q = q.gte('fecha', desde);
+  const { data } = await q;
+  const all = data||[];
+
+  // Group by oficial
+  const byOficial = {};
+  all.forEach(r => {
+    const k = r.oficial||'Sin asignar';
+    if (!byOficial[k]) byOficial[k] = {nombre:k, total:0, monto:0, pagadas:0, pendientes:0};
+    byOficial[k].total++;
+    byOficial[k].monto += Number(r.monto||0);
+    if (r.estado==='pagada') byOficial[k].pagadas++;
+    if (r.estado==='pendiente') byOficial[k].pendientes++;
+  });
+
+  const sorted = Object.values(byOficial).sort((a,b)=>b.total-a.total);
+  const maxTotal = sorted.length ? sorted[0].total : 1;
+  const totalGlobal = sorted.reduce((s,o)=>s+o.total,0);
+  const montoGlobal = sorted.reduce((s,o)=>s+o.monto,0);
+  const topOficial = sorted[0]?.nombre||'—';
+
+  // Stats cards
+  const statsEl = $('rend-stats');
+  if (statsEl) statsEl.innerHTML = `
+    <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${totalGlobal}</div><div class="stat-label">Infracciones levantadas</div></div><div class="stat-icon" style="background:#FEF2F2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div></div></div>
+    <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${sorted.length}</div><div class="stat-label">Oficiales activos</div></div><div class="stat-icon" style="background:var(--ac-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div></div></div>
+    <div class="stat-card"><div class="stat-top"><div><div class="stat-num" style="font-size:1.1rem;letter-spacing:0">${topOficial.split(' ').slice(0,2).join(' ')}</div><div class="stat-label">Oficial más activo</div></div><div class="stat-icon" style="background:#ECFDF5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div></div></div>
+    <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${fmt(montoGlobal)}</div><div class="stat-label">Monto total levantado</div></div><div class="stat-icon" style="background:var(--ac-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div></div></div>`;
+
+  const tbody = $('rendimiento-table');
+  if (tbody) tbody.innerHTML = sorted.length ? sorted.map(o => {
+    const tasa = o.total>0 ? Math.round(o.pagadas/o.total*100) : 0;
+    const bar = `<div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden;width:80px"><div style="height:100%;background:var(--ac);width:${Math.round(o.total/maxTotal*100)}%"></div></div>`;
+    return `<tr>
+      <td style="font-weight:600">${o.nombre}</td>
+      <td style="font-weight:700;font-size:.95rem">${o.total}</td>
+      <td>${fmt(o.monto)}</td>
+      <td style="color:var(--green);font-weight:600">${o.pagadas}</td>
+      <td style="color:var(--amber);font-weight:600">${o.pendientes}</td>
+      <td><span class="badge ${tasa>=50?'pagada':'pendiente'}">${tasa}%</span></td>
+      <td>${bar}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Sin datos en el período</td></tr>';
+
+  // Bar chart
+  const chartEl = $('rend-chart');
+  const labelsEl = $('rend-chart-labels');
+  if (chartEl && sorted.length) {
+    chartEl.innerHTML = sorted.slice(0,8).map(o => {
+      const pct = Math.max(4, Math.round(o.total/maxTotal*100));
+      return `<div class="bar-col"><div class="bar-fill" style="height:${pct}%;background:var(--ac)" title="${o.nombre}: ${o.total} infracciones"></div></div>`;
+    }).join('');
+    if (labelsEl) labelsEl.innerHTML = sorted.slice(0,8).map(o=>
+      `<span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${o.nombre.split(' ')[0]}</span>`).join('');
+  }
+
 // ── initData (seed configuracion if empty) ────────────────
 async function initData() {
   const { count: cfgCount } = await _sb.from('configuracion').select('*',{count:'exact',head:true});
@@ -2124,6 +2514,9 @@ async function initData() {
 
 // ── Boot ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+  }
   initUI();
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
   try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
