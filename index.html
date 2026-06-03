@@ -1125,30 +1125,62 @@
 
       <!-- VEHÍCULOS -->
       <div class="view" id="view-vehiculos">
-        <div class="page-header"><h2>Padrón Vehicular</h2><p>Registro de vehículos y su historial de infracciones</p></div>
-        <div class="filter-bar">
-          <div class="search-wrap">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input id="veh-search" class="search-input" type="text" placeholder="Buscar por placa o propietario…" oninput="filterVehiculos()"/>
+
+        <!-- Header -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.2rem">
+          <div>
+            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Padrón Vehicular</h2>
+            <p style="font-size:.82rem;color:var(--muted);margin-top:.15rem">Registro de vehículos y su historial de infracciones</p>
           </div>
+          <button class="btn btn-primary" onclick="openNewVehiculo()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Registrar vehículo
+          </button>
+        </div>
+
+        <!-- Mini stats -->
+        <div class="inf-stats-strip" id="veh-stats-strip" style="margin-bottom:1rem"></div>
+
+        <!-- Filtros -->
+        <div class="filter-bar">
+          <div class="search-wrap" style="flex:1;min-width:180px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="veh-search" class="search-input" type="text" placeholder="Placa, propietario o marca…" oninput="filterVehiculos()"/>
+          </div>
+          <select id="veh-tipo-filter" class="filter-select" onchange="filterVehiculos()">
+            <option value="">Todos los tipos</option>
+            <option value="automovil">Automóvil</option>
+            <option value="camioneta">Camioneta</option>
+            <option value="motocicleta">Motocicleta</option>
+            <option value="camion">Camión</option>
+            <option value="autobus">Autobús</option>
+          </select>
           <select id="veh-estado" class="filter-select" onchange="filterVehiculos()">
             <option value="">Todos los estados</option>
             <option value="activo">Activo</option>
             <option value="suspendido">Suspendido</option>
           </select>
-          <button class="btn btn-primary" onclick="openNewVehiculo()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nuevo vehículo
+          <select id="veh-sort" class="filter-select" onchange="filterVehiculos()">
+            <option value="reciente">Más recientes</option>
+            <option value="placa">Por placa</option>
+            <option value="infracciones">Más infracciones</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="limpiarFiltrosVeh()" title="Limpiar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+
         <div class="card" style="padding:0">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Placa</th><th>Propietario</th><th>Vehículo</th><th>Color</th><th>Estado</th><th>Infracciones</th><th></th></tr></thead>
+              <thead><tr><th>Placa</th><th>Propietario</th><th>Tipo</th><th>Vehículo</th><th>Color</th><th>Estado</th><th>Infracciones</th><th></th></tr></thead>
               <tbody id="vehiculos-table"></tbody>
             </table>
           </div>
-          <div id="vehiculos-pager"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.5rem">
+            <div id="veh-count-label" style="font-size:.75rem;color:var(--muted)"></div>
+            <div id="vehiculos-pager"></div>
+          </div>
         </div>
       </div>
 
@@ -1743,28 +1775,48 @@
 
 <!-- MODAL: Vehículo -->
 <div class="modal-overlay" id="modal-vehiculo">
-  <div class="modal" style="width:520px">
+  <div class="modal" style="width:560px">
     <div class="modal-header">
       <div class="modal-title" id="modal-veh-title">Registrar vehículo</div>
       <button class="modal-close" onclick="closeModal('modal-vehiculo')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <form onsubmit="submitVehiculo(event)">
       <input type="hidden" id="veh-id"/>
+
+      <!-- Sección 1: Propietario -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos del propietario</span>
+      </div>
+      <div class="form-field">
+        <label>Nombre completo *</label>
+        <input id="veh-propietario" class="form-input" type="text" placeholder="Nombre y apellidos" required/>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>Teléfono</label>
+          <input id="veh-telefono" class="form-input" type="tel" placeholder="10 dígitos" maxlength="15"/>
+        </div>
+        <div class="form-field">
+          <label>Estado del registro</label>
+          <select id="veh-estado-field" class="form-select">
+            <option value="activo">Activo</option>
+            <option value="suspendido">Suspendido</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Sección 2: Vehículo -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">2</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos del vehículo</span>
+      </div>
       <div class="form-row">
         <div class="form-field">
           <label>Placa *</label>
-          <input id="veh-placa" class="form-input" type="text" placeholder="ABC-123" required oninput="this.value=this.value.toUpperCase()"/>
+          <input id="veh-placa" class="form-input" type="text" placeholder="ABC-123" required
+            oninput="this.value=this.value.toUpperCase()" style="font-family:monospace;font-weight:700;letter-spacing:.05em;font-size:.9rem"/>
         </div>
-        <div class="form-field">
-          <label>Color</label>
-          <input id="veh-color" class="form-input" type="text" placeholder="Rojo"/>
-        </div>
-      </div>
-      <div class="form-field">
-        <label>Propietario *</label>
-        <input id="veh-propietario" class="form-input" type="text" placeholder="Nombre completo" required/>
-      </div>
-      <div class="form-row">
         <div class="form-field">
           <label>Tipo de vehículo</label>
           <select id="veh-tipo" class="form-select">
@@ -1777,19 +1829,15 @@
             <option value="otro">Otro</option>
           </select>
         </div>
-        <div class="form-field">
-          <label>Teléfono del propietario</label>
-          <input id="veh-telefono" class="form-input" type="tel" placeholder="10 dígitos" maxlength="15"/>
-        </div>
       </div>
       <div class="form-row">
         <div class="form-field">
           <label>Marca</label>
-          <input id="veh-marca" class="form-input" type="text" placeholder="Nissan"/>
+          <input id="veh-marca" class="form-input" type="text" placeholder="Nissan, Toyota…"/>
         </div>
         <div class="form-field">
           <label>Modelo</label>
-          <input id="veh-modelo" class="form-input" type="text" placeholder="Sentra"/>
+          <input id="veh-modelo" class="form-input" type="text" placeholder="Sentra, Corolla…"/>
         </div>
       </div>
       <div class="form-row">
@@ -1798,17 +1846,26 @@
           <input id="veh-anio" class="form-input" type="number" placeholder="2020" min="1950" max="2030"/>
         </div>
         <div class="form-field">
-          <label>Estado</label>
-          <select id="veh-estado-field" class="form-select">
-            <option value="activo">Activo</option>
-            <option value="suspendido">Suspendido</option>
+          <label>Color</label>
+          <select id="veh-color" class="form-select">
+            <option value="">— Sin especificar —</option>
+            <option>Blanco</option><option>Negro</option><option>Gris</option>
+            <option>Plateado</option><option>Rojo</option><option>Azul</option>
+            <option>Verde</option><option>Amarillo</option><option>Naranja</option>
+            <option>Café / Marrón</option><option>Otro</option>
           </select>
         </div>
       </div>
+
+      <!-- Sección 3: Técnica -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">3</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos técnicos <span style="font-weight:400;color:var(--muted)">(opcionales)</span></span>
+      </div>
       <div class="form-row">
         <div class="form-field">
-          <label>Núm. de serie</label>
-          <input id="veh-serie" class="form-input" type="text" placeholder="VIN / Núm. de serie"/>
+          <label>Núm. de serie / VIN</label>
+          <input id="veh-serie" class="form-input" type="text" placeholder="17 caracteres"/>
         </div>
         <div class="form-field">
           <label>Núm. de motor</label>
@@ -1817,11 +1874,15 @@
       </div>
       <div class="form-field">
         <label>Observaciones</label>
-        <input id="veh-obs" class="form-input" type="text" placeholder="Notas adicionales"/>
+        <textarea id="veh-obs" class="form-input" rows="2" style="resize:vertical;font-family:inherit" placeholder="Notas adicionales, características especiales…"></textarea>
       </div>
+
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-vehiculo')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="veh-submit-btn">Guardar</button>
+        <button type="submit" class="btn btn-primary" id="veh-submit-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Guardar vehículo
+        </button>
       </div>
     </form>
   </div>
