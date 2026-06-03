@@ -821,50 +821,108 @@ async function autoFillMonto() {
 }
 
 // ── Permisos ──────────────────────────────────────────────
-let _perPage = 1, _perSearch = '', _perEstado = '';
-const PER_PAGE_SIZE = 12;
+let _perPage = 1, _perSearch = '', _perEstado = '', _perTipo = '';
+const PER_PAGE_SIZE = 15;
+
+function _diasVigencia(vencimiento) {
+  if (!vencimiento) return null;
+  return Math.ceil((new Date(vencimiento+'T00:00:00').getTime() - Date.now()) / 86400000);
+}
 
 async function renderPermisos() {
   const tbody = $('per-table');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('permisos').select('*').order('created_at',{ascending:false});
+  let q = _sb.from('permisos').select('*').order('vencimiento',{ascending:true});
   if (_perEstado) q = q.eq('estado', _perEstado);
-  if (_perSearch) q = q.or(`titular.ilike.%${_perSearch}%,placa.ilike.%${_perSearch}%,num.ilike.%${_perSearch}%`);
+  if (_perTipo)   q = q.eq('tipo', _perTipo);
+  if (_perSearch) q = q.or(`titular.ilike.%${_perSearch}%,placa.ilike.%${_perSearch}%,num.ilike.%${_perSearch}%,ruta.ilike.%${_perSearch}%`);
   const { data, error } = await q;
-  if (error) { tbody.innerHTML = `<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${error.message}</td></tr>`; return; }
 
   const all = data || [];
+
+  // Stats strip
+  const strip = $('per-stats-strip');
+  if (strip) {
+    const vig  = all.filter(r=>r.estado==='vigente').length;
+    const pv   = all.filter(r=>r.estado==='por-vencer').length;
+    const venc = all.filter(r=>r.estado==='vencido').length;
+    const susp = all.filter(r=>r.estado==='suspendido').length;
+    const pill = (label, n, color) => `<div class="inf-stat-pill">
+      <span style="color:${color}">●</span>
+      <span><span class="isp-num">${n}</span> ${label}</span>
+    </div>`;
+    strip.innerHTML =
+      pill('total', all.length, 'var(--subtle)') +
+      pill('vigentes', vig, 'var(--green)') +
+      pill('por vencer', pv, 'var(--amber)') +
+      pill('vencidos', venc, 'var(--red)') +
+      (susp ? pill('suspendidos', susp, 'var(--muted)') : '');
+  }
+
+  // Count label
+  const countLabel = $('per-count-label');
+  if (countLabel) {
+    const hasFilter = _perSearch || _perEstado || _perTipo;
+    countLabel.textContent = hasFilter
+      ? `${all.length} resultado${all.length!==1?'s':''} con los filtros aplicados`
+      : `${all.length} permiso${all.length!==1?'s':''}`;
+  }
+
   const pages = Math.max(1, Math.ceil(all.length/PER_PAGE_SIZE));
   if (_perPage > pages) _perPage = pages;
   const rows = all.slice((_perPage-1)*PER_PAGE_SIZE, _perPage*PER_PAGE_SIZE);
 
-  tbody.innerHTML = rows.length ? rows.map(r=>`
-    <tr>
-      <td>${r.num||'—'}</td>
-      <td>${r.titular}</td>
-      <td>${r.tipo}</td>
-      <td>${r.placa||'—'}</td>
-      <td>${r.ruta||'—'}</td>
-      <td>${fmtDateShort(r.vencimiento)}</td>
+  tbody.innerHTML = rows.length ? rows.map(r => {
+    const dias = _diasVigencia(r.vencimiento);
+    const diasColor = dias === null ? 'var(--muted)' : dias < 0 ? 'var(--red)' : dias <= 7 ? 'var(--red)' : dias <= 30 ? 'var(--amber)' : 'var(--green)';
+    const diasTxt = dias === null ? '—' : dias < 0 ? `${Math.abs(dias)}d vencido` : dias === 0 ? 'Vence hoy' : `${dias}d`;
+    const diasBg  = dias !== null && dias < 0 ? 'var(--red-bg)' : dias !== null && dias <= 30 ? 'var(--amber-bg)' : 'transparent';
+    return `<tr onclick="viewDetail('permisos','${r.id}')" style="cursor:pointer">
+      <td class="mono" style="font-size:.73rem;font-weight:700">${r.num||'—'}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${r.titular}</td>
+      <td style="font-size:.78rem">${r.tipo}</td>
+      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${r.placa||'—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${r.ruta||'—'}</td>
+      <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(r.vencimiento)}</td>
+      <td><span style="background:${diasBg};color:${diasColor};font-weight:700;font-size:.78rem;padding:.15rem .5rem;border-radius:6px">${diasTxt}</span></td>
       <td>${estadoBadge(r.estado)}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="viewDetail('permisos','${r.id}')">Ver</button></td>
-    </tr>`).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin resultados</td></tr>';
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editPermiso('${r.id}')">Editar</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();printPermiso('${r.id}')" title="Imprimir">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        </button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Sin resultados</td></tr>`;
 
   renderPager('per-pager', _perPage, pages, 'goPerPage');
+}
+
+function limpiarFiltrosPer() {
+  if ($('per-search')) $('per-search').value = '';
+  if ($('per-tipo-filter')) $('per-tipo-filter').value = '';
+  if ($('per-estado-filter')) $('per-estado-filter').value = '';
+  _perSearch = ''; _perTipo = ''; _perEstado = ''; _perPage = 1;
+  renderPermisos();
 }
 
 function filterPermisos() {
   _perSearch = ($('per-search')||{}).value||'';
   _perEstado = ($('per-estado-filter')||{}).value||'';
+  _perTipo   = ($('per-tipo-filter')||{}).value||'';
   _perPage = 1;
   renderPermisos();
 }
 
+function goPerPage(p) { _perPage = p; renderPermisos(); }
+
 async function submitPermiso(e) {
   e.preventDefault();
+  const btn = $('per-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
   const id = $('per-id').value;
   const payload = {
     titular:     $('per-titular').value.trim(),
@@ -873,16 +931,21 @@ async function submitPermiso(e) {
     ruta:        $('per-ruta').value.trim(),
     inicio:      $('per-inicio').value||null,
     vencimiento: $('per-venc').value,
-    estado:      $('per-est').value
+    estado:      $('per-est').value,
+    telefono:    ($('per-telefono')||{}).value?.trim()||null,
+    obs:         ($('per-obs')||{}).value?.trim()||null,
+    unidades:    parseInt(($('per-unidades')||{}).value)||1
   };
   if (id) {
     const { error } = await _sb.from('permisos').update(payload).eq('id', id);
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar permiso'; }
     if (error) { alert('Error: '+error.message); return; }
-    await logActivity('permiso', `Permiso actualizado — ${payload.titular} (${payload.placa})`);
+    await logActivity('permiso', `Permiso actualizado — ${payload.titular} (${payload.placa||'sin placa'})`);
   } else {
     const { data, error } = await _sb.from('permisos').insert(payload).select().single();
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar permiso'; }
     if (error) { alert('Error: '+error.message); return; }
-    await logActivity('permiso', `Permiso ${data.num} creado — ${payload.titular}`);
+    await logActivity('permiso', `Permiso ${data.num||''} creado — ${payload.titular}`);
   }
   closeModal('modal-permiso');
   renderPermisos();
@@ -893,6 +956,8 @@ function openNewPermiso() {
   $('per-form').reset();
   $('per-id').value = '';
   if ($('per-inicio')) $('per-inicio').value = new Date().toISOString().slice(0,10);
+  if ($('per-unidades')) $('per-unidades').value = 1;
+  if ($('per-vigencia-preview')) $('per-vigencia-preview').textContent = '';
   openModal('modal-permiso');
 }
 
@@ -908,7 +973,23 @@ async function editPermiso(id) {
   $('per-inicio').value = fmtDateInput(data.inicio);
   $('per-venc').value = fmtDateInput(data.vencimiento);
   $('per-est').value = data.estado;
+  if ($('per-telefono')) $('per-telefono').value = data.telefono||'';
+  if ($('per-obs')) $('per-obs').value = data.obs||'';
+  if ($('per-unidades')) $('per-unidades').value = data.unidades||1;
+  calcEstadoPermiso();
   openModal('modal-permiso');
+}
+
+function renovarPermiso(id) {
+  const inicioHoy = new Date().toISOString().slice(0,10);
+  const d = new Date(); d.setFullYear(d.getFullYear()+1);
+  const vencAno = d.toISOString().slice(0,10);
+  editPermiso(id).then(() => {
+    $('per-inicio').value = inicioHoy;
+    $('per-venc').value = vencAno;
+    calcEstadoPermiso();
+    $('modal-per-title').textContent = 'Renovar permiso';
+  });
 }
 
 // ── Detail modal ──────────────────────────────────────────
@@ -1013,32 +1094,88 @@ async function viewDetail(tabla, id) {
         WhatsApp
       </button>`:''}
     </div>`;
-  })() : `
-    <div class="detail-grid">
-      <div class="detail-field"><label>Núm.</label><span>${r.num||'—'}</span></div>
-      <div class="detail-field"><label>Titular</label><span>${r.titular}</span></div>
-      <div class="detail-field"><label>Tipo</label><span>${r.tipo}</span></div>
-      <div class="detail-field"><label>Placa</label><span>${r.placa||'—'}</span></div>
-      <div class="detail-field"><label>Ruta</label><span>${r.ruta||'—'}</span></div>
-      <div class="detail-field"><label>Inicio</label><span>${fmtDateShort(r.inicio)}</span></div>
-      <div class="detail-field"><label>Vencimiento</label><span>${fmtDateShort(r.vencimiento)}</span></div>
-      <div class="detail-field"><label>Estado</label><span>${estadoBadge(r.estado)}</span></div>
+  })() : (()=>{
+    const dias = _diasVigencia(r.vencimiento);
+    const diasColor = dias===null?'var(--muted)':dias<0?'var(--red)':dias<=7?'var(--red)':dias<=30?'var(--amber)':'var(--green)';
+    const diasTxt = dias===null?'—':dias<0?`Vencido hace ${Math.abs(dias)} días`:dias===0?'Vence hoy':`Vence en ${dias} días`;
+    const secLabel = (icon, txt) =>
+      `<div style="display:flex;align-items:center;gap:.4rem;margin:1rem 0 .6rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">${icon}</svg>
+        <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">${txt}</span>
+      </div>`;
+    return `
+    <!-- Header -->
+    <div style="background:var(--stone);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1rem">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Núm. permiso</div>
+          <div style="font-family:monospace;font-size:1.1rem;font-weight:800;color:var(--ink)">${r.num||'—'}</div>
+          <div style="font-size:.92rem;font-weight:700;color:var(--ink);margin-top:.3rem">${r.titular}</div>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${r.tipo}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          ${estadoBadge(r.estado)}
+          <div style="font-size:1rem;font-weight:800;color:${diasColor};margin-top:.5rem">${diasTxt}</div>
+        </div>
+      </div>
     </div>
-    <div class="detail-actions">
-      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px">
+
+    <div class="detail-grid">
+      <!-- Titular -->
+      <div class="detail-field full">${secLabel('<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>','Datos del titular')}</div>
+      <div class="detail-field full"><label>Razón social / Nombre</label><span style="font-weight:600">${r.titular}</span></div>
+      ${r.telefono?`<div class="detail-field"><label>Teléfono</label><span><a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none">${r.telefono}</a></span></div>`:''}
+      ${r.unidades>1?`<div class="detail-field"><label>Núm. de unidades</label><span>${r.unidades}</span></div>`:''}
+
+      <!-- Vehículo -->
+      <div class="detail-field full">${secLabel('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>','Vehículo y ruta')}</div>
+      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-weight:800;font-size:.95rem">${r.placa||'—'}</span></div>
+      <div class="detail-field"><label>Tipo de permiso</label><span>${r.tipo}</span></div>
+      <div class="detail-field full"><label>Ruta / Zona de circulación</label><span>${r.ruta||'—'}</span></div>
+
+      <!-- Vigencia -->
+      <div class="detail-field full">${secLabel('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>','Vigencia')}</div>
+      <div class="detail-field"><label>Fecha de inicio</label><span>${fmtDateShort(r.inicio)}</span></div>
+      <div class="detail-field"><label>Fecha de vencimiento</label><span style="font-weight:700;color:${diasColor}">${fmtDateShort(r.vencimiento)}</span></div>
+      <div class="detail-field full"><label>Días restantes</label>
+        <span style="font-weight:700;font-size:.9rem;color:${diasColor}">${diasTxt}</span>
+      </div>
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${r.obs}</span></div>`:''}
+    </div>
+
+    <!-- Cambiar estado -->
+    <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+      <span style="font-size:.75rem;font-weight:600;color:var(--muted)">Cambiar estado:</span>
+      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px;flex-shrink:0">
         <option value="vigente"    ${r.estado==='vigente'?'selected':''}>Vigente</option>
         <option value="por-vencer" ${r.estado==='por-vencer'?'selected':''}>Por vencer</option>
         <option value="vencido"    ${r.estado==='vencido'?'selected':''}>Vencido</option>
         <option value="suspendido" ${r.estado==='suspendido'?'selected':''}>Suspendido</option>
       </select>
-      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('permisos','${r.id}')">Guardar estado</button>
-      <button class="btn btn-secondary btn-sm" onclick="editPermiso('${r.id}');closeModal('modal-detail')">Editar</button>
-      <button class="btn btn-ghost btn-sm" onclick="printPermiso('${r.id}')" title="Imprimir permiso en hoja carta">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-        Imprimir permiso
+      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('permisos','${r.id}')">Aplicar</button>
+    </div>
+
+    <!-- Acciones -->
+    <div class="detail-actions" style="margin-top:.75rem;flex-wrap:wrap;gap:.5rem">
+      <button class="btn btn-ghost btn-sm" onclick="editPermiso('${r.id}');closeModal('modal-detail')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Editar
       </button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="renovarPermiso('${r.id}');closeModal('modal-detail')" title="Renovar permiso por 1 año más">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Renovar
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="printPermiso('${r.id}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir
+      </button>
+      ${r.telefono?`<a class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0;text-decoration:none" href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        WhatsApp
+      </a>`:''}
       <button class="btn btn-danger btn-sm" onclick="deleteDetail('permisos','${r.id}')">Eliminar</button>
     </div>`;
+  })();
   openModal('modal-detail');
 }
 
@@ -2777,6 +2914,19 @@ function calcEstadoPermiso() {
   const diff = Math.ceil((d - today) / (1000*60*60*24));
   const est = diff < 0 ? 'vencido' : diff <= 30 ? 'por-vencer' : 'vigente';
   if ($('per-est')) $('per-est').value = est;
+  // Preview visual de vigencia
+  const prev = $('per-vigencia-preview');
+  if (prev) {
+    if (diff < 0) {
+      prev.innerHTML = `<span style="color:var(--red);font-weight:600">⚠ Vencido hace ${Math.abs(diff)} días — el estado se marcará como "Vencido"</span>`;
+    } else if (diff === 0) {
+      prev.innerHTML = `<span style="color:var(--amber);font-weight:600">⚠ Vence hoy — el estado se marcará como "Por vencer"</span>`;
+    } else if (diff <= 30) {
+      prev.innerHTML = `<span style="color:var(--amber);font-weight:600">⏳ Vence en ${diff} días — se marcará como "Por vencer"</span>`;
+    } else {
+      prev.innerHTML = `<span style="color:var(--green);font-weight:600">✓ Válido por ${diff} días — estado "Vigente"</span>`;
+    }
+  }
 }
 
 // ── WhatsApp automático ───────────────────────────────────

@@ -757,35 +757,64 @@
 
       <!-- PERMISOS -->
       <div class="view" id="view-permisos">
-        <div class="page-header">
-          <h2>Permisos de Circulación</h2>
-          <p>Control de permisos especiales para circulación de vehículos y transporte</p>
-        </div>
-        <div class="filter-bar">
-          <div class="search-wrap">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input class="search-input" id="per-search" type="text" placeholder="Buscar por número, titular o ruta…" oninput="filterPermisos()">
+
+        <!-- Header -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.2rem">
+          <div>
+            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Permisos de Circulación</h2>
+            <p style="font-size:.82rem;color:var(--muted);margin-top:.15rem">Control de permisos especiales para circulación de vehículos y transporte</p>
           </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-ghost btn-sm" onclick="exportCSV('permisos')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Exportar
+            </button>
+            <button class="btn btn-primary" onclick="openNewPermiso()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Nuevo permiso
+            </button>
+          </div>
+        </div>
+
+        <!-- Mini stats -->
+        <div class="inf-stats-strip" id="per-stats-strip" style="margin-bottom:1rem"></div>
+
+        <!-- Filtros -->
+        <div class="filter-bar">
+          <div class="search-wrap" style="flex:1;min-width:180px">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="search-input" id="per-search" type="text" placeholder="Número, titular, placa o ruta…" oninput="filterPermisos()">
+          </div>
+          <select class="filter-select" id="per-tipo-filter" onchange="filterPermisos()">
+            <option value="">Todos los tipos</option>
+            <option value="Transporte público">Transporte público</option>
+            <option value="Carga y logística">Carga y logística</option>
+            <option value="Servicio especial">Servicio especial</option>
+            <option value="Temporal">Temporal</option>
+          </select>
           <select class="filter-select" id="per-estado-filter" onchange="filterPermisos()">
             <option value="">Todos los estados</option>
             <option value="vigente">Vigente</option>
-            <option value="vencido">Vencido</option>
             <option value="por-vencer">Por vencer</option>
+            <option value="vencido">Vencido</option>
             <option value="suspendido">Suspendido</option>
           </select>
-          <button class="btn btn-primary" onclick="openNewPermiso()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nuevo permiso
+          <button class="btn btn-ghost btn-sm" onclick="limpiarFiltrosPer()" title="Limpiar filtros">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+
         <div class="card" style="padding:0">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>No. Permiso</th><th>Titular</th><th>Tipo</th><th>Placa</th><th>Ruta / Zona</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>No. Permiso</th><th>Titular</th><th>Tipo</th><th>Placa</th><th>Ruta / Zona</th><th>Vencimiento</th><th>Vigencia</th><th>Estado</th><th></th></tr></thead>
               <tbody id="per-table"></tbody>
             </table>
           </div>
-          <div class="pager" id="per-pager"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.5rem">
+            <div id="per-count-label" style="font-size:.75rem;color:var(--muted)"></div>
+            <div class="pager" id="per-pager"></div>
+          </div>
         </div>
       </div>
 
@@ -1359,36 +1388,75 @@
 
 <!-- MODAL: Permiso -->
 <div class="modal-overlay" id="modal-permiso">
-  <div class="modal">
+  <div class="modal" style="width:580px">
     <div class="modal-header">
       <div class="modal-title" id="modal-per-title">Nuevo Permiso de Circulación</div>
       <button class="modal-close" onclick="closeModal('modal-permiso')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <form id="per-form" onsubmit="submitPermiso(event)">
       <input type="hidden" id="per-id"/>
-      <div class="form-field"><label>Titular / Empresa *</label><input id="per-titular" class="form-input" placeholder="Nombre o razón social" type="text" required/></div>
+
+      <!-- Sección 1: Titular -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">1</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos del titular</span>
+      </div>
+      <div class="form-field"><label>Titular / Empresa *</label><input id="per-titular" class="form-input" placeholder="Nombre completo o razón social" type="text" required/></div>
+      <div class="form-row">
+        <div class="form-field"><label>Teléfono de contacto</label><input id="per-telefono" class="form-input" type="tel" placeholder="10 dígitos" maxlength="15"/></div>
+        <div class="form-field"><label>Núm. de unidades</label><input id="per-unidades" class="form-input" type="number" min="1" placeholder="1"/></div>
+      </div>
+
+      <!-- Sección 2: Permiso -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">2</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos del permiso</span>
+      </div>
       <div class="form-row">
         <div class="form-field"><label>Tipo de permiso</label>
-          <select id="per-tipo" class="form-select"><option>Transporte público</option><option>Carga y logística</option><option>Servicio especial</option><option>Temporal</option></select>
+          <select id="per-tipo" class="form-select">
+            <option>Transporte público</option>
+            <option>Carga y logística</option>
+            <option>Servicio especial</option>
+            <option>Temporal</option>
+          </select>
         </div>
-        <div class="form-field"><label>Placa del vehículo</label><input id="per-placa" class="form-input" placeholder="XYZ-1234" type="text"/></div>
+        <div class="form-field"><label>Placa del vehículo</label>
+          <input id="per-placa" class="form-input" placeholder="XYZ-1234" type="text" oninput="this.value=this.value.toUpperCase()" style="font-family:monospace;font-weight:700"/>
+        </div>
       </div>
       <div class="form-field"><label>Ruta o zona de circulación *</label><input id="per-ruta" class="form-input" placeholder="Ej. Ruta 14 — Centro/Periférico" type="text" required/></div>
+
+      <!-- Sección 3: Vigencia -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">3</div>
+        <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Vigencia</span>
+      </div>
       <div class="form-row">
         <div class="form-field"><label>Fecha de inicio</label><input id="per-inicio" class="form-input" type="date"/></div>
         <div class="form-field"><label>Fecha de vencimiento *</label><input id="per-venc" class="form-input" type="date" required onchange="calcEstadoPermiso()"/></div>
       </div>
-      <div class="form-field"><label>Estado</label>
-        <select id="per-est" class="form-select">
-          <option value="vigente">Vigente</option>
-          <option value="por-vencer">Por vencer</option>
-          <option value="vencido">Vencido</option>
-          <option value="suspendido">Suspendido</option>
-        </select>
+      <div id="per-vigencia-preview" style="font-size:.78rem;margin-bottom:.75rem;min-height:1.2rem"></div>
+      <div class="form-row">
+        <div class="form-field"><label>Estado</label>
+          <select id="per-est" class="form-select">
+            <option value="vigente">Vigente</option>
+            <option value="por-vencer">Por vencer (≤30 días)</option>
+            <option value="vencido">Vencido</option>
+            <option value="suspendido">Suspendido</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Observaciones</label>
+          <input id="per-obs" class="form-input" type="text" placeholder="Notas adicionales"/>
+        </div>
       </div>
+
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-permiso')">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar</button>
+        <button type="submit" id="per-submit-btn" class="btn btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Guardar permiso
+        </button>
       </div>
     </form>
   </div>
