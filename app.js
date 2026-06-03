@@ -1642,8 +1642,8 @@ async function printTicket80(id) {
   let qrDataUrl = '';
   try {
     const qrPayload = JSON.stringify({ id: r.id, folio: r.folio||'', placa: r.placa, monto: r.monto, infractor: r.infractor });
-    qrDataUrl = await QRCode.toDataURL(qrPayload, { width: 260, margin: 1, color: { dark: '#000000', light: '#ffffff' } });
-  } catch(e) {}
+    qrDataUrl = new QRious({ value: qrPayload, size: 260, padding: 6, backgroundAlpha: 1 }).toDataURL();
+  } catch(e) { console.warn('QR gen error:', e); }
 
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
