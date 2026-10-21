@@ -2,7 +2,7 @@
 -- Tránsito Municipal — esquema de la base de datos (Supabase/Postgres)
 -- Copia fiel del proyecto `transito-municipal` al 2026-10-21, para poder
 -- recrear la base desde cero en un proyecto nuevo. Correr en el SQL Editor.
--- Después correr security_usuarios.sql.
+-- Después correr security_auth.sql (login con Supabase Auth y permisos por rol).
 -- ═══════════════════════════════════════════════════════════════════
 
 -- ── Tablas ──────────────────────────────────────────────────────────

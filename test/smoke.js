@@ -40,7 +40,17 @@ let nextId = 1;
 const withIds = a => (Array.isArray(a) ? a : [a]).map(r => ({ id: nextId++, folio: 'INF-2026-' + String(nextId).padStart(4, '0'), created_at: new Date().toISOString(), ...r }));
 // Fila con HTML malicioso: si algún módulo no escapa los textos, window.__xss se define.
 const XSS = '<img src=x onerror="window.__xss=1">';
-const ADMIN = { id: 1, usuario: 'admin', nombre: 'Admin Prueba', rol: 'admin', activo: true, iniciales: 'AP' };
+const ADMIN = { id: 1, usuario: 'admin', nombre: 'Admin Prueba', rol: 'admin', activo: true, iniciales: 'AP', auth_id: '00000000-0000-0000-0000-000000000001' };
+// Sesión simulada de Supabase Auth (el JWT no se verifica en el navegador)
+const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+const EXP = Math.floor(Date.now() / 1000) + 3600;
+const SESSION = {
+  access_token: `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: ADMIN.auth_id, role: 'authenticated', exp: EXP })}.firma`,
+  token_type: 'bearer', expires_in: 3600, expires_at: EXP, refresh_token: 'refresh',
+  user: { id: ADMIN.auth_id, aud: 'authenticated', role: 'authenticated', email: 'admin@transito.local' }
+};
+const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
+const norm = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TABLES = {
   infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
   actividad: withIds(seeds.SEED_ACTIVIDAD || []), vehiculos: withIds(seeds.SEED_VEHICULOS || []),
@@ -71,14 +81,18 @@ async function newPage(browser, { dbDown = false } = {}) {
   await page.route(/supabase\.co/, r => {
     const req = r.request(); const u = new URL(req.url());
     if (dbDown || u.pathname.includes('/realtime/')) return r.abort();
+    const json = { 'Content-Type': 'application/json' };
+    if (u.pathname.startsWith('/auth/v1/token')) return r.fulfill({ status: 200, headers: json, body: JSON.stringify(SESSION) });
+    if (u.pathname.startsWith('/auth/v1/')) return r.fulfill({ status: 204, body: '' });
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
-    if (table === 'rpc/verificar_login') rows = [ADMIN];
-    else if (table.startsWith('rpc/')) rows = [];
+    if (table === 'rpc/consulta_publica') {
+      const q = norm(JSON.parse(req.postData() || '{}').p_q);
+      rows = TABLES.infracciones.filter(i => norm(i.placa) === q || norm(i.folio) === q);
+    } else if (table.startsWith('rpc/')) rows = [];
     if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) { let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {} rows = withIds(body); }
-    const json = { 'Content-Type': 'application/json' };
     if ((req.headers()['accept'] || '').includes('vnd.pgrst.object')) {
       if (!rows.length) return r.fulfill({ status: 406, headers: json, body: JSON.stringify({ code: 'PGRST116', message: 'no rows' }) });
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(rows[0]) });
@@ -149,7 +163,10 @@ function check(name, errors, extra) {
     await page.waitForFunction(() => document.querySelector('.btn-login').disabled === false, null, { timeout: 30000 }).catch(() => {});
     const msg = await page.textContent('#error-msg');
     check('login sin servidor', errors, /conectar con el servidor/.test(msg) ? null : 'mensaje incorrecto: ' + msg);
-    await page.evaluate(() => localStorage.setItem('tm_session', JSON.stringify({ id: 1, user: 'admin', name: 'Admin', role: 'Director de Tránsito', rol: 'admin', initials: 'AD' })));
+    await page.evaluate(([k, s]) => {
+      localStorage.setItem('tm_session', JSON.stringify({ id: 1, user: 'admin', name: 'Admin', role: 'Director de Tránsito', rol: 'admin', initials: 'AD' }));
+      localStorage.setItem(k, JSON.stringify(s));
+    }, [SB_KEY, SESSION]);
     await page.goto(BASE + '/');
     const banner = await page.waitForSelector('#conn-banner', { timeout: 30000 }).catch(() => null);
     check('panel sin servidor', errors.filter(e => !/fetch/i.test(e)), banner ? null : 'no mostró el aviso de conexión');

@@ -12,8 +12,8 @@ Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
   accidentes viales, calendario, mapa de infracciones, rendimiento de
   oficiales, reportes (Excel), oficiales/bitácora de turno, configuración y
   usuarios. Búsqueda global con ⌘K y avisos en tiempo real.
-- `consulta.html` — portal ciudadano: consulta de infracciones por placa,
-  folio o nombre, sin iniciar sesión.
+- `consulta.html` — portal ciudadano: consulta de infracciones por placa o
+  folio exactos, sin iniciar sesión.
 - `offline.html` — se muestra si la app se abre sin internet (PWA).
 
 ## Configuración
@@ -22,6 +22,7 @@ Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
 `transito-municipal`. Si la app muestra la franja roja "No hay conexión con
 la base de datos" o el login dice "No se pudo conectar con el servidor",
 revisa primero en el panel de Supabase que el proyecto no esté **pausado**
+(el workflow `supabase-keepalive.yml` lo consulta cada 3 días para evitarlo)
 (en el plan gratis Supabase pausa los proyectos inactivos y solo permite 2
 proyectos activos a la vez).
 
@@ -29,18 +30,28 @@ proyectos activos a la vez).
 
 - `schema.sql` — esquema completo (tablas, folios automáticos, vencimiento,
   tiempo real y políticas). Sirve para recrear la base en un proyecto nuevo.
-- `security_usuarios.sql` — guarda las contraseñas con hash bcrypt, impide que
-  el navegador las lea y verifica el login en el servidor (`verificar_login`).
-  Correrlo **después** de publicar la versión de `login.html` que usa
-  `verificar_login` (esa versión también funciona sin la migración).
+- `security_auth.sql` — login con Supabase Auth y permisos por rol (RLS).
+  Crea una cuenta de Auth por cada usuario (`<usuario>@transito.local`) con
+  su misma contraseña, elimina las contraseñas en texto plano y reemplaza las
+  políticas abiertas. Correr **después** de `schema.sql`. Es idempotente.
+  Ya está aplicado en el proyecto `transito-municipal`.
 
 ## Seguridad
 
-La app usa la llave pública (anon) de Supabase y su propia tabla `usuarios`,
-no Supabase Auth. Por eso las tablas tienen políticas abiertas: quien tenga la
-llave pública puede leer y modificar datos directamente contra la API. Cerrar
-esto requiere migrar el login a Supabase Auth con políticas por rol, como se
-hizo en el sistema escolar (ESCUELA).
+- **Login:** Supabase Auth. En pantalla se escribe solo el usuario (`admin`);
+  por dentro es `admin@transito.local`. Las contraseñas solo existen como hash
+  bcrypt en `auth.users`.
+- **Permisos (RLS):** sin sesión no se puede leer ni escribir nada. El personal
+  activo opera infracciones, permisos, padrón, grúa, accidentes, turnos y
+  pagos. Borrar registros: admin y supervisor. Configuración, gestión de
+  usuarios (`admin_guardar_usuario`) y corrección de pagos: solo admin. Un
+  usuario desactivado pierde el acceso aunque tenga la sesión abierta.
+- **Portal ciudadano:** solo puede llamar a `consulta_publica(placa o folio)`;
+  no tiene acceso directo a ninguna tabla.
+- El rol que guarda el navegador (`tm_session`) solo decide qué se muestra;
+  quien aplica los permisos es la base de datos.
+- Recomendado: en Supabase → Authentication desactivar "Allow new users to
+  sign up" y activar la protección de contraseñas filtradas.
 
 ## Pruebas
 
@@ -54,5 +65,6 @@ npm test
 con un Supabase simulado: inicia sesión, abre cada módulo del panel, busca en
 el portal ciudadano y comprueba los avisos cuando no hay servidor. Falla ante
 cualquier error de JavaScript. `test/db/run.sh` aplica `schema.sql` y
-`security_usuarios.sql` en un Postgres limpio y prueba folios y contraseñas.
+`security_auth.sql` en un Postgres limpio y prueba folios, migración de
+contraseñas y permisos por rol.
 Ambos corren en cada PR (`.github/workflows/ci.yml`).

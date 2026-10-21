@@ -174,7 +174,9 @@
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <script>
-  if (localStorage.getItem('tm_session')) window.location.replace('/');
+  _sb.auth.getSession().then(({ data }) => {
+    if (data.session && localStorage.getItem('tm_session')) window.location.replace('/');
+  });
 
   const roleNames = { admin:'Director de Tránsito', supervisor:'Supervisor de Tránsito', oficial:'Operador de Tránsito' };
 
@@ -189,40 +191,38 @@
     const user = document.getElementById('username').value.trim().toLowerCase();
     const pass = document.getElementById('password').value;
 
-    let data = null, error = null;
-    try {
-      // La contraseña se verifica en el servidor (RPC verificar_login, con hash
-      // bcrypt): el navegador nunca recibe contraseñas. Ver security_usuarios.sql.
-      let res = await _sb.rpc('verificar_login', { p_usuario: user, p_contrasena: pass });
-      if (res.error && (res.error.code === 'PGRST202' || res.error.code === '42883')) {
-        // Base de datos sin la migración todavía: comparación directa (método anterior).
-        res = await _sb.from('usuarios')
-          .select('id,nombre,usuario,rol,iniciales').eq('usuario', user).eq('contrasena', pass).eq('activo', true).maybeSingle();
-      }
-      error = res.error;
-      data = Array.isArray(res.data) ? (res.data[0] || null) : res.data;
-    } catch (err) {
-      error = { message: err.message };
-    }
-
-    btn.disabled = false;
-    btn.textContent = 'Iniciar sesión';
+    const fail = (msg) => {
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+      errEl.textContent = msg;
+      errEl.classList.add('show');
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    };
 
     // Un error de red/servidor no es lo mismo que una contraseña mal escrita:
     // si la base de datos no responde (p. ej. proyecto de Supabase pausado),
     // decirlo claramente en vez de culpar al usuario.
-    if (error) {
-      errEl.textContent = 'No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo en unos minutos.';
-      errEl.classList.add('show');
-      console.error('login:', error);
-      return;
+    const SIN_SERVIDOR = 'No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo en unos minutos.';
+    let auth = null, authErr = null;
+    try {
+      ({ data: auth, error: authErr } = await _sb.auth.signInWithPassword({
+        email: user + '@transito.local', password: pass
+      }));
+    } catch (err) { authErr = { status: 0, message: err.message }; }
+    if (authErr) {
+      console.error('login:', authErr);
+      const credenciales = authErr.status === 400 || authErr.code === 'invalid_credentials';
+      return fail(credenciales ? 'Usuario o contraseña incorrectos.' : SIN_SERVIDOR);
     }
-    if (!data) {
-      errEl.textContent = 'Usuario o contraseña incorrectos.';
-      errEl.classList.add('show');
-      document.getElementById('password').value = '';
-      document.getElementById('password').focus();
-      return;
+    if (!auth?.user) return fail('Usuario o contraseña incorrectos.');
+
+    const { data, error } = await _sb.from('usuarios')
+      .select('id,usuario,nombre,rol,iniciales,activo').eq('auth_id', auth.user.id).maybeSingle();
+    if (error) { await _sb.auth.signOut(); console.error('login:', error); return fail(SIN_SERVIDOR); }
+    if (!data || !data.activo) {
+      await _sb.auth.signOut();
+      return fail(data ? 'Tu usuario está desactivado. Contacta al administrador.' : 'Usuario o contraseña incorrectos.');
     }
 
     localStorage.setItem('tm_session', JSON.stringify({

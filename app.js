@@ -2,11 +2,12 @@
    Tránsito Municipal — app.js  (Supabase backend)
    ───────────────────────────────────────────────────────── */
 
-// ── Auth (session stays in localStorage) ─────────────────
+// ── Auth (Supabase Auth; tm_session guarda solo el perfil para la UI) ──
+// Los permisos reales los aplica la BD (RLS); _rol solo decide qué se muestra.
 const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
-if (!_session) window.location.replace('/login');
-// Columnas visibles de usuarios: la contraseña nunca se lee desde el navegador
-// (ver security_usuarios.sql).
+const _sbToken = localStorage.getItem(`sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`);
+if (!_session || !_sbToken) { localStorage.removeItem('tm_session'); window.location.replace('/login'); }
+// Columnas visibles de usuarios (las contraseñas viven en Supabase Auth)
 const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at';
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
@@ -2489,11 +2490,11 @@ async function submitUsuario() {
   const rol = $('usr-rol')?.value;
   if (!nombre||!usuario) { alert('Nombre y usuario son requeridos'); return; }
   if (!id && !pass) { alert('La contraseña es requerida para nuevos usuarios'); return; }
-  const payload = { nombre, usuario, rol, iniciales };
-  if (pass) payload.contrasena = pass;
-  const { error } = id
-    ? await _sb.from('usuarios').update(payload).eq('id', id)
-    : await _sb.from('usuarios').insert(payload);
+  if (pass && pass.length < 6) { alert('La contraseña debe tener al menos 6 caracteres'); return; }
+  const { error } = await _sb.rpc('admin_guardar_usuario', {
+    p_id: id ? parseInt(id) : null, p_nombre: nombre, p_usuario: usuario,
+    p_rol: rol, p_iniciales: iniciales, p_contrasena: pass || null
+  });
   if (error) { alert('Error: '+error.message); return; }
   closeModal('modal-usuario');
   renderUsuarios();
@@ -3032,9 +3033,29 @@ function initUI() {
   });
 }
 
-function logout() {
+async function logout() {
+  try { await _sb.auth.signOut(); } catch(_) {}
   localStorage.removeItem('tm_session');
   window.location.replace('/login');
+}
+
+// Confirma que la sesión de Supabase sigue siendo válida y el usuario activo
+async function verificarSesion() {
+  const { data: { session } } = await _sb.auth.getSession();
+  if (!session) { await logout(); return false; }
+  const { data: u, error } = await _sb.from('usuarios').select('rol,activo').eq('auth_id', session.user.id).maybeSingle();
+  if (error) { console.error('sesión:', error); return true; }   // falla de red: la BD sigue aplicando permisos
+  if (!u || !u.activo) { await logout(); return false; }
+  if (u.rol !== _rol) {
+    // El rol cambió desde el último login: refrescar perfil y recargar la UI
+    localStorage.setItem('tm_session', JSON.stringify({ ..._session, rol: u.rol }));
+    window.location.reload();
+    return false;
+  }
+  _sb.auth.onAuthStateChange(evt => {
+    if (evt === 'SIGNED_OUT') { localStorage.removeItem('tm_session'); window.location.replace('/login'); }
+  });
+  return true;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -4149,6 +4170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   initUI();
   if (!(await checkConexion())) { navigate('dashboard'); return; }
+  if (!(await verificarSesion())) return;
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
