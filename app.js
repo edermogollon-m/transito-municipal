@@ -279,11 +279,11 @@ async function renderDashboard() {
   if($('s-per'))        $('s-per').textContent     = perVig;
   if($('s-rec'))        $('s-rec').textContent     = fmt(recMes);
   if($('s-hoy'))        $('s-hoy').textContent     = fmt(recHoy);
-  if($('s-hoy-count'))  $('s-hoy-count').textContent = pagosHoyCount ? `${pagosHoyCount} pago${pagosHoyCount>1?'s':''} registrado${pagosHoyCount>1?'s':''}` : 'Sin pagos hoy';
+  if($('s-hoy-count'))  $('s-hoy-count').textContent = pagosHoyCount ? `· ${pagosHoyCount} pago${pagosHoyCount>1?'s':''}` : '· sin pagos todavía';
   if($('s-grua'))       $('s-grua').textContent    = gruaCount ?? '—';
   if($('s-grua-sub'))   $('s-grua-sub').textContent = gruaCount ? 'vehículos retenidos actualmente' : 'corralón vacío';
   if($('s-inf-delta'))  $('s-inf-delta').innerHTML = delta(infMesCount - prevCount);
-  if($('s-pend-delta')) $('s-pend-delta').innerHTML = `<span style="color:var(--muted)">${infPend} sin cobrar en total</span>`;
+  if($('s-pend-delta')) $('s-pend-delta').textContent = `${fmt(inf.filter(r=>r.estado==='pendiente').reduce((a,r)=>a+Number(r.monto||0),0))} por cobrar`;
   if($('s-rec-delta'))  $('s-rec-delta').innerHTML = delta(recMes - prevRec);
   if($('s-per-delta'))  $('s-per-delta').textContent = '';
   if($('badge-pendientes')) $('badge-pendientes').textContent = infPend || '';
@@ -366,72 +366,59 @@ async function renderDashboard() {
 
   renderBarChart(infAll);
 
-  // Alertas: permisos por vencer y multas por prescribir
-  const en30 = new Date(Date.now()+30*86400000).toISOString().slice(0,10);
-  const hace25 = new Date(Date.now()-25*86400000).toISOString();
-  const todayStr = new Date().toISOString().slice(0,10);
-  const [{ data: permAlerta }, { data: infAlerta }] = await Promise.all([
-    _sb.from('permisos').select('id,num,titular,vencimiento').in('estado',['vigente','por-vencer']).lte('vencimiento',en30).gte('vencimiento',todayStr),
-    _sb.from('infracciones').select('id,folio,placa').eq('estado','pendiente').lt('fecha',hace25)
-  ]);
-  const alertsEl = $('dash-alerts');
-  if (alertsEl) {
-    let html = '';
-    if (permAlerta && permAlerta.length) {
-      const btn = `<button class="btn btn-ghost btn-sm" onclick="navigate('permisos',document.querySelector('.nav-item[onclick*=permisos]'))">Ver permisos</button>`;
-      html += `<div style="background:var(--amber-bg);border:1px solid #FDE68A;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#92400E">${permAlerta.length} permiso${permAlerta.length>1?'s':''} vence${permAlerta.length>1?'n':''} en los próximos 30 días</div>
-        <div style="font-size:.73rem;color:#D97706">${permAlerta.slice(0,2).map(p=>`${esc(p.num||'—')} — ${esc(p.titular)}`).join(' · ')}${permAlerta.length>2?' · …':''}</div></div>${btn}</div>`;
-    }
-    if (infAlerta && infAlerta.length) {
-      const btn2 = `<button class="btn btn-ghost btn-sm" onclick="navigate('infracciones',document.querySelector('.nav-item[onclick*=infracciones]'))">Ver infracciones</button>`;
-      html += `<div style="background:var(--red-bg);border:1px solid #FECACA;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#991B1B">${infAlerta.length} infracción${infAlerta.length>1?'es':''} pendiente${infAlerta.length>1?'s':''} con más de 25 días sin pagar</div>
-        <div style="font-size:.73rem;color:#DC2626">${infAlerta.slice(0,2).map(i=>`${esc(i.folio||'—')} (${esc(i.placa)})`).join(' · ')}${infAlerta.length>2?' · …':''}</div></div>${btn2}</div>`;
-    }
-    alertsEl.innerHTML = html;
-  }
   renderAlertas();
 }
 
+// "Pendientes de hoy": una sola lista con todo lo que requiere atención
 async function renderAlertas() {
-  const panel = $('alertas-panel'); if (!panel) return;
+  const panel = $('alertas-panel'), list = $('alertas-list'); if (!panel || !list) return;
   const hoy = new Date().toISOString().slice(0,10);
-  const en7 = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  const en7  = new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  const en30 = new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+  const hace25 = new Date(Date.now()-25*86400000).toISOString();
   const hace15 = new Date(Date.now()-15*86400000).toISOString();
-  const hace27 = new Date(Date.now()-27*86400000).toISOString();
   const hace7  = new Date(Date.now()-7*86400000).toISOString();
 
   const [
     { data: permVenc },
-    { data: infProxVenc },
+    { data: infVenc },
     { data: gruaLarga },
     { data: impSinResolver },
     { data: accProceso }
   ] = await Promise.all([
-    _sb.from('permisos').select('id').in('estado',['vigente','por-vencer']).lte('vencimiento', en7).gte('vencimiento', hoy),
-    _sb.from('infracciones').select('id').eq('estado','pendiente').lte('fecha', hace27),
+    _sb.from('permisos').select('id,num,titular,vencimiento').in('estado',['vigente','por-vencer']).lte('vencimiento', en30).gte('vencimiento', hoy).order('vencimiento'),
+    _sb.from('infracciones').select('id,folio,placa').eq('estado','pendiente').lt('fecha', hace25).order('fecha'),
     _sb.from('grua').select('id').eq('estado','retenido').lte('fecha', hace15),
     _sb.from('infracciones').select('id').eq('estado','impugnada').lte('fecha', hace7),
     _sb.from('accidentes').select('id').eq('estado','en_proceso').limit(99)
   ]);
 
+  const pl = (n, uno, varios) => `${n} ${n===1?uno:varios}`;
   const alertas = [];
-  if (permVenc?.length)       alertas.push({ color:'amber', icon:'<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>',  title:`${permVenc.length} permiso${permVenc.length>1?'s':''} vencen esta semana`, sub:'Renovar antes de que expiren', view:'permisos', bg:'#FFFBEB', ic:'#D97706' });
-  if (infProxVenc?.length)    alertas.push({ color:'red',   icon:'<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>', title:`${infProxVenc.length} infracción${infProxVenc.length>1?'es':''} próximas a vencer`, sub:'Sin pago, vencen en 3 días o menos', view:'infracciones', bg:'#FEF2F2', ic:'#DC2626' });
-  if (gruaLarga?.length)      alertas.push({ color:'red',   icon:'<path d="M18 8h2a2 2 0 012 2v6h-4M6 8H2v10h2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/>',        title:`${gruaLarga.length} vehículo${gruaLarga.length>1?'s':''} retenido${gruaLarga.length>1?'s':''} +15 días`, sub:'Corralón con retenciones prolongadas', view:'grua', bg:'#FEF2F2', ic:'#DC2626' });
-  if (impSinResolver?.length) alertas.push({ color:'blue',  icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',  title:`${impSinResolver.length} impugnación${impSinResolver.length>1?'es':''} sin resolver +7 días`, sub:'Requieren resolución del supervisor', view:'infracciones', bg:'#EFF6FF', ic:'#2563EB' });
-  if (accProceso?.length)     alertas.push({ color:'amber', icon:'<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/>',  title:`${accProceso.length} accidente${accProceso.length>1?'s':''} en proceso`, sub:'Registros sin cerrar', view:'accidentes', bg:'#FFFBEB', ic:'#D97706' });
+  if (infVenc?.length) alertas.push({ c:'var(--red)', view:'infracciones',
+    title: `${pl(infVenc.length,'infracción','infracciones')} con más de 25 días sin pagar`,
+    sub: infVenc.slice(0,3).map(i=>`${i.folio||'—'} (${i.placa})`).join(' · ') + (infVenc.length>3?' · …':'') });
+  if (gruaLarga?.length) alertas.push({ c:'var(--red)', view:'grua',
+    title: `${pl(gruaLarga.length,'vehículo','vehículos')} en corralón hace más de 15 días`, sub:'Revisar liberación o remate' });
+  if (permVenc?.length) {
+    const semana = permVenc.filter(p=>p.vencimiento<=en7).length;
+    alertas.push({ c:'var(--amber)', view:'permisos',
+      title: `${pl(permVenc.length,'permiso vence','permisos vencen')} en los próximos 30 días`,
+      sub: (semana ? `${semana} esta semana · ` : '') + permVenc.slice(0,2).map(p=>p.num ? `${p.num} ${p.titular}` : p.titular).join(' · ') });
+  }
+  if (impSinResolver?.length) alertas.push({ c:'var(--blue)', view:'infracciones',
+    title: `${pl(impSinResolver.length,'impugnación','impugnaciones')} sin resolver hace más de 7 días`, sub:'Requieren resolución del supervisor' });
+  if (accProceso?.length) alertas.push({ c:'var(--subtle)', view:'accidentes',
+    title: `${pl(accProceso.length,'accidente','accidentes')} en proceso`, sub:'Registros sin cerrar' });
 
   if (!alertas.length) { panel.style.display='none'; return; }
-  panel.style.display='grid';
-  panel.innerHTML = alertas.map(a => `
-    <div class="alerta-card ${esc(a.color)}" style="background:${a.bg};border-color:${a.ic}33" onclick="navigate('${a.view}')" title="Ver ${a.view}">
-      <div class="alerta-icon" style="background:${a.ic}18"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${a.ic}" stroke-width="2">${a.icon}</svg></div>
-      <div class="alerta-body"><div class="alerta-title" style="color:${a.ic}">${a.title}</div><div class="alerta-sub" style="color:${a.ic}bb">${a.sub}</div></div>
-    </div>`).join('');
+  panel.style.display='';
+  list.innerHTML = alertas.map(a => `
+    <li><button type="button" class="pend-row" onclick="navigate('${a.view}')">
+      <span class="pend-dot" style="background:${a.c}"></span>
+      <span class="pend-txt"><strong>${esc(a.title)}</strong><small>${esc(a.sub)}</small></span>
+      <span class="pend-go">Ver</span>
+    </button></li>`).join('');
 }
 
 async function renderBarChart(infAll) {
@@ -452,7 +439,7 @@ async function renderBarChart(infAll) {
     const isCurrent = (i === currentMonth && year === new Date().getFullYear());
     const h = Math.max(Math.round(c/max*100), c > 0 ? 4 : 0);
     return `
-    <div class="bar-col" title="${months[i]}: ${c} infracción${c!==1?'es':''}" onclick="navigate('calendario')">
+    <div class="bar-col" title="${months[i]}: ${c} ${c!==1?'infracciones':'infracción'}" onclick="navigate('calendario')">
       <div class="bar-val ${isCurrent?'current':''}">${c > 0 ? c : ''}</div>
       <div class="bar-fill ${isCurrent?'current':''}" style="height:${h}%"></div>
       <div class="bar-label ${isCurrent?'current':''}">${months[i]}</div>
@@ -560,7 +547,7 @@ async function renderInfracciones() {
     const filterActive = _infSearch || _infEstado || _infTipo || _infPeriodo;
     countEl.textContent = filterActive
       ? `${all.length} resultado${all.length!==1?'s':''} con los filtros aplicados`
-      : `${all.length} infracción${all.length!==1?'es':''} en total`;
+      : `${all.length} ${all.length!==1?'infracciones':'infracción'} en total`;
   }
 
   // Pagination
@@ -683,7 +670,7 @@ async function submitInfraccion(e) {
       const folios = adeudos.slice(0,3).map(a=>a.folio||'—').join(', ');
       const confirmMsg =
         `⚠ ADEUDOS PENDIENTES DE PAGO\n\n` +
-        `La placa ${esc(payload.placa)} tiene ${adeudos.length} infracción${adeudos.length>1?'es':''} sin pagar por un total de $${montoAdeudos.toLocaleString('es-MX')} MXN.\n` +
+        `La placa ${esc(payload.placa)} tiene ${adeudos.length} ${adeudos.length>1?'infracciones':'infracción'} sin pagar por un total de $${montoAdeudos.toLocaleString('es-MX')} MXN.\n` +
         `Folios: ${folios}${adeudos.length>3?` y ${adeudos.length-3} más`:''}\n\n` +
         `El infractor deberá regularizar sus adeudos en Tesorería Municipal.\n\n` +
         `¿Desea registrar la nueva infracción de todas formas?`;
@@ -1862,7 +1849,7 @@ async function checkPlacaHistory() {
     html += `
     <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:.55rem .9rem;margin:.35rem 0">
       <div style="font-size:.75rem;font-weight:700;color:#92400E;margin-bottom:.35rem">
-        ⚠ Reincidente — ${prev.length} infracción${prev.length>1?'es':''} previa${prev.length>1?'s':''} en el historial
+        ⚠ Reincidente — ${prev.length} ${prev.length>1?'infracciones':'infracción'} previa${prev.length>1?'s':''} en el historial
       </div>
       ${otrasInf.slice(0,2).map(r=>`
         <div style="font-size:.71rem;color:#78350F;display:flex;gap:.5rem;margin-bottom:.15rem;flex-wrap:wrap;align-items:center">
@@ -1930,7 +1917,7 @@ async function renderPendientesTable() {
   // Contador y totales
   const montoTotal = all.reduce((a,r)=>a+Number(r.monto),0);
   const pendLabel = $('pend-count-label');
-  if (pendLabel) pendLabel.textContent = `${all.length} infracción${all.length!==1?'es':''} · Total: ${fmt(montoTotal)}`;
+  if (pendLabel) pendLabel.textContent = `${all.length} ${all.length!==1?'infracciones':'infracción'} · Total: ${fmt(montoTotal)}`;
 
   const pages = Math.max(1,Math.ceil(all.length/PEND_PAGE_SIZE));
   if (_pendPage>pages) _pendPage=pages;
@@ -3873,7 +3860,7 @@ async function showCalDay(y, m, d) {
   const det = $('cal-day-detail'); if(!det) return;
   if (!data?.length) { det.innerHTML = `<div style="padding:.75rem;color:var(--muted);font-size:.82rem">Sin infracciones el ${fecha}</div>`; return; }
   det.innerHTML = `<div class="card" style="margin-top:.75rem;padding:0">
-    <div style="padding:.8rem 1rem;border-bottom:1px solid var(--border);font-size:.82rem;font-weight:700">${data.length} infracción${data.length>1?'es':''} — ${fecha}</div>
+    <div style="padding:.8rem 1rem;border-bottom:1px solid var(--border);font-size:.82rem;font-weight:700">${data.length} ${data.length>1?'infracciones':'infracción'} — ${fecha}</div>
     <div class="table-wrap"><table>
       <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
       <tbody>${data.map(r=>`<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
