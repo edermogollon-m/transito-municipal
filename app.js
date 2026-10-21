@@ -1155,6 +1155,9 @@ function datosBoletaActual() {
 }
 
 async function editInfraccion(id) {
+  // Las infracciones registradas no se modifican (inmutable.sql): solo cambia su estado
+  alert('Las infracciones registradas no se pueden modificar. Si hay un error, cancélala con su motivo y levanta una nueva.');
+  return;
   const { data, error } = await _sb.from('infracciones').select('*').eq('id', id).single();
   if (error || !data) return;
   $('modal-inf-title').textContent = 'Editar infracción';
@@ -1508,10 +1511,6 @@ async function viewDetail(tabla, id) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
         Cobrar
       </button>`:''}
-      <button class="btn btn-ghost btn-sm" onclick="editInfraccion('${r.id}');closeModal('modal-detail')">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        Editar
-      </button>
       ${(r.estado==='pendiente'||r.estado==='impugnada')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Impugnar</button>`:''}
       ${(r.estado==='impugnada'&&(_rol==='admin'||_rol==='supervisor'))?`
         <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="resolverImpugnacion('${r.id}','cancelada')">✓ Procede</button>
@@ -1523,7 +1522,8 @@ async function viewDetail(tabla, id) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         WhatsApp
       </button>`:''}
-    </div>`;
+    </div>
+    <div style="font-size:.72rem;color:var(--muted);margin-top:.6rem">Una infracción registrada no se puede modificar. Si tiene un error, cancélala con su motivo y levanta una nueva.</div>`;
   })() : (()=>{
     const dias = _diasVigencia(r.vencimiento);
     const diasColor = dias===null?'var(--muted)':dias<0?'var(--red)':dias<=7?'var(--red)':dias<=30?'var(--amber)':'var(--green)';

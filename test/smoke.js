@@ -245,17 +245,26 @@ function check(name, errors, extra) {
     await page.waitForTimeout(500);
     const envio = await page.textContent('#rep-estado');
     check('enviar reporte por correo', errors, /Enviado a director@municipio\.gob\.mx/.test(envio) ? null : envio);
-    // Detalle, edición e impresiones de la fila con HTML malicioso
+    // Detalle e impresiones de la fila con HTML malicioso
     const xssId = TABLES.infracciones.find(r => r.placa === 'XSS-001').id;
     const popups = [];
     page.context().on('page', p => popups.push(p));
-    for (const fn of ['viewDetail', 'editInfraccion', 'printInfraccion', 'printTicket80']) {
+    for (const fn of ['viewDetail', 'printInfraccion', 'printTicket80']) {
       await page.evaluate(([fn, id]) => fn === 'viewDetail' ? viewDetail('infracciones', id) : window[fn](id), [fn, xssId]);
       await page.waitForTimeout(800);
       let xss = await page.evaluate(() => window.__xss);
       for (const p of popups.splice(0)) { xss = xss || await p.evaluate(() => window.__xss).catch(() => false); await p.close().catch(() => {}); }
       check(fn + ' escapa los textos', errors, xss ? 'se ejecutó HTML inyectado' : null);
     }
+    // Una infracción registrada no se edita: sin botón Editar y editInfraccion no abre el formulario
+    await page.evaluate(id => viewDetail('infracciones', id), xssId);
+    await page.waitForTimeout(500);
+    const bloqueo = await page.evaluate(async id => {
+      const editar = [...document.querySelectorAll('#modal-detail button')].some(b => b.textContent.trim() === 'Editar');
+      closeModal('modal-detail'); await editInfraccion(id);
+      return { editar, abierto: document.getElementById('modal-infraccion').classList.contains('open') };
+    }, xssId);
+    check('infracción registrada no se edita', errors, !bloqueo.editar && !bloqueo.abierto ? null : JSON.stringify(bloqueo));
     // Fotos: el detalle pide el enlace firmado y lo pone en la imagen; subirFotos sube a Storage
     await page.evaluate(id => viewDetail('infracciones', id), xssId);
     await page.waitForTimeout(800);

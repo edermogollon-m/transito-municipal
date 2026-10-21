@@ -83,8 +83,8 @@ select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios w
 set role authenticated;
 do $$ declare v bigint; begin
   insert into infracciones (placa, infractor, tipo, monto) values ('AUD-001', 'Auditado', 'Exceso de velocidad', 800) returning id into v;
-  update infracciones set monto = 500, fotos = '["x.jpg"]' where id = v;
-  update infracciones set monto = 500 where id = v;           -- sin cambios reales: no registra
+  update infracciones set estado = 'impugnada', impugnacion_motivo = 'No era yo' where id = v;
+  update infracciones set estado = 'impugnada' where id = v;   -- sin cambios reales: no registra
   assert (select count(*) from auditoria) = 0, 'oficial pudo leer la bitácora';
   begin
     delete from auditoria;
@@ -99,8 +99,8 @@ do $$ declare v text := (select id::text from infracciones where placa = 'AUD-00
   assert (select count(*) from auditoria where tabla = 'infracciones' and registro_id = v) = 2, 'alta + 1 cambio';
   assert (select usuario_nombre from auditoria where registro_id = v and accion = 'alta') = 'Oficial', 'autor del alta';
   assert (select resumen from auditoria where registro_id = v and accion = 'alta') like 'INF-%', 'resumen con folio';
-  assert (select cambios from auditoria where registro_id = v and accion = 'cambio')
-         = '{"monto": {"antes": 800, "despues": 500}}'::jsonb, 'detalle del cambio (sin fotos)';
+  assert (select cambios -> 'estado' from auditoria where registro_id = v and accion = 'cambio')
+         = '{"antes": "pendiente", "despues": "impugnada"}'::jsonb, 'detalle del cambio';
 end $$;
 -- El admin sí la lee
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);
@@ -345,10 +345,11 @@ do $$ declare v_id bigint; v_id2 bigint; begin
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, boleta)
   values ('BOL-001', 'X', 'Uso de celular al conducir', 1, 1133, 'GRUPO-A') returning id into v_id2;
   assert (select count(*) from infracciones where boleta = 'GRUPO-A') = 2, 'varias infracciones en una boleta';
-  update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
-  assert (select monto from infracciones where id = v_id2) = 3519, 'agravante agregada recalcula el monto';
-  update infracciones set circunstancias = '[]' where id = v_id2;
-  assert (select monto from infracciones where id = v_id2) = 1876, 'sin agravantes vuelve a la UMA base';
+  begin
+    update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
+    raise exception 'se pudieron cambiar las circunstancias';
+  exception when insufficient_privilege then null;   -- inmutable.sql
+  end;
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('BOL-002', 'X', 'Uso de celular al conducir', 1, 1133) returning id into v_id;
   assert (select boleta = folio from infracciones where id = v_id), 'sin grupo, la boleta es el folio';
   begin
@@ -359,4 +360,43 @@ do $$ declare v_id bigint; v_id2 bigint; begin
   assert (select count(*) from circunstancias_331) = 14, 'circunstancias del art. 331';
 end $$;
 reset role;
+-- El recálculo por circunstancias sigue funcionando (mantenimiento con el dueño de la base)
+do $$ declare v_id2 bigint := (select id from infracciones where boleta = 'GRUPO-A' and catalogo_numero = 1133); begin
+  update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
+  assert (select monto from infracciones where id = v_id2) = 3519, 'agravante agregada recalcula el monto';
+  update infracciones set circunstancias = '[]' where id = v_id2;
+  assert (select monto from infracciones where id = v_id2) = 1876, 'sin agravantes vuelve a la UMA base';
+end $$;
+
+-- ── Infracciones inmutables (inmutable.sql) ──────────────────────────
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);
+set role authenticated;
+do $$ declare v bigint; begin
+  insert into infracciones (placa, infractor, tipo, monto) values ('INM-001', 'Fijo', 'Exceso de velocidad', 800) returning id into v;
+  begin
+    update infracciones set placa = 'OTRA-01' where id = v;
+    raise exception 'se pudo cambiar la placa';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update infracciones set monto = 1, obs = 'x' where id = v;
+    raise exception 'se pudo cambiar el monto';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from infracciones where id = v;   -- RLS o el trigger lo impiden
+  exception when insufficient_privilege then null;
+  end;
+  assert exists (select 1 from infracciones where id = v), 'se pudo borrar la infracción';
+  -- El estado sí cambia: impugnación y cancelación con motivo
+  update infracciones set estado = 'impugnada', impugnacion_motivo = 'No era yo' where id = v;
+  update infracciones set estado = 'cancelada', cancelacion_motivo = 'Error de captura' where id = v;
+  assert (select placa || estado || monto from infracciones where id = v) = 'INM-001cancelada800', 'solo cambió el estado';
+end $$;
+reset role;
+do $$ begin
+  -- Mantenimiento con el dueño de la base (migraciones) no se bloquea
+  update infracciones set obs = 'migración' where placa = 'INM-001';
+end $$;
+
 \echo 'OK   pruebas de base de datos'
