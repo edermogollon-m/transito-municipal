@@ -5,6 +5,9 @@
 // ── Auth (session stays in localStorage) ─────────────────
 const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
 if (!_session) window.location.replace('/login');
+// Columnas visibles de usuarios: la contraseña nunca se lee desde el navegador
+// (ver security_usuarios.sql).
+const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at';
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
 // ── Config cache (populated on first autoFillMonto call) ──
@@ -2586,7 +2589,7 @@ async function renderUsuarios() {
     return;
   }
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  const { data, error } = await _sb.from('usuarios').select('*').order('id');
+  const { data, error } = await _sb.from('usuarios').select(USR_COLS).order('id');
   if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${error.message}</td></tr>`; return; }
   const labels = { admin:'Administrador', supervisor:'Supervisor', oficial:'Oficial' };
   tbody.innerHTML = (data||[]).map(u=>`
@@ -2612,7 +2615,7 @@ function openNewUsuario() {
 }
 
 async function editUsuario(id) {
-  const { data } = await _sb.from('usuarios').select('*').eq('id',id).single();
+  const { data } = await _sb.from('usuarios').select(USR_COLS).eq('id',id).single();
   if (!data) return;
   $('modal-usr-title').textContent = 'Editar usuario';
   $('usr-id').value        = data.id;
@@ -4205,7 +4208,7 @@ async function setupPushNotifications() {
 // CREDENCIAL DIGITAL DEL OFICIAL
 // ══════════════════════════════════════════════════════════
 async function printCredencial(userId) {
-  const {data,error}=await _sb.from('usuarios').select('*').eq('id',userId).single();
+  const {data,error}=await _sb.from('usuarios').select(USR_COLS).eq('id',userId).single();
   if(error||!data){alert('No se pudo cargar el usuario.');return;}
   const rolLabel={admin:'Director de Tránsito',supervisor:'Supervisor de Tránsito',oficial:'Oficial de Tránsito'};
   const iniciales=(data.iniciales||data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2)).toUpperCase();

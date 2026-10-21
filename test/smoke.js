@@ -70,8 +70,9 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (dbDown || u.pathname.includes('/realtime/')) return r.abort();
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
     let rows = TABLES[table] || [];
-    if (table.startsWith('rpc/')) rows = [];
-    if (!['GET', 'HEAD'].includes(req.method())) { let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {} rows = withIds(body); }
+    if (table === 'rpc/verificar_login') rows = [ADMIN];
+    else if (table.startsWith('rpc/')) rows = [];
+    if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) { let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {} rows = withIds(body); }
     const json = { 'Content-Type': 'application/json' };
     if ((req.headers()['accept'] || '').includes('vnd.pgrst.object')) {
       if (!rows.length) return r.fulfill({ status: 406, headers: json, body: JSON.stringify({ code: 'PGRST116', message: 'no rows' }) });

@@ -191,8 +191,16 @@
 
     let data = null, error = null;
     try {
-      ({ data, error } = await _sb.from('usuarios')
-        .select('*').eq('usuario', user).eq('contrasena', pass).eq('activo', true).maybeSingle());
+      // La contraseña se verifica en el servidor (RPC verificar_login, con hash
+      // bcrypt): el navegador nunca recibe contraseñas. Ver security_usuarios.sql.
+      let res = await _sb.rpc('verificar_login', { p_usuario: user, p_contrasena: pass });
+      if (res.error && (res.error.code === 'PGRST202' || res.error.code === '42883')) {
+        // Base de datos sin la migración todavía: comparación directa (método anterior).
+        res = await _sb.from('usuarios')
+          .select('id,nombre,usuario,rol,iniciales').eq('usuario', user).eq('contrasena', pass).eq('activo', true).maybeSingle();
+      }
+      error = res.error;
+      data = Array.isArray(res.data) ? (res.data[0] || null) : res.data;
     } catch (err) {
       error = { message: err.message };
     }
