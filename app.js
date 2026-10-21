@@ -229,99 +229,110 @@ function navigate(view, btn) {
 // ── Dashboard ─────────────────────────────────────────────
 async function renderDashboard() {
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth()+1;
+  const y = now.getFullYear(), m = now.getMonth()+1, dia = now.getDate();
   const mesInicio = `${y}-${String(m).padStart(2,'0')}-01`;
   const mesFin = new Date(y, m, 1).toISOString().slice(0,10);
-  const today = now.toISOString().slice(0,10);
+  const pm = m===1?12:m-1, py = m===1?y-1:y;
+  const pmInicio = `${py}-${String(pm).padStart(2,'0')}-01`;
+  // Mismo tramo del mes anterior (del 1 al día de hoy) para comparar parejo
+  const pmCorte = new Date(py, pm-1, Math.min(dia, new Date(py, pm, 0).getDate()) + 1).toISOString().slice(0,10);
+  const hoyIni = new Date(y, m-1, dia).toISOString();
 
-  // Actualizar fecha en header
   if ($('dash-fecha-hoy')) {
     $('dash-fecha-hoy').textContent = now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   }
+  const h = now.getHours();
+  const nombre = (_session?.name || '').split(' ')[0];
+  if ($('dash-saludo')) $('dash-saludo').textContent = `${h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'}${nombre ? ', ' + nombre : ''}`;
 
   const [
     { data: infAll },
-    { data: infMes },
-    { data: perAll },
-    { data: act },
-    { data: pagosHoy },
-    { count: gruaCount }
+    { data: pagosMes },
+    { data: pagosPrev },
+    { data: gruaRet },
+    { data: turnosAct }
   ] = await Promise.all([
     _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial'),
-    _sb.from('infracciones').select('id,monto,estado,tipo').gte('fecha', mesInicio).lt('fecha', mesFin),
-    _sb.from('permisos').select('id,estado'),
-    _sb.from('actividad').select('*').order('ts',{ascending:false}).limit(8),
-    _sb.from('pagos').select('monto_final').gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59'),
-    _sb.from('grua').select('*',{count:'exact',head:true}).eq('estado','retenido')
+    _sb.from('pagos').select('monto_final,created_at').gte('created_at', mesInicio).lt('created_at', mesFin),
+    _sb.from('pagos').select('monto_final').gte('created_at', pmInicio).lt('created_at', pmCorte),
+    _sb.from('grua').select('id').eq('estado','retenido'),
+    _sb.from('turnos').select('id').eq('estado','activo')
   ]);
 
-  const inf = infAll || [], infM = infMes || [], per = perAll || [];
-  const infMesCount = infM.length;
-  const infPend = inf.filter(r=>r.estado==='pendiente').length;
-  const perVig  = per.filter(r=>r.estado==='vigente').length;
-  const recMes  = infM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+Number(r.monto),0);
-  const recHoy  = (pagosHoy||[]).reduce((a,r)=>a+Number(r.monto_final),0);
-  const pagosHoyCount = (pagosHoy||[]).length;
+  const inf = infAll || [];
+  const enMes = r => r.fecha >= mesInicio && r.fecha < mesFin;
+  const infM = inf.filter(enMes);
+  const prevCount = inf.filter(r => r.fecha >= pmInicio && r.fecha < pmCorte).length;
+  const sum = (arr, k) => arr.reduce((a,r)=>a+Number(r[k]||0),0);
+  const recMes = sum(pagosMes||[], 'monto_final'), prevRec = sum(pagosPrev||[], 'monto_final');
+  const pagosHoy = (pagosMes||[]).filter(p => p.created_at >= hoyIni);
+  const infHoy = inf.filter(r => r.fecha >= hoyIni).length;
+  const porCobrar = inf.filter(r => r.estado==='pendiente' || r.estado==='vencida');
+  const vencidas = porCobrar.filter(r => r.estado==='vencida').length;
+  const gruaCount = (gruaRet||[]).length;
+  const enTurno = (turnosAct||[]).length;
 
-  const pm = m===1?12:m-1, py = m===1?y-1:y;
-  const pmInicio = `${py}-${String(pm).padStart(2,'0')}-01`;
-  const { data: infPrevMes } = await _sb.from('infracciones').select('id,monto,estado').gte('fecha',pmInicio).lt('fecha',mesInicio);
-  const prevM = infPrevMes || [];
-  const prevCount = prevM.length;
-  const prevRec = prevM.filter(r=>r.estado==='pagada').reduce((a,r)=>a+Number(r.monto),0);
-  const delta = c => c>0 ? `<span class="delta-up">▲ ${c} vs mes anterior</span>` : c<0 ? `<span class="delta-dn">▼ ${Math.abs(c)} vs mes anterior</span>` : `<span style="color:var(--muted)">igual al mes anterior</span>`;
-
-  const mesNombre = now.toLocaleDateString('es-MX',{month:'long',year:'numeric'});
-  if($('s-inf-label'))  $('s-inf-label').textContent = `Infracciones · ${mesNombre}`;
-  if($('s-rec-label'))  $('s-rec-label').textContent = `Recaudación · ${mesNombre}`;
-
-  if($('s-inf'))        $('s-inf').textContent     = infMesCount;
-  if($('s-pend'))       $('s-pend').textContent    = infPend;
-  if($('s-per'))        $('s-per').textContent     = perVig;
-  if($('s-rec'))        $('s-rec').textContent     = fmt(recMes);
-  if($('s-hoy'))        $('s-hoy').textContent     = fmt(recHoy);
-  if($('s-hoy-count'))  $('s-hoy-count').textContent = pagosHoyCount ? `· ${pagosHoyCount} pago${pagosHoyCount>1?'s':''}` : '· sin pagos todavía';
-  if($('s-grua'))       $('s-grua').textContent    = gruaCount ?? '—';
-  if($('s-grua-sub'))   $('s-grua-sub').textContent = gruaCount ? 'vehículos retenidos actualmente' : 'corralón vacío';
-  if($('s-inf-delta'))  $('s-inf-delta').innerHTML = delta(infMesCount - prevCount);
-  if($('s-pend-delta')) $('s-pend-delta').textContent = `${fmt(inf.filter(r=>r.estado==='pendiente').reduce((a,r)=>a+Number(r.monto||0),0))} por cobrar`;
-  if($('s-rec-delta'))  $('s-rec-delta').innerHTML = delta(recMes - prevRec);
-  if($('s-per-delta'))  $('s-per-delta').textContent = '';
-  if($('badge-pendientes')) $('badge-pendientes').textContent = infPend || '';
-
-  // Donut por estado
-  const estadoColors = { pendiente:'#D97706', pagada:'#059669', impugnada:'#2563EB', cancelada:'#DC2626', vencida:'#9CA3AF' };
-  const estados = {};
-  inf.forEach(r=>{ estados[r.estado]=(estados[r.estado]||0)+1; });
-  const sorted = Object.entries(estados).sort((a,b)=>b[1]-a[1]);
-  const totalInf = inf.length || 1;
-  let conic = '', deg = 0;
-  const donutEl = $('main-donut');
-  if (donutEl) {
-    sorted.forEach(([k,v])=>{
-      const pct = v/totalInf*360;
-      conic += `${estadoColors[k]||'#9CA3AF'} ${deg}deg ${deg+pct}deg,`;
-      deg += pct;
-    });
-    donutEl.style.background = `conic-gradient(${conic.slice(0,-1)})`;
-    if($('donut-center-txt')) {
-      $('donut-center-txt').innerHTML = `<div style="font-size:.9rem;font-weight:800;color:var(--ink)">${inf.length}</div><div style="font-size:.6rem;color:var(--muted)">total</div>`;
-    }
-  }
-  if($('dash-legend')) {
-    $('dash-legend').innerHTML = sorted.map(([k,v])=>`
-      <div class="legend-row">
-        <span class="legend-dot" style="background:${estadoColors[k]||'#9CA3AF'}"></span>
-        <span class="legend-label">${esc(k.charAt(0).toUpperCase()+k.slice(1))}</span>
-        <span class="legend-val">${v}</span>
-      </div>`).join('');
+  // Resumen de hoy
+  if ($('dash-hoy-items')) {
+    const pl = (n, uno, varios) => `<strong>${n}</strong> ${n===1?uno:varios}`;
+    $('dash-hoy-items').innerHTML = `<span>Hoy:</span>
+      <span>${pl(infHoy,'infracción','infracciones')}</span>
+      <span><strong>${fmt(sum(pagosHoy,'monto_final'))}</strong> cobrados en ${pagosHoy.length} ${pagosHoy.length===1?'pago':'pagos'}</span>
+      <span>${pl(enTurno,'oficial en turno','oficiales en turno')}</span>`;
   }
 
-  // Top tipos del mes
+  // % contra el mismo tramo del mes anterior
+  const pct = (act, prev) => {
+    if (!prev) return act ? '<span style="color:var(--muted)">sin datos del mes anterior para comparar</span>' : '<span style="color:var(--muted)">sin movimiento</span>';
+    const p = Math.round((act-prev)/prev*100);
+    const txt = `vs. 1–${dia} de ${new Date(py, pm-1, 1).toLocaleDateString('es-MX',{month:'long'})}`;
+    return p > 0 ? `<span class="delta-up">▲ ${p}%</span> ${txt}` : p < 0 ? `<span class="delta-dn">▼ ${Math.abs(p)}%</span> ${txt}` : `igual que ${txt.slice(4)}`;
+  };
+  // Barras por día del mes (las que faltan quedan vacías)
+  const spark = (porDia) => {
+    const diasMes = new Date(y, m, 0).getDate(), max = Math.max(...porDia, 1);
+    return Array.from({length: diasMes}, (_, i) => {
+      const v = porDia[i] || 0;
+      return `<i class="${i+1===dia ? 'hoy' : v ? 'lleno' : ''}" style="height:${i < dia ? Math.max(8, Math.round(v/max*100)) : 8}%;${i >= dia ? 'opacity:.35' : ''}" title="${i+1}: ${v}"></i>`;
+    }).join('');
+  };
+  const porDia = (arr, campoFecha, valor) => { const d = []; arr.forEach(r => { const i = new Date(r[campoFecha]).getDate()-1; d[i] = (d[i]||0) + valor(r); }); return d; };
+
+  const mesNombre = now.toLocaleDateString('es-MX',{month:'long'});
+  if($('s-rec-label'))  $('s-rec-label').textContent = `Recaudación de ${mesNombre}`;
+  if($('s-inf-label'))  $('s-inf-label').textContent = `Infracciones de ${mesNombre}`;
+  if($('s-rec'))        $('s-rec').textContent   = fmt(recMes);
+  if($('s-rec-delta'))  $('s-rec-delta').innerHTML = pct(recMes, prevRec);
+  if($('s-rec-spark'))  $('s-rec-spark').innerHTML = spark(porDia(pagosMes||[], 'created_at', r => Number(r.monto_final||0)));
+  if($('s-inf'))        $('s-inf').textContent   = infM.length;
+  if($('s-inf-delta'))  $('s-inf-delta').innerHTML = pct(infM.length, prevCount);
+  if($('s-inf-spark'))  $('s-inf-spark').innerHTML = spark(porDia(infM, 'fecha', () => 1));
+  if($('s-pend'))       $('s-pend').textContent  = fmt(sum(porCobrar,'monto'));
+  if($('s-pend-delta')) $('s-pend-delta').innerHTML = `${porCobrar.length} ${porCobrar.length===1?'boleta':'boletas'}` + (vencidas ? ` · <span class="vencidas">${vencidas} ${vencidas===1?'vencida':'vencidas'}</span>` : '');
+  if($('s-grua'))       $('s-grua').textContent  = gruaCount;
+  if($('s-grua-sub'))   $('s-grua-sub').textContent = gruaCount ? (gruaCount===1 ? 'vehículo retenido' : 'vehículos retenidos') : 'corralón vacío';
+  if($('badge-pendientes')) $('badge-pendientes').textContent = porCobrar.length || '';
+
+  // Cobranza de las boletas levantadas este mes
+  if ($('dash-cobranza')) {
+    const estadoColors = { pagada:'var(--green)', pendiente:'var(--amber)', vencida:'var(--red)', impugnada:'var(--blue)', cancelada:'var(--subtle)' };
+    const nombres = { pagada:'Pagadas', pendiente:'Pendientes', vencida:'Vencidas', impugnada:'Impugnadas', cancelada:'Canceladas' };
+    const tot = infM.length;
+    const filas = Object.keys(nombres).map(k => ({ k, n: infM.filter(r=>r.estado===k).length, monto: sum(infM.filter(r=>r.estado===k),'monto') })).filter(f => f.n);
+    const pagadas = filas.find(f=>f.k==='pagada')?.n || 0;
+    if ($('dash-cob-sub')) $('dash-cob-sub').textContent = tot ? `${tot} boletas de ${mesNombre}` : '';
+    $('dash-cobranza').innerHTML = tot ? `
+      <div class="cob-tasa">${Math.round(pagadas/tot*100)}%<small>ya pagadas</small></div>
+      <div class="cob-barra">${filas.map(f=>`<span style="width:${f.n/tot*100}%;background:${estadoColors[f.k]}" title="${nombres[f.k]}: ${f.n}"></span>`).join('')}</div>
+      ${filas.map(f=>`<div class="cob-fila"><span class="legend-dot" style="background:${estadoColors[f.k]}"></span><span>${nombres[f.k]} · ${f.n}</span><strong>${fmt(f.monto)}</strong><small>${Math.round(f.n/tot*100)}%</small></div>`).join('')}`
+      : '<div style="color:var(--muted);font-size:.8rem">Sin infracciones este mes</div>';
+  }
+
+  // Motivos del mes
   if ($('dash-tipos-body')) {
     const tipoCount = {};
     infM.forEach(r=>{ if(r.tipo) tipoCount[r.tipo]=(tipoCount[r.tipo]||0)+1; });
-    const topTipos = Object.entries(tipoCount).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    const topTipos = Object.entries(tipoCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
     const maxT = topTipos[0]?.[1] || 1;
     if ($('dash-tipos-mes')) $('dash-tipos-mes').textContent = mesNombre;
     $('dash-tipos-body').innerHTML = topTipos.length ? topTipos.map(([t,c])=>`
@@ -336,33 +347,28 @@ async function renderDashboard() {
       </div>`).join('') : '<div style="color:var(--muted);font-size:.8rem;padding:.25rem 0">Sin infracciones este mes</div>';
   }
 
-  // Infracciones recientes (8 filas, con placa, clickeables)
-  const recent = [...inf].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).slice(0,8);
+  // Infracciones recientes (10 filas, clickeables)
+  const recent = [...inf].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha)).slice(0,10);
   if($('dash-rec-sub')) $('dash-rec-sub').textContent = `Últimas ${recent.length} registradas`;
+  const cuando = f => {
+    const d = new Date(f), min = Math.round((now - d)/60000);
+    const hora = d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    if (min < 60) return `<b>hace ${Math.max(min,1)} min</b>${hora}`;
+    if (d.toDateString() === now.toDateString()) return `<b>hoy</b>${hora}`;
+    const ayer = new Date(now); ayer.setDate(dia-1);
+    if (d.toDateString() === ayer.toDateString()) return `<b>ayer</b>${hora}`;
+    return `<b>${d.toLocaleDateString('es-MX',{day:'numeric',month:'short'})}</b>${hora}`;
+  };
   if($('dash-tbody')) {
     $('dash-tbody').innerHTML = recent.length ? recent.map(r=>`
-      <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
-        <td class="mono" style="font-size:.72rem">${esc(r.folio||'—')}</td>
-        <td style="font-weight:600;font-family:monospace;font-size:.78rem">${esc(r.placa||'—')}</td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</td>
-        <td style="font-weight:600">${fmt(r.monto)}</td>
+      <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer" title="${esc(r.folio||'')}">
+        <td class="dash-cuando">${cuando(r.fecha)}</td>
+        <td style="font-weight:700;font-family:monospace;font-size:.8rem">${esc(r.placa||'—')}<span class="solo-movil">${esc(r.tipo)}</span></td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${esc(r.oficial||'—')}</td>
+        <td style="font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${fmt(r.monto)}</td>
         <td>${estadoBadge(r.estado)}</td>
-      </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
-  }
-
-  // Activity feed
-  const actColors = { infraccion:'#DC2626', permiso:'#1A7A82', config:'#6B7280', info:'#2563EB', pago:'#059669' };
-  if($('dash-activity')) {
-    $('dash-activity').innerHTML = (act||[]).map(a=>`
-      <div class="act-row">
-        <span class="act-dot" style="background:${actColors[a.tipo]||'#9CA3AF'}33;color:${actColors[a.tipo]||'#9CA3AF'}">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
-        </span>
-        <div style="flex:1;min-width:0">
-          <div class="act-txt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.texto)}</div>
-          <div class="act-time">${fmtDateShort(a.ts)}</div>
-        </div>
-      </div>`).join('') || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sin actividad reciente</div>';
+      </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
   }
 
   renderBarChart(infAll);
