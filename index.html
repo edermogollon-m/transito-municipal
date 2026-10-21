@@ -901,26 +901,6 @@
           <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
         </div>
         <div class="card">
-          <div class="card-title" style="margin-bottom:1rem">Montos de infracciones (MXN)</div>
-          <div class="form-row">
-            <div class="form-field"><label>Exceso de velocidad</label><input class="form-input" id="cfg-m-velocidad" type="number" min="0"/></div>
-            <div class="form-field"><label>Estacionamiento prohibido</label><input class="form-input" id="cfg-m-estacionamiento" type="number" min="0"/></div>
-          </div>
-          <div class="form-row">
-            <div class="form-field"><label>No respetar señal de alto</label><input class="form-input" id="cfg-m-alto" type="number" min="0"/></div>
-            <div class="form-field"><label>Conducir sin licencia</label><input class="form-input" id="cfg-m-sinlicencia" type="number" min="0"/></div>
-          </div>
-          <div class="form-row">
-            <div class="form-field"><label>Uso de celular al conducir</label><input class="form-input" id="cfg-m-celular" type="number" min="0"/></div>
-            <div class="form-field"><label>Circular en sentido contrario</label><input class="form-input" id="cfg-m-contrario" type="number" min="0"/></div>
-          </div>
-          <div class="form-row">
-            <div class="form-field"><label>Girar en U prohibido</label><input class="form-input" id="cfg-m-uprohibido" type="number" min="0"/></div>
-            <div class="form-field"><label>No portar documentos</label><input class="form-input" id="cfg-m-documentos" type="number" min="0"/></div>
-          </div>
-          <button class="btn btn-primary" onclick="saveConfig()">Actualizar montos</button>
-        </div>
-        <div class="card">
           <div class="card-title" style="margin-bottom:1rem">Descuento y plazo de pago</div>
           <div class="form-row">
             <div class="form-field">
@@ -964,6 +944,10 @@
           <div class="form-field">
             <label>Fundamento general (se imprime en la boleta)</label>
             <textarea class="form-input" id="cfg-fundamento" rows="3"></textarea>
+          </div>
+          <div class="form-field">
+            <label>Medio de defensa (art. 328: recurso de revocación)</label>
+            <textarea class="form-input" id="cfg-recurso" rows="4"></textarea>
           </div>
           <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Las multas del tabulador se expresan en cuotas: el monto permitido es cuotas × UMA. Actualiza la UMA cada año cuando el INEGI publique el nuevo valor (DOF, enero; vigente desde el 1 de febrero).</p>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
@@ -1437,8 +1421,19 @@
       </div>
       <div class="form-row">
         <div class="form-field"><label>Nombre completo *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
-        <div class="form-field"><label>Núm. de licencia</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text"/></div>
+        <div class="form-field"><label>Núm. de licencia o permiso</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text"/></div>
       </div>
+      <div class="form-row">
+        <div class="form-field"><label>Tipo de licencia o permiso</label>
+          <input id="inf-licencia-tipo" class="form-input" list="lista-licencia-tipo" placeholder="Ej. Automovilista" type="text"/>
+          <datalist id="lista-licencia-tipo"><option value="Automovilista"></option><option value="Chofer"></option><option value="Motociclista"></option><option value="Transporte público"></option><option value="Permiso para conducir"></option><option value="Sin licencia"></option></datalist>
+        </div>
+        <div class="form-field"><label>Correo electrónico</label><input id="inf-correo" class="form-input" placeholder="correo@ejemplo.com" type="email"/></div>
+      </div>
+      <div class="form-field"><label>Domicilio</label><input id="inf-domicilio" class="form-input" placeholder="Calle, número, colonia, municipio" type="text"/></div>
+      <label style="display:flex;align-items:center;gap:.45rem;font-size:.78rem;color:var(--text);margin:-.2rem 0 .6rem;cursor:pointer">
+        <input type="checkbox" id="inf-ausente"/> El infractor no se encontraba presente o no proporcionó sus datos (art. 327, fr. II, inciso b)
+      </label>
       <div class="form-field">
         <label>Teléfono <span style="font-weight:400;color:var(--muted)">(para enviar notificación WhatsApp automática)</span></label>
         <input id="inf-telefono" class="form-input" placeholder="10 dígitos" type="tel" maxlength="15"/>
@@ -1466,8 +1461,8 @@
           </select>
         </div>
         <div class="form-field">
-          <label>Monto (MXN) *</label>
-          <input id="inf-monto" class="form-input" placeholder="800" type="number" min="1" required oninput="updateInfSummary()"/>
+          <label>Monto (MXN) <span style="font-weight:400;color:var(--muted)">— según tabulador</span></label>
+          <input id="inf-monto" class="form-input" placeholder="—" type="number" min="0" readonly title="Se calcula con la UMA del tabulador: base o con agravante (art. 331)"/>
           <div id="inf-monto-preview" style="font-size:.72rem;color:var(--ac);font-weight:700;margin-top:.25rem;min-height:.9rem"></div>
         </div>
       </div>
@@ -1479,6 +1474,10 @@
         <input type="hidden" id="inf-catalogo"/>
         <div id="inf-fundamento"></div>
       </div>
+      <details class="form-field" id="inf-circ-wrap" style="border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem">
+        <summary style="cursor:pointer;font-size:.8rem;font-weight:700;color:var(--ink)">Circunstancias agravantes y atenuantes (art. 331) <span id="inf-circ-resumen" style="font-weight:500;color:var(--muted)"></span></summary>
+        <div id="inf-circunstancias" style="margin-top:.5rem;font-size:.78rem;line-height:1.5"></div>
+      </details>
       <div class="form-field">
         <label>Ubicación / Lugar de los hechos</label>
         <div style="display:flex;gap:.5rem;align-items:center">
@@ -1704,6 +1703,10 @@
     <div class="form-row">
       <div class="form-field"><label>Contraseña</label><input id="usr-pass" class="form-input" type="password" placeholder="Contraseña requerida"/></div>
       <div class="form-field"><label>Iniciales</label><input id="usr-iniciales" class="form-input" type="text" maxlength="3" placeholder="JP"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Número de placa (policía vial)</label><input id="usr-placa" class="form-input" type="text" placeholder="Ej. PV-123"/></div>
+      <div class="form-field"><label>Adscripción</label><input id="usr-adscripcion" class="form-input" type="text" placeholder="Ej. Delegación Misantla"/></div>
     </div>
     <div class="form-field">
       <label>Rol</label>

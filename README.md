@@ -70,9 +70,19 @@ proyectos activos a la vez).
   50% del 6.º al 10.º; sin descuento al conducir en estado de ebriedad. El
   catálogo de San Pedro (`articulos.sql`) queda inactivo como historial.
 
+- `boleta.sql` — boleta conforme a los arts. 327, 328 y 331 del Reglamento
+  de Veracruz: domicilio, correo y tipo de licencia del infractor (o la
+  constancia de que no los proporcionó), número de placa y adscripción del
+  policía vial, varias infracciones del mismo conductor en una sola boleta
+  (con la de mayor cuantía), circunstancias agravantes y atenuantes (con
+  agravante se cobra la UMA "con agravante" del tabulador; el monto lo
+  calcula el servidor) y la leyenda del recurso de revocación.
+- `limpieza.sql` — opcional, a mano: borra permisos y funciones que quedaron
+  sin uso.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
-`cobros.sql` → `articulos.sql` → `veracruz.sql`. Todos son idempotentes y ya están aplicados en
+`cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql`. Todos son idempotentes y ya están aplicados en
 `transito-municipal`.
 
 ## Seguridad

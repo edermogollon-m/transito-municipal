@@ -37,7 +37,7 @@ const seeds = { ...require('./fixtures') }; const seedCtx = vm.createContext({ D
 const cfg = src.match(/const SEED_CONFIG = (\{[\s\S]*?\n\});/);
 if (cfg) seeds.SEED_CONFIG = vm.runInContext('(' + cfg[1] + ')', seedCtx);
 let nextId = 1;
-const withIds = a => (Array.isArray(a) ? a : [a]).map(r => ({ id: nextId++, folio: 'INF-2026-' + String(nextId).padStart(4, '0'), created_at: new Date().toISOString(), ...r }));
+const withIds = a => (Array.isArray(a) ? a : [a]).map(r => { const folio = 'INF-2026-' + String(nextId).padStart(4, '0'); return { id: nextId++, folio, boleta: folio, created_at: new Date().toISOString(), ...r }; });
 // Fila con HTML malicioso: si algún módulo no escapa los textos, window.__xss se define.
 const XSS = '<img src=x onerror="window.__xss=1">';
 const ADMIN = { id: 1, usuario: 'admin', nombre: 'Admin Prueba', rol: 'admin', activo: true, iniciales: 'AP', auth_id: '00000000-0000-0000-0000-000000000001' };
@@ -216,7 +216,7 @@ function check(name, errors, extra) {
     check('formatos de placa', errors, JSON.stringify(formatos) === JSON.stringify(['ABC-1234', '123-ABC', '', 'PBA-123-C']) ? null : JSON.stringify(formatos));
 
     // Boleta sin señal: se guarda en el dispositivo y se sube sola al volver internet
-    await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; });
+    await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; $('inf-domicilio').value = 'Conocido, Misantla'; });
     await page.context().setOffline(true);
     await page.evaluate(() => submitInfraccion({ preventDefault() {} }));
     await page.waitForTimeout(500);
@@ -319,6 +319,34 @@ function check(name, errors, extra) {
     const det = await page.evaluate(() => $('modal-detail').textContent);
     check('detalle muestra el fundamento', errors, /Fundamento legal/.test(det) && /Artículos 244/.test(det) && /Muy Grave/.test(det) ? null : 'sin fundamento en el detalle');
     await page.evaluate(() => closeModal('modal-detail'));
+
+    // Art. 331: con agravante se aplica la UMA con agravante (celular: 16 → 30 UMA)
+    await page.evaluate(() => openNewInfraccion()); await page.waitForTimeout(800);
+    await page.selectOption('#inf-tipo', 'Uso de celular al conducir'); await page.evaluate(() => autoFillMonto()); await page.waitForTimeout(400);
+    const base = await page.inputValue('#inf-monto');
+    await page.evaluate(() => { const cb = document.querySelector('.inf-circ[value="agr_g"]'); cb.checked = true; cb.dispatchEvent(new Event('change')); });
+    const conAgr = await page.inputValue('#inf-monto');
+    check('agravante aplica la UMA con agravante', errors, base === '1876' && conAgr === '3519' ? null : `base ${base}, con agravante ${conAgr}`);
+    // Adeudos de la placa → se sugiere la agravante del inciso e)
+    await page.evaluate(() => { window._placaAdeudos = [{ folio: 'X', monto: 1 }]; sugerirAgravanteAdeudos(); });
+    const sug = await page.evaluate(() => ({ e: document.querySelector('.inf-circ[value="agr_e"]').checked, nota: document.querySelector('.circ-nota[data-c="agr_e"]').textContent }));
+    check('sugiere agravante por adeudos', errors, sug.e && /sin pagar/.test(sug.nota) ? null : JSON.stringify(sug));
+    await page.evaluate(() => closeModal('modal-infraccion'));
+    // Art. 327: varias infracciones en una boleta, datos del infractor y del policía vial, medio de defensa
+    const g1 = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.id !== pendId && r.id !== graveInf.id);
+    const g2 = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && ![pendId, graveInf.id, g1.id].includes(r.id));
+    Object.assign(g1, { boleta: 'B-1', monto: 3519, infractor_domicilio: 'Av. Principal 10, Misantla', infractor_correo: 'x@correo.mx', licencia_tipo: 'Automovilista',
+      oficial: 'Ana Ruiz', oficial_placa: 'PV-123', oficial_adscripcion: 'Delegación Misantla', circunstancias: ['agr_g', 'ate_d'] });
+    Object.assign(g2, { boleta: 'B-1', monto: 586 });
+    TABLES.configuracion[0].leyenda_recurso = 'Contra esta boleta procede el recurso de revocación (artículo 383).';
+    for (const fn of ['printTicket80', 'printInfraccion']) {
+      await page.evaluate(([fn, id]) => window[fn](id), [fn, g1.id]);
+      await page.waitForTimeout(900);
+      let h = ''; for (const p of popups.splice(0)) { h += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+      const falta = [g1.folio, g2.folio, 'mayor cuantía', 'Av. Principal 10', 'Automovilista', 'PV-123', 'Delegación Misantla', 'La reincidencia', 'recurso de revocación (artículo 383)']
+        .filter(t => !h.toLowerCase().includes(t.toLowerCase()));
+      check(fn + ': boleta conforme al art. 327', errors, falta.length ? 'falta: ' + falta.join(', ') : null);
+    }
 
     // Cobro: pasa por registrar_pago (el servidor calcula el descuento)
     await page.evaluate(id => openRegistrarPago(id), pendId);
