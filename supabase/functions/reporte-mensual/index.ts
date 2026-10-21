@@ -2,7 +2,8 @@
 //
 // La llama pg_cron el día 1 de cada mes (encabezado x-cron-secret) o el
 // director desde Reportes → "Enviar por correo ahora" (con su sesión).
-// Secretos de la función: RESEND_API_KEY, CRON_SECRET y, opcionales,
+// La clave de pg_cron se valida contra Vault (es_secreto_cron).
+// Secretos de la función: RESEND_API_KEY y, opcionales,
 // REPORTE_REMITENTE ("Tránsito <reportes@dominio>") y APP_URL.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
@@ -68,7 +69,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   // ¿Quién llama? pg_cron con la clave secreta, o el director con su sesión
-  const cronOk = !!Deno.env.get("CRON_SECRET") && req.headers.get("x-cron-secret") === Deno.env.get("CRON_SECRET");
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+  const secreto = req.headers.get("x-cron-secret");
+  const cronOk = !!secreto && (await admin.rpc("es_secreto_cron", { p_secreto: secreto })).data === true;
   if (!cronOk) {
     const auth = req.headers.get("Authorization") ?? "";
     const usuario = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: auth } } });
@@ -79,7 +82,6 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const mes = typeof body?.mes === "string" && /^\d{4}-\d{2}$/.test(body.mes) ? `${body.mes}-01` : null;
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
   const [{ data: rep, error }, { data: cfg }] = await Promise.all([
     admin.rpc("reporte_mensual", { p_mes: mes }),
     admin.from("configuracion").select("correo_reporte,correo").eq("id", 1).single(),

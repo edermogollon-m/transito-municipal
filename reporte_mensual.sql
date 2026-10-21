@@ -61,10 +61,31 @@ end $$;
 
 grant execute on function public.reporte_mensual(date) to authenticated;
 
--- Envío automático (se configura aparte porque lleva la clave secreta):
--- con las extensiones pg_cron y pg_net activas,
---   select cron.schedule('reporte-mensual', '0 14 1 * *',   -- día 1, 8:00 hora del centro
---     $$ select net.http_post(
---          url := 'https://<proyecto>.supabase.co/functions/v1/reporte-mensual',
---          headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', '<CRON_SECRET>'),
---          body := '{}'::jsonb) $$);
+-- ── Envío automático el día 1 de cada mes ──────────────────────────────
+-- La clave que pg_cron manda a la función vive en Vault (se genera sola);
+-- la función la compara con es_secreto_cron(), que solo puede llamar la
+-- llave de servicio. Requiere las extensiones pg_cron y pg_net.
+create or replace function public.es_secreto_cron(p_secreto text)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+begin
+  if coalesce(auth.role(), '') <> 'service_role' or coalesce(p_secreto, '') = '' then return false; end if;
+  return exists (select 1 from vault.decrypted_secrets where name = 'reporte_mensual_cron' and decrypted_secret = p_secreto);
+end $$;
+
+do $$
+begin
+  if exists (select 1 from pg_namespace where nspname = 'vault') then
+    execute $v$ select vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'reporte_mensual_cron')
+                where not exists (select 1 from vault.secrets where name = 'reporte_mensual_cron') $v$;
+  end if;
+  -- Día 1 a las 14:00 UTC (8:00 hora del centro)
+  if exists (select 1 from pg_namespace where nspname = 'cron') and exists (select 1 from pg_namespace where nspname = 'net') then
+    execute $s$ select cron.schedule('reporte-mensual', '0 14 1 * *', $cron$
+      select net.http_post(
+        url := 'https://tqqeixymxpuewpjhcjno.supabase.co/functions/v1/reporte-mensual',
+        headers := jsonb_build_object('Content-Type', 'application/json',
+          'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'reporte_mensual_cron')),
+        body := '{}'::jsonb)
+    $cron$) $s$;
+  end if;
+end $$;
