@@ -61,9 +61,18 @@ proyectos activos a la vez).
   (art. 192, sin descuento). Cada infracción guarda el fundamento impreso y su
   monto debe caer en el rango del tabulador (cuotas × UMA de Configuración).
 
+- `veracruz.sql` — **reglamento vigente**: Reglamento de la Ley Número 561 de
+  Tránsito y Seguridad Vial para el Estado de Veracruz (municipio de
+  Misantla). 357 infracciones del tabulador 2026 de la Dirección General de
+  Tránsito (artículos, clasificación leve/grave/muy grave, UMA y UMA con
+  agravante) y el texto de los 383 artículos del Reglamento (compilación
+  CNDH, última reforma 1-may-2020). Descuentos del art. 330: 75% en 5 días,
+  50% del 6.º al 10.º; sin descuento al conducir en estado de ebriedad. El
+  catálogo de San Pedro (`articulos.sql`) queda inactivo como historial.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
-`cobros.sql` → `articulos.sql`. Todos son idempotentes y ya están aplicados en
+`cobros.sql` → `articulos.sql` → `veracruz.sql`. Todos son idempotentes y ya están aplicados en
 `transito-municipal`.
 
 ## Seguridad

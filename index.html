@@ -894,19 +894,29 @@
           <div class="card-title" style="margin-bottom:1rem">Descuento y plazo de pago</div>
           <div class="form-row">
             <div class="form-field">
-              <label>Descuento (%)</label>
-              <input class="form-input" id="cfg-descuento-pct" type="number" min="0" max="100" placeholder="20"/>
+              <label>1.er descuento (%)</label>
+              <input class="form-input" id="cfg-descuento-pct" type="number" min="0" max="100" placeholder="75"/>
             </div>
             <div class="form-field">
-              <label>Días para aplicarlo</label>
-              <input class="form-input" id="cfg-dias-descuento" type="number" min="1" placeholder="15"/>
+              <label>Si se paga dentro de (días)</label>
+              <input class="form-input" id="cfg-dias-descuento" type="number" min="1" placeholder="5"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>2.º descuento (%)</label>
+              <input class="form-input" id="cfg-descuento2-pct" type="number" min="0" max="100" placeholder="50"/>
+            </div>
+            <div class="form-field">
+              <label>Si se paga dentro de (días)</label>
+              <input class="form-input" id="cfg-dias-descuento2" type="number" min="1" placeholder="10"/>
             </div>
             <div class="form-field">
               <label>Días límite de pago</label>
               <input class="form-input" id="cfg-dias-limite" type="number" min="1" placeholder="30"/>
             </div>
           </div>
-          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">El descuento se aplica si el pago se realiza dentro de los N días posteriores a la infracción. Pasado el límite, la infracción se marca como vencida automáticamente cada noche. Estos valores se imprimen en boletas y tickets.</p>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Reglamento de la Ley 561 de Veracruz, art. 330: 75% si se paga dentro de los 5 días siguientes y 50% del sexto al décimo día; sin descuento al conducir en estado de ebriedad. Deja el 2.º descuento en blanco si no aplica. Pasado el límite, la infracción se marca como vencida automáticamente cada noche. Estos valores se imprimen en boletas y tickets.</p>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
         </div>
         <div class="card">

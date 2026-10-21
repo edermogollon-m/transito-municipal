@@ -748,16 +748,40 @@ function citaCorta(c) {
 function etiquetaCatalogo(c) { return `${citaCorta(c)} — ${c.descripcion} [#${c.numero}]`; }
 function rangoMonto(c, cfg) {
   const uma = Number(cfg?.valor_uma) || 0;
+  if (c.cuotas_min == null) return { min: 0, max: 0, uma, sinMulta: true };   // amonestación / arresto
   return uma ? { min: Math.floor(c.cuotas_min * uma), max: Math.ceil(c.cuotas_max * uma), uma } : null;
+}
+// Texto de los artículos del reglamento citados (se cargan al abrirlos)
+const _articulos = {};
+async function leerArticulos(det, numero) {
+  if (!det.open || det.dataset.cargado) return;
+  const c = catalogoPorNumero(numero); if (!c) return;
+  const faltan = (c.articulos_ref || []).filter(n => !_articulos[n]);
+  if (faltan.length) {
+    const { data } = await _sb.from('reglamento_articulos').select('numero,texto').in('numero', faltan);
+    (data || []).forEach(a => { _articulos[a.numero] = a.texto; });
+  }
+  const box = det.querySelector('.fund-articulos');
+  if (box) box.innerHTML = (c.articulos_ref || []).map(n => `<p style="margin:.35rem 0">${esc(_articulos[n] || ('Artículo ' + n))}</p>`).join('') || esc(c.texto);
+  det.dataset.cargado = '1';
 }
 function tarjetaFundamento(c, cfg) {
   const r = rangoMonto(c, cfg);
+  const badge = { 'Leve':'badge-green', 'Grave':'badge-yellow', 'Muy Grave':'badge-red' }[c.clasificacion] || 'badge-muted';
+  const sancion = r?.sinMulta
+    ? `Sanción: <strong>${esc(c.clasificacion)}</strong> (sin multa)`
+    : c.cuotas_min === c.cuotas_max
+      ? `Sanción: <strong>${c.cuotas_min} UMA</strong>${r ? ` = <strong>${fmt(r.min)}</strong>` : ''}`
+      : `Sanción: <strong>${c.cuotas_min} UMA</strong>${r ? ` (${fmt(r.min)})` : ''}; con agravante <strong>${c.cuotas_max} UMA</strong>${r ? ` (${fmt(r.max)})` : ''}`;
   return `<div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.6rem .75rem;margin-top:.4rem;font-size:.78rem;line-height:1.45">
-    <div style="font-weight:700;color:var(--ink)">${esc(citaCorta(c))} ${c.grave ? '<span class="badge-red" title="Art. 192: se paga íntegra, sin descuento">Grave · sin descuento</span>' : ''}</div>
-    <div style="color:var(--muted);margin:.15rem 0">${esc(cfg?.reglamento || 'Reglamento de Tránsito')}</div>
-    <div>Sanción: <strong>${c.cuotas_min} a ${c.cuotas_max} cuotas</strong>${r ? ` (UMA $${r.uma}) = <strong>${fmt(r.min)} a ${fmt(r.max)}</strong>` : ''}</div>
-    <details style="margin-top:.3rem"><summary style="cursor:pointer;color:var(--ac);font-weight:600">Leer la disposición</summary>
-      <div style="margin-top:.3rem;white-space:normal">${esc(c.texto)}</div></details>
+    <div style="font-weight:700;color:var(--ink)">${esc(citaCorta(c))}
+      ${c.clasificacion ? `<span class="${badge}">${esc(c.clasificacion)}</span>` : ''}
+      ${c.grave ? '<span class="badge-red" title="Se paga íntegra, sin descuento">Sin descuento</span>' : ''}</div>
+    <div style="color:var(--muted);margin:.15rem 0">${esc(cfg?.reglamento || 'Reglamento de Tránsito')}${c.categoria ? ' · ' + esc(c.categoria) : ''}</div>
+    <div>${sancion}${r && !r.sinMulta ? ` <span style="color:var(--muted)">· UMA $${r.uma}</span>` : ''}</div>
+    ${c.nota ? `<div style="color:var(--muted);font-size:.72rem;margin-top:.15rem">${esc(c.nota)}</div>` : ''}
+    <details style="margin-top:.3rem" ontoggle="leerArticulos(this, ${Number(c.numero)})"><summary style="cursor:pointer;color:var(--ac);font-weight:600">Leer los artículos del reglamento</summary>
+      <div class="fund-articulos" style="margin-top:.3rem;white-space:normal">${c.articulos_ref?.length ? 'Cargando…' : esc(c.texto)}</div></details>
   </div>`;
 }
 
@@ -776,7 +800,10 @@ function seleccionarCatalogo(numero, fijarMonto) {
   if (box) box.innerHTML = c ? tarjetaFundamento(c, _cachedConfig) : '<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Busca la infracción en el reglamento para citar el artículo.</div>';
   const r = c && rangoMonto(c, _cachedConfig);
   if (c && fijarMonto && r && $('inf-monto')) $('inf-monto').value = r.min;
-  if ($('inf-monto') && r) { $('inf-monto').min = r.min; $('inf-monto').max = r.max; }
+  if ($('inf-monto')) {
+    $('inf-monto').min = r ? r.min : 1; $('inf-monto').max = r && !r.sinMulta ? r.max : '';
+    $('inf-monto').readOnly = !!r?.sinMulta; $('inf-monto').required = !r?.sinMulta;
+  }
   updateInfSummary();
 }
 
@@ -1349,6 +1376,8 @@ async function loadConfig() {
   if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
   if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
   if($('cfg-dias-limite'))    $('cfg-dias-limite').value    = data.dias_limite    ?? 30;
+  if($('cfg-descuento2-pct')) $('cfg-descuento2-pct').value = data.descuento2_pct ?? '';
+  if($('cfg-dias-descuento2'))$('cfg-dias-descuento2').value= data.dias_descuento2 ?? '';
   if($('cfg-valor-uma'))      $('cfg-valor-uma').value      = data.valor_uma      ?? '';
   if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
   if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
@@ -1375,6 +1404,8 @@ async function saveConfig() {
     descuento_pct:  parseInt(($('cfg-descuento-pct')||{}).value)||20,
     dias_descuento: parseInt(($('cfg-dias-descuento')||{}).value)||15,
     dias_limite:    parseInt(($('cfg-dias-limite')||{}).value)||30,
+    descuento2_pct: parseInt(($('cfg-descuento2-pct')||{}).value)||0,
+    dias_descuento2: parseInt(($('cfg-dias-descuento2')||{}).value)||null,
     valor_uma:      parseFloat(($('cfg-valor-uma')||{}).value) || null,
     reglamento:     ($('cfg-reglamento')||{}).value?.trim() || null,
     fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
@@ -1399,18 +1430,27 @@ function qrVerificacion(token, size = 220) {
   catch (e) { console.warn('QR:', e); return ''; }
 }
 
-// Descuento por pronto pago y fecha límite, según Configuración
+// Tramos de descuento por pronto pago, según Configuración
+// (Veracruz, art. 330: 75% dentro de 5 días y 50% del 6.º al 10.º)
+function tramosDescuento(cfg) {
+  const t = [{ pct: Number(cfg?.descuento_pct ?? 0), dias: Number(cfg?.dias_descuento ?? 0) }];
+  if (cfg?.dias_descuento2 && Number(cfg?.descuento2_pct) > 0) t.push({ pct: Number(cfg.descuento2_pct), dias: Number(cfg.dias_descuento2) });
+  return t.filter(x => x.pct > 0 && x.dias > 0);
+}
+// Descuento que corresponde hoy a una infracción (null si ya no aplica)
+function descuentoVigente(r, cfg) {
+  const dias = (Date.now() - new Date(r.fecha).getTime()) / 86400000;
+  return tramosDescuento(cfg).find(x => dias <= x.dias) || null;
+}
 function plazosPago(r, cfg, fmtFecha) {
-  const pct  = Number(cfg?.descuento_pct ?? 20);
-  const dDesc = Number(cfg?.dias_descuento ?? 15);
   const dLim  = Number(cfg?.dias_limite ?? 30);
   const t = new Date(r.fecha).getTime();
-  return {
-    pct, dDesc, dLim,
-    descFecha: new Date(t + dDesc*86400000).toLocaleDateString('es-MX', fmtFecha),
-    limFecha:  new Date(t + dLim*86400000).toLocaleDateString('es-MX', fmtFecha),
-    montoDesc: Math.round(r.monto * (1 - pct/100)).toLocaleString('es-MX')
-  };
+  const tramos = tramosDescuento(cfg).map(x => ({
+    ...x,
+    hasta: new Date(t + x.dias*86400000).toLocaleDateString('es-MX', fmtFecha),
+    monto: Math.round(r.monto * (1 - x.pct/100)).toLocaleString('es-MX')
+  }));
+  return { tramos, dLim, limFecha: new Date(t + dLim*86400000).toLocaleDateString('es-MX', fmtFecha) };
 }
 
 async function printInfraccion(id) {
@@ -1429,7 +1469,7 @@ async function printInfraccion(id) {
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const horaStr   = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
-  const { pct: descPct, descFecha, limFecha, montoDesc } = plazosPago(r, cfg, {day:'2-digit',month:'long',year:'numeric'});
+  const { tramos, limFecha } = plazosPago(r, cfg, {day:'2-digit',month:'long',year:'numeric'});
   await cargarCatalogo();
   const catInf = catalogoPorNumero(r.catalogo_numero);
   const grave = !!catInf?.grave;
@@ -1462,7 +1502,7 @@ async function printInfraccion(id) {
             <div class="f"><span class="fl">Hora</span><span class="fv">${horaStr}</span></div>
             <div class="f full"><span class="fl">Ubicación / Lugar de los hechos</span><span class="fv">${esc(r.ubicacion||'—')}</span></div>
             <div class="f full"><span class="fl">Tipo de infracción</span><span class="fv bold">${esc(r.tipo)}</span></div>
-            ${r.fundamento ? `<div class="f full"><span class="fl">Fundamento legal</span><span class="fv">${esc(r.fundamento)}${grave ? ' — infracción grave (art. 192)' : ''}</span></div>` : ''}
+            ${r.fundamento ? `<div class="f full"><span class="fl">Fundamento legal</span><span class="fv">${esc(r.fundamento)}${catInf?.clasificacion ? ' — infracción ' + esc(catInf.clasificacion.toLowerCase()) : ''}</span></div>` : ''}
             ${r.obs ? `<div class="f full"><span class="fl">Observaciones</span><span class="fv">${esc(r.obs)}</span></div>` : ''}
           </div>
         </div>
@@ -1489,14 +1529,14 @@ async function printInfraccion(id) {
         <div class="amount-num">$${montoFmt} <span class="currency">MXN</span></div>
         <div class="payment-dates">
           ${grave ? `<div class="pd-item limit">
-            <div class="pd-label">Infracción grave</div>
-            <div class="pd-date">Sin descuento</div>
-            <div class="pd-amount">Se paga íntegra (art. 192)</div>
-          </div>` : `<div class="pd-item discount">
-            <div class="pd-label">▼ ${descPct}% descuento si paga antes del</div>
-            <div class="pd-date">${descFecha}</div>
-            <div class="pd-amount">Pague solo $${montoDesc} MXN</div>
-          </div>`}
+            <div class="pd-label">Sin descuento</div>
+            <div class="pd-date">Se paga íntegra</div>
+            <div class="pd-amount">${esc(catInf?.descripcion?.slice(0,60) || '')}</div>
+          </div>` : tramos.map(x => `<div class="pd-item discount">
+            <div class="pd-label">▼ ${x.pct}% descuento si paga a más tardar el</div>
+            <div class="pd-date">${x.hasta}</div>
+            <div class="pd-amount">Pague solo $${x.monto} MXN</div>
+          </div>`).join('')}
           <div class="pd-item limit">
             <div class="pd-label">⚠ Fecha límite de pago</div>
             <div class="pd-date">${limFecha}</div>
@@ -2042,7 +2082,7 @@ async function renderPendientesTable() {
   const tbody = $('pendientes-table'); if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono').eq('estado','pendiente');
+  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono,catalogo_numero').eq('estado','pendiente');
   if (_pendSearch) q = q.or(`placa.ilike.%${_pendSearch}%,infractor.ilike.%${_pendSearch}%,folio.ilike.%${_pendSearch}%`);
 
   // Período
@@ -2074,14 +2114,13 @@ async function renderPendientesTable() {
   const rows = all.slice((_pendPage-1)*PEND_PAGE_SIZE, _pendPage*PEND_PAGE_SIZE);
   const today = Date.now();
 
-  // Leer config para descuento
-  const descPct  = _cachedConfig?.descuento_pct  ?? 20;
-  const diasDesc = _cachedConfig?.dias_descuento ?? 15;
+  await Promise.all([cargarCatalogo(), asegurarConfig()]);
 
   tbody.innerHTML = rows.length ? rows.map(r=>{
     const dias = Math.floor((today - new Date(r.fecha).getTime())/86400000);
     const urgColor = dias > 25 ? '#DC2626' : dias > 15 ? '#D97706' : dias > 7 ? '#1A7A82' : '#059669';
-    const descOk = dias <= diasDesc;
+    const tramo = catalogoPorNumero(r.catalogo_numero)?.grave ? null : descuentoVigente(r, _cachedConfig);
+    const descOk = !!tramo, descPct = tramo?.pct || 0;
     const montoFinal = descOk ? Math.round(Number(r.monto)*(1-descPct/100)) : Number(r.monto);
       return `<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
       <td style="width:4px;padding:0;background:${urgColor};border-radius:3px 0 0 3px"></td>
@@ -2437,13 +2476,15 @@ async function buscarInfPago() {
     </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados pendientes</div>';
 }
 
+async function asegurarConfig() {
+  if (_cachedConfig?.valor_uma !== undefined) return _cachedConfig;
+  const { data } = await _sb.from('configuracion').select('*').eq('id', 1).single();
+  if (data) _cachedConfig = { ...(_cachedConfig||{}), ...data };
+  return _cachedConfig;
+}
+
 async function openRegistrarPago(infId) {
-  if (!_cachedConfig) {
-    const { data: cfg } = await _sb.from('configuracion').select('descuento_pct,dias_descuento').eq('id',1).single();
-    if (cfg) _cachedConfig = { ...(_cachedConfig||{}), ...cfg };
-  }
-  const descPct  = _cachedConfig?.descuento_pct  ?? 20;
-  const diasDesc = _cachedConfig?.dias_descuento ?? 15;
+  await asegurarConfig();
 
   const { data: r } = await _sb.from('infracciones').select('*').eq('id', infId).single();
   if (!r) return;
@@ -2451,18 +2492,19 @@ async function openRegistrarPago(infId) {
   const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
   await cargarCatalogo();
   const grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
-  const descOk = dias <= diasDesc && !grave;
+  const tramo = grave ? null : descuentoVigente(r, _cachedConfig);
+  const descOk = !!tramo, descPct = tramo?.pct || 0;
+  const ultimo = tramosDescuento(_cachedConfig).slice(-1)[0];
   const infoEl = $('pago-inf-info');
   if (infoEl) infoEl.innerHTML = `
     <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.35rem">Infracción</div>
     <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${esc(r.folio||'—')} — ${esc(r.tipo)}</div>
     <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${esc(r.infractor)} · Placa: <strong>${esc(r.placa)}</strong></div>
     <div style="font-size:.8rem;color:var(--text)">${fmtDateShort(r.fecha)} · <strong>${fmt(r.monto)}</strong></div>
-    ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pronto pago — menos de ${diasDesc} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">${grave ? 'Infracción grave: se paga íntegra, sin descuento (art. 192 del Reglamento)' : `Sin descuento disponible (más de ${diasDesc} días)`}</div>`}`;
+    ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pago dentro de ${tramo.dias} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">${grave ? 'Esta infracción se paga íntegra, sin descuento (conducir en estado de ebriedad)' : `Sin descuento disponible (han pasado más de ${ultimo?.dias ?? 0} días)`}</div>`}`;
   const descEl = $('pago-descuento');
   if (descEl) {
-    descEl.innerHTML = `<option value="0">Sin descuento (100%)</option><option value="${descPct}">${descPct}% — pronto pago</option>`;
-    Array.from(descEl.options).forEach(o=>{ if(o.value===String(descPct)) o.disabled=!descOk; });
+    descEl.innerHTML = `<option value="0">Sin descuento (100%)</option><option value="${descPct}"${descOk ? '' : ' disabled'}>${descOk ? descPct + '% — pronto pago' : 'Descuento no disponible'}</option>`;
     descEl.value='0';
   }
   if ($('pago-metodo'))  $('pago-metodo').value = 'efectivo';
@@ -2712,7 +2754,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
   const fechaObj = new Date(r.fecha);
   const fechaStr = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
   const horaStr  = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  const { pct: descPct, descFecha, limFecha, montoDesc } = plazosPago(r, cfg, {day:'2-digit',month:'2-digit',year:'numeric'});
+  const { tramos, limFecha } = plazosPago(r, cfg, {day:'2-digit',month:'2-digit',year:'numeric'});
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
   const ref = (r.folio||'INF').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
 
@@ -2748,12 +2790,12 @@ function buildTicket80(r, cfg, qrDataUrl) {
       <div class="t-small">MXN</div>
     </div>
     ${r._grave ? `<div class="t-disc">
-      <div class="t-bold">INFRACCIÓN GRAVE — SIN DESCUENTO</div>
-      <div>Se paga íntegra (art. 192 del Reglamento)</div>
-    </div>` : `<div class="t-disc">
-      <div class="t-bold">▼ ${descPct}% descuento pagando antes del</div>
-      <div>${descFecha} — solo $${montoDesc} MXN</div>
-    </div>`}
+      <div class="t-bold">SIN DESCUENTO</div>
+      <div>Se paga íntegra conforme al Reglamento</div>
+    </div>` : tramos.map(x => `<div class="t-disc">
+      <div class="t-bold">▼ ${x.pct}% descuento pagando a más tardar el</div>
+      <div>${x.hasta} — solo $${x.monto} MXN</div>
+    </div>`).join('')}
     <div class="t-disc" style="border-color:#DC2626;color:#DC2626">
       <div class="t-bold">⚠ Fecha límite de pago: ${limFecha}</div>
     </div>
