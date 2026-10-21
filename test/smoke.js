@@ -52,12 +52,14 @@ const SESSION = {
 const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
 const TOKEN = '11111111-2222-4333-8444-555555555555';
 const storageUploads = [];
+const rpcCalls = [];
 const norm = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TABLES = {
   infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000', token_verificacion: TOKEN, fotos: '["infracciones/2026/prueba.jpg"]' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
   actividad: withIds(seeds.SEED_ACTIVIDAD || []), vehiculos: withIds(seeds.SEED_VEHICULOS || []),
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
-  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}) }], usuarios: [ADMIN], pagos: [], turnos: [],
+  // Descuento distinto de 20% para comprobar que las boletas usan la configuración
+  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45 }], usuarios: [ADMIN], pagos: [], turnos: [],
   auditoria: [
     { id: 1, ts: '2026-06-03T10:05:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'cambio', usuario_nombre: XSS, resumen: XSS, cambios: { monto: { antes: 800, despues: XSS } } },
     { id: 2, ts: '2026-06-03T10:00:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'alta', usuario_nombre: 'Admin Prueba', resumen: 'INF-2026-0001', cambios: { tipo: XSS, placa: 'XSS-001' } }
@@ -109,6 +111,18 @@ async function newPage(browser, { dbDown = false } = {}) {
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
+    if (table === 'rpc/registrar_pago') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'registrar_pago', ...b });
+      const inf = TABLES.infracciones.find(i => i.id === b.p_infraccion_id) || {};
+      const pct = b.p_aplicar_descuento ? TABLES.configuracion[0].descuento_pct : 0;
+      const pago = withIds({ infraccion_id: inf.id, folio_inf: inf.folio, monto_original: inf.monto, descuento_pct: pct, monto_final: Math.round(inf.monto * (1 - pct / 100)), metodo: b.p_metodo, cajero: ADMIN.nombre })[0];
+      TABLES.pagos.push(pago);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(pago) });
+    }
+    if (table === 'rpc/parametros_pago') {
+      const c = TABLES.configuracion[0];
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify([{ descuento_pct: c.descuento_pct, dias_descuento: c.dias_descuento, dias_limite: c.dias_limite }]) });
+    }
     if (table === 'rpc/consulta_publica') {
       const q = norm(JSON.parse(req.postData() || '{}').p_q);
       rows = TABLES.infracciones.filter(i => norm(i.placa) === q || norm(i.folio) === q);
@@ -179,6 +193,25 @@ function check(name, errors, extra) {
     const hist = await page.evaluate(() => document.getElementById('detail-historial')?.textContent || '');
     check('historial en el detalle', errors, /Cambio/.test(hist) ? null : 'no mostró el historial');
     check('historial escapa los textos', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+
+    // Boleta y ticket usan el descuento de Configuración (10%), no un 20% fijo
+    const pendId = TABLES.infracciones.find(r => r.placa !== 'XSS-001').id;
+    for (const fn of ['printTicket80', 'printInfraccion']) {
+      await page.evaluate(([fn, id]) => window[fn](id), [fn, pendId]);
+      await page.waitForTimeout(800);
+      let html = '';
+      for (const p of popups.splice(0)) { html += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+      check(fn + ' usa el descuento configurado', errors, html.includes('10% descuento') && !html.includes('20% descuento') ? null : 'no mostró 10% de descuento');
+    }
+
+    // Cobro: pasa por registrar_pago (el servidor calcula el descuento)
+    await page.evaluate(id => openRegistrarPago(id), pendId);
+    await page.waitForTimeout(500);
+    await page.evaluate(() => submitPago());
+    await page.waitForTimeout(800);
+    for (const p of popups.splice(0)) await p.close().catch(() => {});
+    const cobro = rpcCalls.find(c => c.fn === 'registrar_pago');
+    check('cobro con registrar_pago', errors, cobro && cobro.p_infraccion_id === pendId && cobro.p_metodo === 'efectivo' ? null : 'llamada: ' + JSON.stringify(cobro));
 
     // QR de la boleta: apunta a /verificar?t=<token>
     const qrUrl = await page.evaluate(id => urlVerificacion(id), TOKEN);

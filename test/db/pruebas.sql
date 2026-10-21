@@ -154,4 +154,85 @@ do $$ begin
   assert nombre_abreviado('Roberto  Gómez López') = 'Roberto G. L.', 'abreviatura';
   assert (select count(distinct token_verificacion) = count(*) from infracciones), 'tokens únicos';
 end $$;
+-- ── Cobros y estados (cobros.sql) ────────────────────────────────────
+insert into configuracion (id, descuento_pct, dias_descuento, dias_limite) values (1, 10, 15, 30)
+  on conflict (id) do update set descuento_pct = 10, dias_descuento = 15, dias_limite = 30;
+insert into infracciones (placa, infractor, tipo, monto, fecha) values
+  ('COB-001', 'Cobro', 'Prueba', 1000, now()),
+  ('COB-002', 'Cobro', 'Prueba', 1000, now() - interval '20 days');
+
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+do $$ declare v_id bigint; p pagos; begin
+  v_id := (select id from infracciones where placa = 'COB-001');
+  p := registrar_pago(v_id, true, 'efectivo');
+  assert p.monto_final = 900 and p.descuento_pct = 10, 'descuento calculado en el servidor';
+  assert p.cajero = 'Oficial', 'cajero = usuario en sesión';
+  assert (select estado from infracciones where id = v_id) = 'pagada', 'infracción marcada como pagada';
+  begin
+    perform registrar_pago(v_id, false, 'efectivo');
+    raise exception 'cobro doble';
+  exception when others then if sqlerrm = 'cobro doble' then raise; end if;
+  end;
+
+  v_id := (select id from infracciones where placa = 'COB-002');
+  begin
+    perform registrar_pago(v_id, true, 'efectivo');
+    raise exception 'descuento fuera de plazo';
+  exception when others then if sqlerrm = 'descuento fuera de plazo' then raise; end if;
+  end;
+  begin
+    update infracciones set estado = 'pagada' where id = v_id;
+    raise exception 'pagada sin cobro';
+  exception when others then if sqlerrm = 'pagada sin cobro' then raise; end if;
+  end;
+  begin
+    update infracciones set estado = 'cancelada', cancelacion_motivo = 'x' where id = v_id;
+    raise exception 'oficial canceló';
+  exception when others then if sqlerrm = 'oficial canceló' then raise; end if;
+  end;
+  begin
+    insert into pagos (infraccion_id, monto_original, monto_final) values (v_id, 1, 1);
+    raise exception 'pago directo sin registrar_pago';
+  exception when others then if sqlerrm = 'pago directo sin registrar_pago' then raise; end if;
+  end;
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);
+set role authenticated;
+do $$ declare v_id bigint; begin
+  v_id := (select id from infracciones where placa = 'COB-002');
+  begin
+    update infracciones set estado = 'cancelada' where id = v_id;
+    raise exception 'cancelación sin motivo';
+  exception when others then if sqlerrm = 'cancelación sin motivo' then raise; end if;
+  end;
+  update infracciones set estado = 'cancelada', cancelacion_motivo = 'Error de captura' where id = v_id;
+  assert (select estado from infracciones where id = v_id) = 'cancelada', 'admin cancela con motivo';
+  delete from infracciones where id = v_id;
+  assert exists (select 1 from infracciones where id = v_id), 'admin pudo borrar una infracción';
+end $$;
+reset role;
+
+-- Vencimientos según los días límite de Configuración
+insert into infracciones (placa, infractor, tipo, fecha) values
+  ('VEN-040', 'Vence', 'Prueba', now() - interval '40 days'),
+  ('VEN-020', 'Vence', 'Prueba', now() - interval '20 days');
+select marcar_infracciones_vencidas();
+do $$ begin
+  assert (select estado from infracciones where placa = 'VEN-040') = 'vencida', 'vence a los 30 días';
+  assert (select estado from infracciones where placa = 'VEN-020') = 'pendiente', 'aún no vence';
+end $$;
+update configuracion set dias_limite = 15 where id = 1;
+select marcar_infracciones_vencidas();
+do $$ begin
+  assert (select estado from infracciones where placa = 'VEN-020') = 'vencida', 'usa dias_limite configurado';
+end $$;
+
+set role anon;
+do $$ begin
+  assert (select descuento_pct from parametros_pago()) = 10, 'parámetros públicos de pago';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'

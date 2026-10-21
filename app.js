@@ -1204,7 +1204,18 @@ async function viewDetail(tabla, id) {
 
 async function saveDetailEstado(tabla, id) {
   const estado = $('detail-estado').value;
-  const { error } = await _sb.from(tabla).update({ estado }).eq('id', id);
+  const cambios = { estado };
+  if (tabla==='infracciones' && estado==='pagada') {
+    closeModal('modal-detail');
+    openRegistrarPago(id);   // marcar como pagada siempre pasa por el cobro
+    return;
+  }
+  if (tabla==='infracciones' && estado==='cancelada') {
+    const motivo = prompt('Motivo de la cancelación (queda registrado en la bitácora):');
+    if (!motivo || !motivo.trim()) return;
+    cambios.cancelacion_motivo = motivo.trim();
+  }
+  const { error } = await _sb.from(tabla).update(cambios).eq('id', id);
   if (error) { alert('Error: '+error.message); return; }
   closeModal('modal-detail');
   if (tabla==='infracciones') { renderInfracciones(); renderDashboard(); }
@@ -1235,6 +1246,7 @@ async function loadConfig() {
   });
   if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
   if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
+  if($('cfg-dias-limite'))    $('cfg-dias-limite').value    = data.dias_limite    ?? 30;
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
@@ -1257,6 +1269,7 @@ async function saveConfig() {
     montos,
     descuento_pct:  parseInt(($('cfg-descuento-pct')||{}).value)||20,
     dias_descuento: parseInt(($('cfg-dias-descuento')||{}).value)||15,
+    dias_limite:    parseInt(($('cfg-dias-limite')||{}).value)||30,
     tipos_extra:    tiposExtra
   };
   const { error } = await _sb.from('configuracion').upsert(payload, { onConflict:'id' });
@@ -1278,6 +1291,20 @@ function qrVerificacion(token, size = 220) {
   catch (e) { console.warn('QR:', e); return ''; }
 }
 
+// Descuento por pronto pago y fecha límite, según Configuración
+function plazosPago(r, cfg, fmtFecha) {
+  const pct  = Number(cfg?.descuento_pct ?? 20);
+  const dDesc = Number(cfg?.dias_descuento ?? 15);
+  const dLim  = Number(cfg?.dias_limite ?? 30);
+  const t = new Date(r.fecha).getTime();
+  return {
+    pct, dDesc, dLim,
+    descFecha: new Date(t + dDesc*86400000).toLocaleDateString('es-MX', fmtFecha),
+    limFecha:  new Date(t + dLim*86400000).toLocaleDateString('es-MX', fmtFecha),
+    montoDesc: Math.round(r.monto * (1 - pct/100)).toLocaleString('es-MX')
+  };
+}
+
 async function printInfraccion(id) {
   const [{ data: r }, { data: cfg }] = await Promise.all([
     _sb.from('infracciones').select('*').eq('id', id).single(),
@@ -1294,10 +1321,7 @@ async function printInfraccion(id) {
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const horaStr   = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
-  // Descuento 20% primeros 15 días; límite 30 días
-  const descFecha = new Date(fechaObj.getTime() + 15*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const limFecha  = new Date(fechaObj.getTime() + 30*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const montoDesc = Math.round(r.monto * 0.80).toLocaleString('es-MX');
+  const { pct: descPct, descFecha, limFecha, montoDesc } = plazosPago(r, cfg, {day:'2-digit',month:'long',year:'numeric'});
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
 
   const copyHTML = (label) => `
@@ -1353,7 +1377,7 @@ async function printInfraccion(id) {
         <div class="amount-num">$${montoFmt} <span class="currency">MXN</span></div>
         <div class="payment-dates">
           <div class="pd-item discount">
-            <div class="pd-label">▼ 20% descuento si paga antes del</div>
+            <div class="pd-label">▼ ${descPct}% descuento si paga antes del</div>
             <div class="pd-date">${descFecha}</div>
             <div class="pd-amount">Pague solo $${montoDesc} MXN</div>
           </div>
@@ -1781,11 +1805,8 @@ async function printPermiso(id) {
 
 // ── Vencimientos automáticos ──────────────────────────────
 async function checkAndUpdateVencidos() {
-  const today = new Date().toISOString().slice(0,10);
-  await Promise.all([
-    _sb.from('permisos').update({estado:'vencido'}).eq('estado','vigente').lt('vencimiento', today),
-    _sb.rpc('marcar_infracciones_vencidas')
-  ]);
+  // También corre a diario en el servidor (pg_cron); aquí solo se adelanta.
+  await _sb.rpc('marcar_infracciones_vencidas');
 }
 
 // ── Historial por placa + auto-fill desde padrón vehicular ──
@@ -2370,24 +2391,21 @@ async function submitPago() {
   const infId = $('pago-inf-id')?.value; if (!infId) return;
   const btn = $('pago-submit-btn');
   if (btn) { btn.disabled=true; btn.textContent='Registrando…'; }
-  const desc = parseInt(($('pago-descuento')||{}).value||'0');
-  const monto = window._pagoMontoOriginal||0;
-  const final = Math.round(monto*(1-desc/100));
-  const { data: inf } = await _sb.from('infracciones').select('folio').eq('id',infId).single();
-  const payload = {
-    infraccion_id: parseInt(infId), folio_inf: inf?.folio||'',
-    monto_original: monto, descuento_pct: desc, monto_final: final,
-    metodo: $('pago-metodo')?.value||'efectivo',
-    cajero: $('pago-cajero')?.value?.trim()||'',
-    notas:  $('pago-notas')?.value?.trim()||''
-  };
-  const { data: pago, error } = await _sb.from('pagos').insert(payload).select().single();
+  // El servidor calcula el descuento, asigna el cajero y marca la infracción
+  // como pagada en una sola operación (evita cobros dobles).
+  const metodo = $('pago-metodo')?.value||'efectivo';
+  const { data: pago, error } = await _sb.rpc('registrar_pago', {
+    p_infraccion_id: parseInt(infId),
+    p_aplicar_descuento: parseInt(($('pago-descuento')||{}).value||'0') > 0,
+    p_metodo: metodo,
+    p_notas: $('pago-notas')?.value?.trim()||''
+  });
   if (btn) { btn.disabled=false; btn.textContent='Registrar pago'; }
   if (error) { alert('Error: '+error.message); return; }
-  await _sb.from('infracciones').update({estado:'pagada'}).eq('id',infId);
-  await logActivity('infraccion',`Pago registrado — ${inf?.folio||'infracción'}: ${fmt(final)} (${payload.metodo})`);
+  const final = Number(pago.monto_final);
+  await logActivity('infraccion',`Pago registrado — ${pago.folio_inf||'infracción'}: ${fmt(final)} (${metodo})`);
   closeModal('modal-pago'); closeModal('modal-detail');
-  showToast(`Pago registrado: ${fmt(final)} — ${payload.metodo}`);
+  showToast(`Pago registrado: ${fmt(final)} — ${metodo}`);
   printReciboPago(pago.id);
   renderInfracciones(); renderDashboard();
   if ($('view-caja')?.style.display==='block') { renderCajaStats(); renderPendientesTable(); renderCajaTable(); }
@@ -2576,9 +2594,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
   const fechaObj = new Date(r.fecha);
   const fechaStr = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
   const horaStr  = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  const descFecha = new Date(fechaObj.getTime()+15*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const limFecha  = new Date(fechaObj.getTime()+30*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const montoDesc = Math.round(r.monto*0.80).toLocaleString('es-MX');
+  const { pct: descPct, descFecha, limFecha, montoDesc } = plazosPago(r, cfg, {day:'2-digit',month:'2-digit',year:'numeric'});
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
   const ref = (r.folio||'INF').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
 
@@ -2613,7 +2629,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
       <div class="t-small">MXN</div>
     </div>
     <div class="t-disc">
-      <div class="t-bold">▼ 20% descuento pagando antes del</div>
+      <div class="t-bold">▼ ${descPct}% descuento pagando antes del</div>
       <div>${descFecha} — solo $${montoDesc} MXN</div>
     </div>
     <div class="t-disc" style="border-color:#DC2626;color:#DC2626">
@@ -2769,8 +2785,10 @@ async function submitImpugnacion() {
 async function resolverImpugnacion(id, resolucion) {
   const label = resolucion === 'cancelada' ? 'cancelar (procede)' : 'reactivar como pendiente (no procede)';
   if (!confirm(`¿Confirmas ${label} esta infracción?`)) return;
+  const cambios = { estado: resolucion };
+  if (resolucion === 'cancelada') cambios.cancelacion_motivo = 'Impugnación procedente';
   const { error } = await _sb.from('infracciones')
-    .update({ estado: resolucion })
+    .update(cambios)
     .eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
   closeModal('modal-detail');
@@ -2843,7 +2861,7 @@ async function printCorteCaja() {
   </div>
   <div class="totals">
     <div class="total-row"><span>Pagos registrados:</span><span>${totalInfracciones}</span></div>
-    <div class="total-row"><span>Descuentos aplicados (20%):</span><span>${fmt(totalDescuentos)}</span></div>
+    <div class="total-row"><span>Descuentos aplicados:</span><span>${fmt(totalDescuentos)}</span></div>
     <div class="total-row main"><span>Total recaudado:</span><span>${fmt(totalRecaudado)}</span></div>
   </div>
   <table>
