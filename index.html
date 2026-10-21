@@ -619,7 +619,7 @@
 
         <!-- Cifras principales -->
         <div class="dash-kpis">
-          <button type="button" class="kpi kpi-hero kpi-link" onclick="navigate('caja')" title="Ver caja">
+          <button type="button" class="kpi kpi-hero kpi-link" onclick="navigate('caja')" title="Ver caja" data-permiso="caja_ver">
             <span class="kpi-label" id="s-rec-label">Recaudación del mes</span>
             <span class="kpi-num" id="s-rec">—</span>
             <span class="kpi-sub" id="s-rec-delta"></span>
@@ -667,7 +667,7 @@
               <div class="card-header"><div class="card-title">Requiere atención</div></div>
               <ul class="pend-list" id="alertas-list"></ul>
             </div>
-            <div class="card" style="margin-bottom:1rem">
+            <div class="card" style="margin-bottom:1rem" data-permiso="caja_ver">
               <div class="card-header">
                 <div><div class="card-title">Cobranza del mes</div><div class="card-subtitle" id="dash-cob-sub"></div></div>
               </div>
@@ -1710,11 +1710,13 @@
     </div>
     <div class="form-field">
       <label>Rol</label>
-      <select id="usr-rol" class="form-select">
-        <option value="oficial">Oficial</option>
+      <select id="usr-rol" class="form-select" onchange="describirRol()">
+        <option value="oficial">Policía vial</option>
+        <option value="cajero">Caja · Tesorería</option>
         <option value="supervisor">Supervisor</option>
-        <option value="admin">Administrador</option>
+        <option value="admin">Director (administrador)</option>
       </select>
+      <div id="usr-rol-desc" style="font-size:.75rem;color:var(--muted);margin-top:.35rem;line-height:1.45"></div>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" onclick="closeModal('modal-usuario')">Cancelar</button>
