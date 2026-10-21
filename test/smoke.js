@@ -31,15 +31,18 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(f).pipe(res);
 });
 
-// ── Datos simulados: los mismos SEED_* de app.js ──
+// ── Datos simulados: test/fixtures.js + SEED_CONFIG de app.js ──
 const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
-const seeds = {}; const seedCtx = vm.createContext({ Date });
-for (const m of src.matchAll(/const (SEED_[A-Z]+) = ([\[{][\s\S]*?\n[\]}]);/g)) seeds[m[1]] = vm.runInContext('(' + m[2] + ')', seedCtx);
+const seeds = { ...require('./fixtures') }; const seedCtx = vm.createContext({ Date });
+const cfg = src.match(/const SEED_CONFIG = (\{[\s\S]*?\n\});/);
+if (cfg) seeds.SEED_CONFIG = vm.runInContext('(' + cfg[1] + ')', seedCtx);
 let nextId = 1;
 const withIds = a => (Array.isArray(a) ? a : [a]).map(r => ({ id: nextId++, folio: 'INF-2026-' + String(nextId).padStart(4, '0'), created_at: new Date().toISOString(), ...r }));
+// Fila con HTML malicioso: si algún módulo no escapa los textos, window.__xss se define.
+const XSS = '<img src=x onerror="window.__xss=1">';
 const ADMIN = { id: 1, usuario: 'admin', nombre: 'Admin Prueba', rol: 'admin', activo: true, iniciales: 'AP' };
 const TABLES = {
-  infracciones: withIds(seeds.SEED_INFRACCIONES || []), permisos: withIds(seeds.SEED_PERMISOS || []),
+  infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
   actividad: withIds(seeds.SEED_ACTIVIDAD || []), vehiculos: withIds(seeds.SEED_VEHICULOS || []),
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
   configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}) }], usuarios: [ADMIN], pagos: [], turnos: []
@@ -70,6 +73,8 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (dbDown || u.pathname.includes('/realtime/')) return r.abort();
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
     let rows = TABLES[table] || [];
+    // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
+    for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
     if (table === 'rpc/verificar_login') rows = [ADMIN];
     else if (table.startsWith('rpc/')) rows = [];
     if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) { let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {} rows = withIds(body); }
@@ -104,10 +109,22 @@ function check(name, errors, extra) {
     // 2. Cada módulo del panel se abre sin errores
     await page.waitForFunction(() => typeof navigate === 'function');
     await page.waitForTimeout(1500);
+    check('panel inicial', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
     for (const v of VIEWS) {
       await page.evaluate(v => navigate(v), v);
       await page.waitForTimeout(500);
-      check('módulo ' + v, errors);
+      check('módulo ' + v, errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    }
+    // Detalle, edición e impresiones de la fila con HTML malicioso
+    const xssId = TABLES.infracciones.find(r => r.placa === 'XSS-001').id;
+    const popups = [];
+    page.context().on('page', p => popups.push(p));
+    for (const fn of ['viewDetail', 'editInfraccion', 'printInfraccion', 'printTicket80']) {
+      await page.evaluate(([fn, id]) => fn === 'viewDetail' ? viewDetail('infracciones', id) : window[fn](id), [fn, xssId]);
+      await page.waitForTimeout(800);
+      let xss = await page.evaluate(() => window.__xss);
+      for (const p of popups.splice(0)) { xss = xss || await p.evaluate(() => window.__xss).catch(() => false); await p.close().catch(() => {}); }
+      check(fn + ' escapa los textos', errors, xss ? 'se ejecutó HTML inyectado' : null);
     }
     await page.close();
 
@@ -118,6 +135,9 @@ function check(name, errors, extra) {
     await page.waitForTimeout(1000);
     const resultado = await page.textContent('#result');
     check('consulta ciudadana', errors, resultado.includes('ABC-123') ? null : 'no mostró resultados');
+    await page.goto(BASE + '/consulta?q=' + encodeURIComponent(XSS));
+    await page.waitForTimeout(1500);
+    check('consulta ciudadana escapa la búsqueda', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
     await page.close();
 
     // 4. Sin base de datos: mensajes claros en vez de pantallas vacías

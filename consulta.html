@@ -270,6 +270,12 @@ function toggleHistorial() {
   if (_lastQ.length >= 2) buscar();
 }
 
+// Escapa texto antes de insertarlo en HTML (la búsqueda llega por la URL ?q=,
+// así que un enlace malicioso podría inyectar código si no se escapa).
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
 async function buscar() {
   const q = ($('q').value||'').trim();
   if (q.length < 2) { alert('Ingresa al menos 2 caracteres para buscar'); return; }
@@ -315,8 +321,8 @@ async function buscar() {
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <h3>${sinActivas ? 'Sin infracciones activas' : 'Sin resultados'}</h3>
       <p>${sinActivas
-        ? `No se encontraron infracciones pendientes de pago para <strong>"${q}"</strong>.`
-        : `No se encontraron infracciones para <strong>"${q}"</strong>.`}
+        ? `No se encontraron infracciones pendientes de pago para <strong>"${esc(q)}"</strong>.`
+        : `No se encontraron infracciones para <strong>"${esc(q)}"</strong>.`}
       ${sinActivas ? `<br><br><button onclick="toggleHistorial()" style="background:var(--ac);color:#fff;border:none;padding:.4rem 1rem;border-radius:8px;cursor:pointer;font-size:.8rem;font-family:inherit;font-weight:600">Ver historial completo</button>` : ''}
       </p>
     </div>`;
@@ -460,7 +466,7 @@ function infCard(r) {
         <strong>¿Dónde pagar?</strong><br>
         Acude a <strong>Tesorería Municipal</strong>, ventanilla de infracciones.<br>
         Horario: <strong>Lunes a Viernes · 8:00 – 15:00 h</strong><br>
-        Presenta el folio: <strong style="font-family:'DM Mono',monospace">${r.folio||'—'}</strong>
+        Presenta el folio: <strong style="font-family:'DM Mono',monospace">${esc(r.folio||'—')}</strong>
       </div>
     </div>`;
   }
@@ -479,11 +485,11 @@ function infCard(r) {
   // Acciones
   const shareUrl = encodeURIComponent(`${window.location.origin}/consulta?q=${encodeURIComponent(r.placa)}`);
   const actHTML = `<div class="inf-actions">
-    <button class="act-btn" onclick="copiarFolio('${r.folio||''}')">
+    <button class="act-btn" onclick="copiarFolio(${esc(JSON.stringify(r.folio||''))})">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       Copiar folio
     </button>
-    <a class="act-btn" href="https://wa.me/?text=${encodeURIComponent(`Consulta de infracciones de la placa ${r.placa}: ${window.location.origin}/consulta`)}" target="_blank" rel="noopener" style="text-decoration:none">
+    <a class="act-btn" href="https://wa.me/?text=${encodeURIComponent(`Consulta de infracciones de la placa ${esc(r.placa)}: ${window.location.origin}/consulta`)}" target="_blank" rel="noopener" style="text-decoration:none">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
       <span style="color:#128C7E">Compartir</span>
     </a>
@@ -492,8 +498,8 @@ function infCard(r) {
   return `<div class="inf-card${cardClass}">
     <div class="inf-header">
       <div>
-        <div class="inf-folio">${r.folio||'—'}</div>
-        <div class="inf-tipo">${r.tipo}</div>
+        <div class="inf-folio">${esc(r.folio||'—')}</div>
+        <div class="inf-tipo">${esc(r.tipo)}</div>
         <div class="inf-meta">
           <span>${fechaStr}</span>
           <span>·</span>
@@ -507,9 +513,9 @@ function infCard(r) {
     </div>
     ${diasBarHTML}
     <div class="inf-body">
-      <div class="field"><label>Placa</label><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:.88rem">${r.placa}</span></div>
-      <div class="field"><label>Infractor</label><span>${r.infractor}</span></div>
-      ${r.ubicacion?`<div class="field full"><label>Lugar del hecho</label><span>${r.ubicacion}</span></div>`:''}
+      <div class="field"><label>Placa</label><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:.88rem">${esc(r.placa)}</span></div>
+      <div class="field"><label>Infractor</label><span>${esc(r.infractor)}</span></div>
+      ${r.ubicacion?`<div class="field full"><label>Lugar del hecho</label><span>${esc(r.ubicacion)}</span></div>`:''}
     </div>
     ${paySection}
     ${actHTML}
