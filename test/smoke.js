@@ -348,6 +348,16 @@ function check(name, errors, extra) {
       check(fn + ': boleta conforme al art. 327', errors, falta.length ? 'falta: ' + falta.join(', ') : null);
     }
 
+    // La infracción de la misma boleta no cuenta como adeudo anterior (agravante e)
+    TABLES.infracciones.push(...withIds({ placa: 'GRP-001', infractor: 'X', tipo: 'Otro', monto: 100, estado: 'pendiente', boleta: 'B-9', fecha: new Date().toISOString() }));
+    const adeudosBoleta = await page.evaluate(async () => {
+      await openNewInfraccion(); $('inf-placa').value = 'GRP-001';
+      _boletaGrupo = 'B-9'; await checkPlacaHistory(); const misma = window._placaAdeudos.length;
+      _boletaGrupo = null; await checkPlacaHistory(); const otra = window._placaAdeudos.length;
+      closeModal('modal-infraccion'); return { misma, otra };
+    });
+    check('misma boleta no cuenta como adeudo', errors, adeudosBoleta.misma === 0 && adeudosBoleta.otra === 1 ? null : JSON.stringify(adeudosBoleta));
+
     // Cobro: pasa por registrar_pago (el servidor calcula el descuento)
     await page.evaluate(id => openRegistrarPago(id), pendId);
     await page.waitForTimeout(500);
