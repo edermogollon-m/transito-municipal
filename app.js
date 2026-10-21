@@ -719,8 +719,8 @@ async function submitInfraccion(e) {
     // Si el cache está vacío o puede ser de otra placa, consultar de nuevo
     if (!adeudos.length) {
       const { data: adData } = await _sb.from('infracciones')
-        .select('folio,monto,tipo').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
-      adeudos = adData || [];
+        .select('folio,monto,tipo,boleta').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
+      adeudos = (adData || []).filter(r => !(_boletaGrupo && r.boleta === _boletaGrupo));
       montoAdeudos = adeudos.reduce((a,r)=>a+Number(r.monto),0);
     }
 
@@ -2363,7 +2363,7 @@ async function checkPlacaHistory() {
 
   // Consultar historial completo y padrón vehicular en paralelo
   const [{ data }, { data: veh }] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto').eq('placa', placa).order('fecha',{ascending:false}),
+    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,boleta').eq('placa', placa).order('fecha',{ascending:false}),
     _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').eq('placa', placa).maybeSingle()
   ]);
 
@@ -2381,7 +2381,8 @@ async function checkPlacaHistory() {
 
   const prevId  = $('inf-id')?.value;
   const prev    = (data||[]).filter(r => String(r.id) !== String(prevId));
-  const adeudos = prev.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
+  // Las infracciones de la boleta que se está levantando no son adeudos anteriores
+  const adeudos = prev.filter(r => (r.estado === 'pendiente' || r.estado === 'vencida') && !(_boletaGrupo && r.boleta === _boletaGrupo));
   const montoAdeudos = adeudos.reduce((a,r) => a + Number(r.monto), 0);
 
   // Guardar adeudos para consultarlos en submitInfraccion sin otra llamada a la BD
