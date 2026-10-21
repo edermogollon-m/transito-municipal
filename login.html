@@ -189,13 +189,35 @@
     const user = document.getElementById('username').value.trim().toLowerCase();
     const pass = document.getElementById('password').value;
 
-    const { data, error } = await _sb.from('usuarios')
-      .select('*').eq('usuario', user).eq('contrasena', pass).eq('activo', true).single();
+    let data = null, error = null;
+    try {
+      // La contraseña se verifica en el servidor (RPC verificar_login, con hash
+      // bcrypt): el navegador nunca recibe contraseñas. Ver security_usuarios.sql.
+      let res = await _sb.rpc('verificar_login', { p_usuario: user, p_contrasena: pass });
+      if (res.error && (res.error.code === 'PGRST202' || res.error.code === '42883')) {
+        // Base de datos sin la migración todavía: comparación directa (método anterior).
+        res = await _sb.from('usuarios')
+          .select('id,nombre,usuario,rol,iniciales').eq('usuario', user).eq('contrasena', pass).eq('activo', true).maybeSingle();
+      }
+      error = res.error;
+      data = Array.isArray(res.data) ? (res.data[0] || null) : res.data;
+    } catch (err) {
+      error = { message: err.message };
+    }
 
     btn.disabled = false;
     btn.textContent = 'Iniciar sesión';
 
-    if (error || !data) {
+    // Un error de red/servidor no es lo mismo que una contraseña mal escrita:
+    // si la base de datos no responde (p. ej. proyecto de Supabase pausado),
+    // decirlo claramente en vez de culpar al usuario.
+    if (error) {
+      errEl.textContent = 'No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo en unos minutos.';
+      errEl.classList.add('show');
+      console.error('login:', error);
+      return;
+    }
+    if (!data) {
       errEl.textContent = 'Usuario o contraseña incorrectos.';
       errEl.classList.add('show');
       document.getElementById('password').value = '';

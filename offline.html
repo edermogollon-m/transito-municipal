@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sin conexión — Tránsito Municipal</title>
+  <meta name="theme-color" content="#161E28"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem;
+      font-family:'DM Sans',system-ui,sans-serif;background:linear-gradient(150deg,#0D1117 0%,#0F1E2A 55%,#0B1A20 100%);color:#374151;}
+    .card{background:#fff;border-radius:14px;max-width:380px;width:100%;padding:2rem 1.75rem;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.35);}
+    .badge{width:44px;height:44px;border-radius:11px;background:#1A7A82;color:#fff;font-weight:800;font-size:.75rem;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;}
+    h1{font-size:1.2rem;color:#111827;margin-bottom:.5rem;}
+    p{font-size:.85rem;line-height:1.55;color:#6B7280;margin-bottom:1.5rem;}
+    button{width:100%;padding:.7rem;border:none;border-radius:10px;background:#1A7A82;color:#fff;font:700 .88rem inherit;cursor:pointer;}
+    button:hover{background:#229099;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">HCE</div>
+    <h1>Sin conexión a internet</h1>
+    <p>El sistema de Tránsito necesita internet para consultar y guardar infracciones, pagos y demás registros. Revisa tu conexión y vuelve a intentarlo.</p>
+    <button type="button" onclick="location.reload()">Reintentar</button>
+  </div>
+</body>
+</html>
