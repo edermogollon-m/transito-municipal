@@ -2873,12 +2873,12 @@ async function printCorteCaja() {
   const hasta  = `${y}-${m}-${d}T23:59:59`;
 
   const { data: pagosHoy } = await _sb.from('pagos')
-    .select('monto,descuento,monto_pagado,created_at,oficial_id')
+    .select('monto_original,descuento_pct,monto_final,created_at,cajero')
     .gte('created_at', desde).lte('created_at', hasta);
 
-  const totalRecaudado = (pagosHoy||[]).reduce((s,p) => s + Number(p.monto_pagado||0), 0);
+  const totalRecaudado = (pagosHoy||[]).reduce((s,p) => s + Number(p.monto_final||0), 0);
   const totalInfracciones = (pagosHoy||[]).length;
-  const totalDescuentos = (pagosHoy||[]).reduce((s,p) => s + Number(p.descuento||0), 0);
+  const totalDescuentos = (pagosHoy||[]).reduce((s,p) => s + (Number(p.monto_original||0) - Number(p.monto_final||0)), 0);
 
   const cfg = _cachedConfig || {};
   const fechaStr = today.toLocaleDateString('es-MX', {weekday:'long',day:'2-digit',month:'long',year:'numeric'});
@@ -2889,9 +2889,9 @@ async function printCorteCaja() {
     return `<tr>
       <td>${i+1}</td>
       <td>${hora}</td>
-      <td>${fmt(p.monto)}</td>
-      <td>${p.descuento>0?'Sí (20%)':'No'}</td>
-      <td style="font-weight:700">${fmt(p.monto_pagado)}</td>
+      <td>${fmt(p.monto_original)}</td>
+      <td>${p.descuento_pct>0?`Sí (${p.descuento_pct}%)`:'No'}</td>
+      <td style="font-weight:700">${fmt(p.monto_final)}</td>
     </tr>`;
   }).join('');
 
@@ -2965,13 +2965,15 @@ async function exportExcel(tipo) {
     }));
     wsName = 'Infracciones'; filename = `infracciones_${new Date().toISOString().slice(0,10)}.xlsx`;
   } else {
-    const { data } = await _sb.from('pagos').select('created_at,monto,descuento,monto_pagado,metodo,oficial_id').order('created_at',{ascending:false});
+    const { data } = await _sb.from('pagos').select('created_at,folio_inf,monto_original,descuento_pct,monto_final,metodo,cajero').order('created_at',{ascending:false});
     rows = (data||[]).map(r => ({
       'Fecha y hora': r.created_at ? new Date(r.created_at).toLocaleString('es-MX') : '',
-      'Monto original (MXN)': Number(r.monto)||0,
-      'Descuento (MXN)': Number(r.descuento)||0,
-      'Total pagado (MXN)': Number(r.monto_pagado)||0,
-      'Método de pago': r.metodo||'Efectivo'
+      'Folio infracción': r.folio_inf||'',
+      'Monto original (MXN)': Number(r.monto_original)||0,
+      'Descuento (MXN)': (Number(r.monto_original)||0) - (Number(r.monto_final)||0),
+      'Total pagado (MXN)': Number(r.monto_final)||0,
+      'Método de pago': r.metodo||'Efectivo',
+      'Cajero': r.cajero||''
     }));
     wsName = 'Pagos'; filename = `pagos_${new Date().toISOString().slice(0,10)}.xlsx`;
   }
