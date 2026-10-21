@@ -2,6 +2,8 @@
 -- Extraído del proyecto tqqeixymxpuewpjhcjno el 2026-10-21.
 -- Sirve para recrear la BD desde cero en un proyecto nuevo (SQL Editor → Run).
 -- No incluye datos; los registros de ejemplo los inserta app.js (SEED_*).
+-- Después de este archivo aplica, en orden, los de supabase/migrations/
+-- (login con Supabase Auth y políticas por rol).
 
 -- ── Secuencias de folios ──────────────────────────────────
 create sequence if not exists public.acc_folio_seq;
