@@ -235,44 +235,75 @@ do $$ begin
   assert (select descuento_pct from parametros_pago()) = 10, 'parámetros públicos de pago';
 end $$;
 reset role;
--- ── Fundamento legal (articulos.sql) ─────────────────────────────────
+-- ── Reglamento de Veracruz (veracruz.sql) ───────────────────────────
+update configuracion set valor_uma = 117.31, descuento_pct = 75, dias_descuento = 5, descuento2_pct = 50, dias_descuento2 = 10,
+  reglamento = 'Reglamento de la Ley Número 561 de Tránsito y Seguridad Vial para el Estado de Veracruz de Ignacio de la Llave' where id = 1;
 do $$ begin
-  assert (select count(*) from catalogo_infracciones) = 224, 'catálogo completo del tabulador';
-  assert fundamento_de(112) like 'Artículo 59, primer párrafo, del Reglamento de Movilidad%', 'fundamento con párrafo';
-  assert fundamento_de(82)  like 'Artículo 58, fracción II, del %', 'fundamento con fracción';
-  assert fundamento_de(221) like 'Artículo 161, fracción II, inciso b), del %', 'fundamento con inciso';
-  assert fundamento_de(136) like 'Artículo 80, fracciones III, IV,%', 'fundamento con varias fracciones';
-  assert (select grave from catalogo_infracciones where numero = 82), 'celular es grave (art. 192 XIII)';
-  assert not (select grave from catalogo_infracciones where numero = 136), 'estacionamiento no es grave';
+  assert (select count(*) from catalogo_infracciones where activo) = 357, 'catálogo vigente de Veracruz';
+  assert (select count(*) from catalogo_infracciones where numero < 1000 and activo) = 0, 'catálogo de San Pedro inactivo';
+  assert (select count(*) from reglamento_articulos) = 383, 'artículos del reglamento';
+  assert fundamento_de(1091) like 'Artículos 75, 153 fracción IV, del Reglamento de la Ley Número 561%', 'fundamento con fracción';
+  assert fundamento_de(1133) like 'Artículo 160 fracción I, del %', 'fundamento de un artículo';
+  assert fundamento_de(1239) like 'Artículo 125 apartado A fracción I, del %', 'fundamento con apartado';
+  assert (select grave from catalogo_infracciones where numero = 1011), 'ebriedad sin descuento';
+  assert not (select grave from catalogo_infracciones where numero = 1133), 'celular conserva el descuento';
+  assert (select tipo_rapido from catalogo_infracciones where numero = 1091) = 'Exceso de velocidad', 'tipo rápido';
 end $$;
-update configuracion set valor_uma = 117.31, descuento_pct = 10, dias_descuento = 15 where id = 1;
 
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
 set role authenticated;
 do $$ declare v_id bigint; begin
+  -- Celular (art. 160 fr. I): grave, 16 UMA y 30 con agravante
   begin
-    insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('FUN-001', 'X', 'Exceso de velocidad', 800, 112);
+    insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 800, 1133);
     raise exception 'monto fuera del tabulador';
   exception when others then if sqlerrm = 'monto fuera del tabulador' then raise; end if;
   end;
-  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('FUN-001', 'X', 'Exceso de velocidad', 1407, 112) returning id into v_id;
-  assert (select fundamento from infracciones where id = v_id) like 'Artículo 59, primer párrafo%', 'fundamento guardado al registrar';
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 1876, 1133) returning id into v_id;
+  assert (select fundamento from infracciones where id = v_id) like 'Artículo 160 fracción I, del Reglamento%', 'fundamento guardado';
+  assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 75, '75% dentro de 5 días';
+
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-002', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '7 days') returning id into v_id;
+  assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 50, '50% del 6.º al 10.º día';
+
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-003', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '12 days') returning id into v_id;
   begin
     perform registrar_pago(v_id, true, 'efectivo');
-    raise exception 'descuento en infracción grave';
-  exception when others then if sqlerrm = 'descuento en infracción grave' then raise; end if;
+    raise exception 'descuento después del día 10';
+  exception when others then if sqlerrm = 'descuento después del día 10' then raise; end if;
   end;
-  assert (registrar_pago(v_id, false, 'efectivo')).monto_final = 1407, 'grave se cobra íntegra';
 
-  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('FUN-002', 'X', 'Estacionamiento prohibido', 1173, 136) returning id into v_id;
-  assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 10, 'no grave conserva el descuento';
+  -- Ebriedad (80/115 UMA): se paga íntegra
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-004', 'X', 'Conducir en estado de ebriedad', 9385, 1011) returning id into v_id;
+  begin
+    perform registrar_pago(v_id, true, 'efectivo');
+    raise exception 'descuento en ebriedad';
+  exception when others then if sqlerrm = 'descuento en ebriedad' then raise; end if;
+  end;
+  assert (registrar_pago(v_id, false, 'efectivo')).monto_final = 9385, 'ebriedad se cobra íntegra';
+
+  -- Amonestación verbal: sin multa
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero)
+    select 'VER-005', 'X', 'Otro', 500, numero from catalogo_infracciones where clasificacion = 'Amonestación verbal' order by numero limit 1
+    returning id into v_id;
+  assert (select monto from infracciones where id = v_id) = 0, 'amonestación sin multa';
+
+  -- Un número de catálogo de San Pedro ya no se puede usar
+  begin
+    insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-006', 'X', 'Otro', 1407, 112);
+    raise exception 'catálogo anterior todavía vigente';
+  exception when others then if sqlerrm = 'catálogo anterior todavía vigente' then raise; end if;
+  end;
+  assert (select count(*) from reglamento_articulos where numero = '330') = 1, 'personal lee artículos';
 end $$;
 reset role;
 
 set role anon;
 do $$ begin
-  assert (select fundamento from consulta_ciudadana('FUN-001', true)) like 'Artículo 59%', 'portal muestra el fundamento';
-  assert (select grave from consulta_ciudadana('FUN-001', true)), 'portal sabe que es grave';
+  assert (select fundamento from consulta_ciudadana('VER-004', true)) like 'Artículos 244%', 'portal muestra el fundamento';
+  assert (select grave from consulta_ciudadana('VER-004', true)), 'portal sabe que no hay descuento';
+  assert (parametros_descuento() ->> 'descuento2_pct')::int = 50, 'parámetros con dos tramos';
+  assert (select count(*) from reglamento_articulos) = 0, 'anon no lee el reglamento interno';
 end $$;
 reset role;
 
