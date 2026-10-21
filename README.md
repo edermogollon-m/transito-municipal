@@ -47,10 +47,17 @@ proyectos activos a la vez).
   rutas y la app muestra enlaces firmados de 1 hora.
 - `verificacion.sql` — token aleatorio por infracción y por pago, y la función
   pública `verificar_documento(token)` que usa `verificar.html`.
+- `cobros.sql` — `registrar_pago()`: cobra y marca la infracción como pagada
+  en una sola operación, con descuento y cajero decididos por el servidor; un
+  solo pago por infracción. Reglas de estado (pagada solo con cobro, cancelar
+  solo mandos y con motivo). Infracciones y pagos ya no se borran.
+  Vencimiento diario con pg_cron según los días límite de Configuración, y
+  `parametros_pago()` para el portal ciudadano.
 
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
-`auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql`. Todos son
-idempotentes y ya están aplicados en `transito-municipal`.
+`auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
+`cobros.sql`. Todos son idempotentes y ya están aplicados en
+`transito-municipal`.
 
 ## Seguridad
 

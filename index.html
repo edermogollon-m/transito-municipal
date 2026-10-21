@@ -891,7 +891,7 @@
           <button class="btn btn-primary" onclick="saveConfig()">Actualizar montos</button>
         </div>
         <div class="card">
-          <div class="card-title" style="margin-bottom:1rem">Descuento de pronto pago</div>
+          <div class="card-title" style="margin-bottom:1rem">Descuento y plazo de pago</div>
           <div class="form-row">
             <div class="form-field">
               <label>Descuento (%)</label>
@@ -901,9 +901,13 @@
               <label>Días para aplicarlo</label>
               <input class="form-input" id="cfg-dias-descuento" type="number" min="1" placeholder="15"/>
             </div>
+            <div class="form-field">
+              <label>Días límite de pago</label>
+              <input class="form-input" id="cfg-dias-limite" type="number" min="1" placeholder="30"/>
+            </div>
           </div>
-          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">El descuento se aplica si el pago se realiza dentro de los N días posteriores a la infracción.</p>
-          <button class="btn btn-primary" onclick="saveConfig()">Guardar descuento</button>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">El descuento se aplica si el pago se realiza dentro de los N días posteriores a la infracción. Pasado el límite, la infracción se marca como vencida automáticamente cada noche. Estos valores se imprimen en boletas y tickets.</p>
+          <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:.75rem">Tipos de infracción adicionales</div>
@@ -1577,8 +1581,8 @@
         </select>
       </div>
       <div class="form-field">
-        <label>Cajero / Oficial</label>
-        <input id="pago-cajero" class="form-input" placeholder="Nombre del cajero" type="text"/>
+        <label>Cajero</label>
+        <input id="pago-cajero" class="form-input" type="text" readonly title="Se registra el usuario con sesión iniciada"/>
       </div>
     </div>
 
