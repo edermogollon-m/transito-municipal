@@ -155,7 +155,8 @@ do $$ begin
   assert (select count(distinct token_verificacion) = count(*) from infracciones), 'tokens únicos';
 end $$;
 -- ── Cobros y estados (cobros.sql) ────────────────────────────────────
-update configuracion set descuento_pct = 10, dias_descuento = 15, dias_limite = 30 where id = 1;
+insert into configuracion (id, descuento_pct, dias_descuento, dias_limite) values (1, 10, 15, 30)
+  on conflict (id) do update set descuento_pct = 10, dias_descuento = 15, dias_limite = 30;
 insert into infracciones (placa, infractor, tipo, monto, fecha) values
   ('COB-001', 'Cobro', 'Prueba', 1000, now()),
   ('COB-002', 'Cobro', 'Prueba', 1000, now() - interval '20 days');
