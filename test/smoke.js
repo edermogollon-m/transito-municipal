@@ -381,6 +381,42 @@ function check(name, errors, extra) {
     check('QR de verificación', errors, qrUrl === BASE + '/verificar?t=' + TOKEN ? null : qrUrl);
     await page.close();
 
+    // 3a. Permisos por rol: cada rol ve solo lo que puede hacer (roles.sql)
+    const infId = TABLES.infracciones.find(r => r.estado === 'pendiente' && r.placa !== 'XSS-001').id;
+    for (const [rol, esperado] of Object.entries({
+      oficial: { visibles: ['infracciones', 'grua', 'accidentes'], ocultas: ['caja', 'configuracion', 'usuarios', 'bitacora', 'reportes'], nueva: true, cobrar: false, estado: false },
+      cajero:  { visibles: ['caja', 'infracciones'], ocultas: ['configuracion', 'usuarios', 'bitacora', 'accidentes', 'permisos'], nueva: false, cobrar: true, estado: false },
+      supervisor: { visibles: ['caja', 'bitacora', 'reportes'], ocultas: ['configuracion', 'usuarios'], nueva: true, cobrar: false, estado: true }
+    })) {
+      ADMIN.rol = rol;
+      ({ page, errors } = await newPage(browser));
+      await page.goto(BASE + '/login');
+      await page.fill('#username', 'admin'); await page.fill('#password', 'x');
+      await Promise.all([page.waitForURL(BASE + '/', { timeout: 10000 }).catch(() => {}), page.click('.btn-login')]);
+      await page.waitForFunction(() => typeof navigate === 'function'); await page.waitForTimeout(1200);
+      const vis = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.nav-item')].map(b => [b.dataset.view || (b.getAttribute('onclick')||'').match(/navigate\('(\w+)'/)?.[1], b.style.display !== 'none'])));
+      await page.evaluate(id => viewDetail('infracciones', id), infId); await page.waitForTimeout(800);
+      const det = await page.evaluate(() => {
+        const visible = re => [...document.querySelectorAll('#modal-detail [onclick]')].some(b => re.test(b.getAttribute('onclick')) && b.offsetParent !== null);
+        return { cobrar: visible(/openRegistrarPago/), estado: visible(/saveDetailEstado\('infracciones'/) };
+      });
+      await page.evaluate(() => { closeModal('modal-detail'); navigate('infracciones'); }); await page.waitForTimeout(500);
+      const nueva = await page.evaluate(() => [...document.querySelectorAll('#view-infracciones [onclick*="openNewInfraccion"]')].some(b => b.offsetParent !== null));
+      await page.evaluate(() => navigate('configuracion')); await page.waitForTimeout(300);
+      const enConfig = await page.evaluate(() => $('view-configuracion').style.display === 'block');
+      const fallas = [
+        ...esperado.visibles.filter(v => !vis[v]).map(v => 'no ve ' + v),
+        ...esperado.ocultas.filter(v => vis[v]).map(v => 've ' + v),
+        nueva !== esperado.nueva && 'nueva infracción: ' + nueva,
+        det.cobrar !== esperado.cobrar && 'cobrar: ' + det.cobrar,
+        det.estado !== esperado.estado && 'cambiar estado: ' + det.estado,
+        enConfig && 'abrió configuración'
+      ].filter(Boolean);
+      check('rol ' + rol + ': menú y acciones', errors, fallas.length ? fallas.join(', ') : null);
+      await page.close();
+    }
+    ADMIN.rol = 'admin';
+
     // 3b. Verificación pública del QR
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/verificar?t=' + TOKEN);

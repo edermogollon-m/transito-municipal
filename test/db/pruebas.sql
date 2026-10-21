@@ -14,7 +14,7 @@ do $$ begin
   assert (select count(*) from usuarios where auth_id is null) = 0, 'usuarios sin cuenta de Auth';
   assert (select encrypted_password = extensions.crypt('secreto', encrypted_password)
           from auth.users where email = 'admin@transito.local'), 'contraseña del admin no se conservó';
-  assert (select count(*) from auth.identities) = 2, 'identidades de Auth';
+  assert (select count(*) from auth.identities) = 4, 'identidades de Auth';
 end $$;
 
 -- Anónimo: no ve tablas, solo el portal por placa/folio exactos
@@ -77,14 +77,31 @@ do $$ begin
 end $$;
 reset role;
 
+-- Cambia el usuario de la sesión simulada (roles.sql separa funciones)
+create or replace function pg_temp.como(p_usuario text) returns void language sql as
+  $$ select set_config('request.jwt.claim.sub', (select auth_id::text from public.usuarios where usuario = p_usuario), false) $$;
+
+-- El oficial levanta; Caja cobra (vuelve a la sesión del oficial al terminar)
+create or replace function pg_temp.cobrar(p_id bigint, p_desc boolean) returns public.pagos language plpgsql as $$
+declare p public.pagos;
+begin
+  perform pg_temp.como('caja');
+  begin p := public.registrar_pago(p_id, p_desc, 'efectivo');
+  exception when others then perform pg_temp.como('ofi'); raise; end;
+  perform pg_temp.como('ofi');
+  return p;
+end $$;
+
 -- ── Bitácora (auditoria.sql) ─────────────────────────────────────────
 -- El oficial cambia una infracción: queda quién, qué campo, antes y después
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
 set role authenticated;
 do $$ declare v bigint; begin
   insert into infracciones (placa, infractor, tipo, monto) values ('AUD-001', 'Auditado', 'Exceso de velocidad', 800) returning id into v;
+  perform pg_temp.como('sup');   -- los cambios de estado son de los mandos (roles.sql)
   update infracciones set estado = 'impugnada', impugnacion_motivo = 'No era yo' where id = v;
   update infracciones set estado = 'impugnada' where id = v;   -- sin cambios reales: no registra
+  perform pg_temp.como('ofi');
   assert (select count(*) from auditoria) = 0, 'oficial pudo leer la bitácora';
   begin
     delete from auditoria;
@@ -165,9 +182,15 @@ select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios w
 set role authenticated;
 do $$ declare v_id bigint; p pagos; begin
   v_id := (select id from infracciones where placa = 'COB-001');
+  begin
+    perform registrar_pago(v_id, true, 'efectivo');
+    raise exception 'el oficial pudo cobrar';
+  exception when others then if sqlerrm = 'el oficial pudo cobrar' then raise; end if;
+  end;
+  perform pg_temp.como('caja');   -- quien levanta la multa no la cobra
   p := registrar_pago(v_id, true, 'efectivo');
   assert p.monto_final = 900 and p.descuento_pct = 10, 'descuento calculado en el servidor';
-  assert p.cajero = 'Oficial', 'cajero = usuario en sesión';
+  assert p.cajero = 'Caja', 'cajero = usuario en sesión';
   assert (select estado from infracciones where id = v_id) = 'pagada', 'infracción marcada como pagada';
   begin
     perform registrar_pago(v_id, false, 'efectivo');
@@ -257,14 +280,14 @@ do $$ declare v_id bigint; begin
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 800, 1133) returning id into v_id;
   assert (select monto from infracciones where id = v_id) = 1876, 'UMA base sin agravantes';
   assert (select fundamento from infracciones where id = v_id) like 'Artículo 160 fracción I, del Reglamento%', 'fundamento guardado';
-  assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 75, '75% dentro de 5 días';
+  assert (pg_temp.cobrar(v_id, true)).descuento_pct = 75, '75% dentro de 5 días';
 
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-002', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '7 days') returning id into v_id;
-  assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 50, '50% del 6.º al 10.º día';
+  assert (pg_temp.cobrar(v_id, true)).descuento_pct = 50, '50% del 6.º al 10.º día';
 
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-003', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '12 days') returning id into v_id;
   begin
-    perform registrar_pago(v_id, true, 'efectivo');
+    perform pg_temp.cobrar(v_id, true);
     raise exception 'descuento después del día 10';
   exception when others then if sqlerrm = 'descuento después del día 10' then raise; end if;
   end;
@@ -272,11 +295,11 @@ do $$ declare v_id bigint; begin
   -- Ebriedad (80/115 UMA): se paga íntegra
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-004', 'X', 'Conducir en estado de ebriedad', 9385, 1011) returning id into v_id;
   begin
-    perform registrar_pago(v_id, true, 'efectivo');
+    perform pg_temp.cobrar(v_id, true);
     raise exception 'descuento en ebriedad';
   exception when others then if sqlerrm = 'descuento en ebriedad' then raise; end if;
   end;
-  assert (registrar_pago(v_id, false, 'efectivo')).monto_final = 9384, 'ebriedad se cobra íntegra';
+  assert (pg_temp.cobrar(v_id, false)).monto_final = 9384, 'ebriedad se cobra íntegra';
 
   -- Amonestación verbal: sin multa
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero)
@@ -399,4 +422,56 @@ do $$ begin
   update infracciones set obs = 'migración' where placa = 'INM-001';
 end $$;
 
+-- ── Roles y separación de funciones (roles.sql) ─────────────────────
+insert into infracciones (placa, infractor, tipo, monto) values ('ROL-ofi','X','Prueba',100), ('ROL-sup','X','Prueba',100), ('ROL-caja','X','Prueba',100), ('ROL-admin','X','Prueba',100);
+create temp table matriz (usuario text, prueba text, ok boolean);
+grant all on matriz to authenticated;
+create or replace function pg_temp.probar_rol(u text) returns void language plpgsql as $$
+declare n int;
+begin
+  perform pg_temp.como(u);
+  begin insert into public.infracciones (placa, infractor, tipo, monto) values ('ROL-X','X','Prueba',1); insert into matriz values (u,'levantar',true);
+  exception when others then insert into matriz values (u,'levantar',false); end;
+  begin update public.infracciones set estado='impugnada', impugnacion_motivo='x' where placa='ROL-'||u; get diagnostics n = row_count; insert into matriz values (u,'estado',n>0);
+  exception when others then insert into matriz values (u,'estado',false); end;
+  begin perform public.registrar_pago((select id from public.infracciones where placa='ROL-'||u), false, 'efectivo'); insert into matriz values (u,'cobrar',true);
+  exception when others then insert into matriz values (u,'cobrar',false); end;
+  insert into matriz values (u,'ver pagos', (select count(*) from public.pagos) > 0);
+  begin insert into public.permisos (titular, tipo, ruta, vencimiento) values ('X','taxi','R', current_date+1); insert into matriz values (u,'permiso',true);
+  exception when others then insert into matriz values (u,'permiso',false); end;
+  update public.configuracion set director = director where id = 1; get diagnostics n = row_count; insert into matriz values (u,'configurar',n>0);
+end $$;
+set role authenticated;
+select pg_temp.probar_rol('admin'); select pg_temp.probar_rol('sup'); select pg_temp.probar_rol('ofi'); select pg_temp.probar_rol('caja');
+reset role;
+do $$
+declare esperado jsonb := '{
+  "admin": {"levantar":true,"estado":true,"cobrar":true,"ver pagos":true,"permiso":true,"configurar":true},
+  "sup":   {"levantar":true,"estado":true,"cobrar":false,"ver pagos":true,"permiso":true,"configurar":false},
+  "ofi":   {"levantar":true,"estado":false,"cobrar":false,"ver pagos":false,"permiso":false,"configurar":false},
+  "caja":  {"levantar":false,"estado":false,"cobrar":true,"ver pagos":true,"permiso":false,"configurar":false}}';
+  m record;
+begin
+  for m in select * from matriz loop
+    assert m.ok = (esperado -> m.usuario ->> m.prueba)::boolean, format('rol %s, %s: %s', m.usuario, m.prueba, m.ok);
+  end loop;
+  assert (select count(*) from matriz) = 24, 'matriz completa';
+end $$;
+-- Siempre queda un administrador activo
+select pg_temp.como('admin');
+set role authenticated;
+do $$ begin
+  begin
+    update usuarios set activo = false where usuario = 'admin';
+    raise exception 'se desactivó el último administrador';
+  exception when others then if sqlerrm = 'se desactivó el último administrador' then raise; end if;
+  end;
+  begin
+    perform admin_guardar_usuario((select id from usuarios where usuario = 'admin'), 'Admin', 'admin', 'supervisor', 'AD', null);
+    raise exception 'el administrador se quitó su rol';
+  exception when others then if sqlerrm = 'el administrador se quitó su rol' then raise; end if;
+  end;
+  assert admin_guardar_usuario(null, 'Nueva Caja', 'caja2', 'cajero', 'NC', 'clave123') > 0, 'alta de cajero';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'
