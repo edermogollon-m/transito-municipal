@@ -643,7 +643,7 @@ async function renderInfracciones() {
       <td>${estadoBadge(r.estado)}</td>
       <td style="font-size:.75rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.oficial||'—')}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
-        ${r.estado==='pendiente'?`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border:1px solid #A7F3D0;padding:.25rem .6rem;font-size:.72rem" onclick="event.stopPropagation();openRegistrarPago('${r.id}')" title="Registrar pago">Cobrar</button>`:''}
+        ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border:1px solid #A7F3D0;padding:.25rem .6rem;font-size:.72rem" onclick="event.stopPropagation();openRegistrarPago('${r.id}')" title="Registrar pago">Cobrar</button>`:''}
         ${r.telefono?`<button class="btn-wa-icon" style="margin-left:.2rem"
           data-tel="${r.telefono.replace(/\D/g,'')}"
           data-nombre="${esc(r.infractor)}"
@@ -1572,7 +1572,7 @@ async function viewDetail(tabla, id) {
 
     <!-- Acciones -->
     <div class="detail-actions" style="margin-top:.75rem;flex-wrap:wrap;gap:.5rem">
-      ${r.estado==='pendiente'?`<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="openRegistrarPago('${r.id}')">
+      ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="openRegistrarPago('${r.id}')">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
         Cobrar
       </button>`:''}
@@ -2538,7 +2538,7 @@ async function renderPendientesTable() {
   const tbody = $('pendientes-table'); if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono,catalogo_numero').eq('estado','pendiente');
+  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono,catalogo_numero').in('estado',['pendiente','vencida']);   // las vencidas también se cobran
   if (_pendSearch) q = q.or(`placa.ilike.%${_pendSearch}%,infractor.ilike.%${_pendSearch}%,folio.ilike.%${_pendSearch}%`);
 
   // Período
@@ -2580,7 +2580,7 @@ async function renderPendientesTable() {
     const montoFinal = descOk ? Math.round(Number(r.monto)*(1-descPct/100)) : Number(r.monto);
       return `<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
       <td style="width:4px;padding:0;background:${urgColor};border-radius:3px 0 0 3px"></td>
-      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.folio||'—')}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.folio||'—')}${r.estado==='vencida'?' <span class="badge-red">Vencida</span>':''}</td>
       <td style="font-family:monospace;font-weight:700;font-size:.8rem">${esc(r.placa)}</td>
       <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.infractor)}</td>
       <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${esc(r.tipo)}</td>
@@ -2643,7 +2643,7 @@ async function renderCajaStats() {
   const [{ data: hoyData }, { data: mesData }, { data: pendData }] = await Promise.all([
     _sb.from('pagos').select('monto_final,metodo').gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59'),
     _sb.from('pagos').select('monto_final').gte('created_at', mesInicio+'T00:00:00'),
-    _sb.from('infracciones').select('monto').eq('estado','pendiente')
+    _sb.from('infracciones').select('monto').in('estado',['pendiente','vencida'])
   ]);
 
   const h = hoyData || [];
@@ -2916,7 +2916,7 @@ async function buscarInfPago() {
   if (q.length < 2) { el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe al menos 2 caracteres</div>'; return; }
   const qf = q.replace(/[,()"'\\%*]/g, ' ').trim();
   const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado')
-    .eq('estado','pendiente').or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(10);
+    .in('estado',['pendiente','vencida']).or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(10);
   const rows = data||[];
   el.innerHTML = rows.length ? rows.map(r=>`
     <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')">

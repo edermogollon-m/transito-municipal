@@ -417,6 +417,20 @@ function check(name, errors, extra) {
     }
     ADMIN.rol = 'admin';
 
+    // Las vencidas también se cobran (Caja y detalle)
+    const venc = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.estado === 'pendiente');
+    venc.estado = 'vencida';
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/login');
+    await page.fill('#username', 'admin'); await page.fill('#password', 'x');
+    await Promise.all([page.waitForURL(BASE + '/', { timeout: 10000 }).catch(() => {}), page.click('.btn-login')]);
+    await page.waitForFunction(() => typeof navigate === 'function'); await page.waitForTimeout(800);
+    await page.evaluate(id => viewDetail('infracciones', id), venc.id); await page.waitForTimeout(800);
+    const cobraVencida = await page.evaluate(() => [...document.querySelectorAll('#modal-detail [onclick*="openRegistrarPago"]')].some(b => b.offsetParent !== null));
+    check('una vencida se puede cobrar', errors, cobraVencida ? null : 'sin botón Cobrar');
+    venc.estado = 'pendiente';
+    await page.close();
+
     // 3b. Verificación pública del QR
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/verificar?t=' + TOKEN);
