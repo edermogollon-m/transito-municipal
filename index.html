@@ -95,9 +95,6 @@
     .kpi-sub .delta-up, .kpi-sub .delta-dn { font-weight:600; }
     .kpi-hero { border-top:3px solid var(--ac); }
     .kpi-hero .kpi-num { font-size:2.3rem; }
-    .kpi-split { margin-top:auto; padding-top:.6rem; border-top:1px solid var(--border-lt); font-size:.78rem; color:var(--text); }
-    .kpi-split strong { color:var(--ink); margin:0 .25rem; }
-    .kpi-split span { color:var(--muted); }
     .pend-list { list-style:none; margin:0 -.5rem; padding:0; display:flex; flex-direction:column; }
     .pend-row { width:100%; display:flex; align-items:flex-start; gap:.7rem; padding:.6rem .5rem; border:0; border-radius:8px; background:none; font:inherit; color:inherit; text-align:left; cursor:pointer; min-height:44px; }
     .pend-row:hover { background:var(--stone); }
@@ -109,6 +106,38 @@
     .pend-go { font-size:.72rem; font-weight:600; color:var(--ac); margin-top:.15rem; white-space:nowrap; }
     @media (max-width:1100px) { .dash-kpis { grid-template-columns:repeat(3,1fr); } .kpi-hero { grid-column:1 / -1; } }
     @media (max-width:600px) { .dash-kpis { grid-template-columns:1fr 1fr; gap:.6rem; } .dash-kpis > :last-child { grid-column:1 / -1; } }
+
+    /* ── PANEL: resumen de hoy, tendencia y cobranza ────────── */
+    .dash-hoy { display:flex; align-items:baseline; justify-content:space-between; gap:.5rem 1.5rem; flex-wrap:wrap; margin:0 0 .9rem; }
+    .dash-saludo { font-size:1.15rem; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
+    .dash-hoy-items { display:flex; gap:.4rem 1.1rem; flex-wrap:wrap; font-size:.8rem; color:var(--muted); }
+    .dash-hoy-items strong { color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums; }
+    .kpi-spark { display:flex; align-items:flex-end; gap:2px; height:28px; margin-top:auto; padding-top:.5rem; }
+    .kpi-spark i { flex:1; min-width:2px; background:var(--border); border-radius:1px; }
+    .kpi-spark i.hoy { background:var(--ac); }
+    .kpi-spark i.lleno { background:color-mix(in srgb, var(--ac) 45%, var(--border)); }
+    .kpi-sub .vencidas { color:var(--red); font-weight:600; }
+    .cob-barra { display:flex; height:10px; border-radius:5px; overflow:hidden; background:var(--stone); margin:.2rem 0 .8rem; }
+    .cob-barra span { display:block; height:100%; }
+    .cob-fila { display:flex; align-items:center; gap:.55rem; font-size:.78rem; padding:.28rem 0; }
+    .cob-fila .legend-dot { flex-shrink:0; }
+    .cob-fila span:nth-child(2) { flex:1; color:var(--text); }
+    .cob-fila strong { font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600; }
+    .cob-fila small { width:2.6rem; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .cob-tasa { font-size:1.6rem; font-weight:700; color:var(--ink); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+    .cob-tasa small { font-size:.75rem; font-weight:500; color:var(--muted); margin-left:.35rem; letter-spacing:0; }
+    .dash-grid > * { min-width:0; }
+    .dash-tabla td { vertical-align:middle; }
+    .dash-tabla td:nth-child(2) { white-space:nowrap; }
+    .dash-cuando { font-size:.75rem; color:var(--muted); white-space:nowrap; }
+    .dash-cuando b { display:block; color:var(--text); font-weight:600; font-size:.78rem; }
+        .dash-tabla .solo-movil { display:none; }
+    @media (max-width:600px) {
+      .dash-tabla th:nth-child(3), .dash-tabla td:nth-child(3), .dash-tabla th:nth-child(4), .dash-tabla td:nth-child(4) { display:none; }
+      .dash-tabla .solo-movil { display:block; max-width:115px; overflow:hidden; text-overflow:ellipsis; font-family:'DM Sans',sans-serif; font-weight:400; font-size:.72rem; color:var(--muted); }
+      .dash-tabla .dash-cuando { white-space:normal; }
+      .dash-tabla th, .dash-tabla td { padding-left:.4rem; padding-right:.4rem; }
+    }
 
     /* ── BOLETAS SIN SEÑAL ────────────────────────────────── */
     .cola-chip { min-height:32px; padding:0 .75rem; border-radius:16px; border:1px solid #FCD34D; background:var(--amber-bg); color:#92400E; font:inherit; font-size:.73rem; font-weight:700; cursor:pointer; white-space:nowrap; }
@@ -197,7 +226,7 @@
     .legend-val { font-weight:700; color:var(--ink); flex-shrink:0; }
     .legend-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
     .bar-chart { display:flex; align-items:flex-end; gap:.4rem; height:130px; margin:.5rem 0; }
-    .bar-col { display:flex; flex-direction:column; align-items:center; gap:.2rem; flex:1; cursor:default; }
+    .bar-col { display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:.2rem; flex:1; height:100%; cursor:default; }
     .bar-col:hover .bar-fill { opacity:.75; }
     .bar-fill { width:100%; border-radius:4px 4px 0 0; background:var(--ac-gl); transition:all .2s; min-height:3px; }
     .bar-fill.current { background:var(--ac); }
@@ -582,24 +611,31 @@
           </button>
         </div>
 
-        <!-- Cifras del día -->
+        <!-- Saludo y resumen de hoy -->
+        <div class="dash-hoy">
+          <div class="dash-saludo" id="dash-saludo">Panel general</div>
+          <div class="dash-hoy-items" id="dash-hoy-items" aria-live="polite"></div>
+        </div>
+
+        <!-- Cifras principales -->
         <div class="dash-kpis">
-          <div class="kpi kpi-hero">
-            <div class="kpi-label" id="s-rec-label">Recaudación del mes</div>
-            <div class="kpi-num" id="s-rec">—</div>
-            <div class="kpi-sub" id="s-rec-delta"></div>
-            <div class="kpi-split">Cobrado hoy <strong id="s-hoy">—</strong> <span id="s-hoy-count"></span></div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-label" id="s-inf-label">Infracciones del mes</div>
-            <div class="kpi-num" id="s-inf">—</div>
-            <div class="kpi-sub" id="s-inf-delta"></div>
-          </div>
-          <div class="kpi">
-            <div class="kpi-label">Pendientes de cobro</div>
-            <div class="kpi-num" id="s-pend">—</div>
-            <div class="kpi-sub" id="s-pend-delta"></div>
-          </div>
+          <button type="button" class="kpi kpi-hero kpi-link" onclick="navigate('caja')" title="Ver caja">
+            <span class="kpi-label" id="s-rec-label">Recaudación del mes</span>
+            <span class="kpi-num" id="s-rec">—</span>
+            <span class="kpi-sub" id="s-rec-delta"></span>
+            <span class="kpi-spark" id="s-rec-spark" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="kpi kpi-link" onclick="navigate('infracciones')" title="Ver infracciones">
+            <span class="kpi-label" id="s-inf-label">Infracciones del mes</span>
+            <span class="kpi-num" id="s-inf">—</span>
+            <span class="kpi-sub" id="s-inf-delta"></span>
+            <span class="kpi-spark" id="s-inf-spark" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="kpi kpi-link" onclick="navigate('caja')" title="Ver pendientes de pago">
+            <span class="kpi-label">Por cobrar</span>
+            <span class="kpi-num" id="s-pend">—</span>
+            <span class="kpi-sub" id="s-pend-delta"></span>
+          </button>
           <button type="button" class="kpi kpi-link" onclick="navigate('grua')" title="Ver corralón">
             <span class="kpi-label">En corralón</span>
             <span class="kpi-num" id="s-grua">—</span>
@@ -618,8 +654,8 @@
               <button class="btn btn-ghost btn-sm" onclick="navigate('infracciones')">Ver todas</button>
             </div>
             <div class="table-wrap">
-              <table>
-                <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
+              <table class="dash-tabla">
+                <thead><tr><th>Cuándo</th><th>Placa</th><th>Motivo</th><th>Oficial</th><th style="text-align:right">Monto</th><th>Estado</th></tr></thead>
                 <tbody id="dash-tbody"></tbody>
               </table>
             </div>
@@ -628,25 +664,18 @@
           <!-- Columna derecha -->
           <div>
             <div class="card pend-card" id="alertas-panel" style="display:none">
-              <div class="card-header"><div class="card-title">Pendientes de hoy</div></div>
+              <div class="card-header"><div class="card-title">Requiere atención</div></div>
               <ul class="pend-list" id="alertas-list"></ul>
             </div>
             <div class="card" style="margin-bottom:1rem">
-              <div class="card-header"><div class="card-title">Por estado</div></div>
-              <div class="donut-wrap">
-                <div class="donut" id="main-donut" style="background:conic-gradient(var(--amber) 0% 40%,var(--blue) 40% 65%,var(--green) 65% 100%)">
-                  <div class="donut-center" id="donut-center-txt">—</div>
-                </div>
-                <div class="donut-legend" id="dash-legend"></div>
+              <div class="card-header">
+                <div><div class="card-title">Cobranza del mes</div><div class="card-subtitle" id="dash-cob-sub"></div></div>
               </div>
+              <div id="dash-cobranza"></div>
             </div>
             <div class="card" style="margin-bottom:1rem">
-              <div class="card-header"><div class="card-title">Tipos más frecuentes</div><div class="card-subtitle" id="dash-tipos-mes"></div></div>
+              <div class="card-header"><div class="card-title">Motivos más frecuentes</div><div class="card-subtitle" id="dash-tipos-mes"></div></div>
               <div id="dash-tipos-body"></div>
-            </div>
-            <div class="card">
-              <div class="card-header"><div class="card-title">Actividad reciente</div></div>
-              <div class="activity-list" id="dash-activity"></div>
             </div>
           </div>
         </div>
