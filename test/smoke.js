@@ -59,7 +59,14 @@ const TABLES = {
   actividad: withIds(seeds.SEED_ACTIVIDAD || []), vehiculos: withIds(seeds.SEED_VEHICULOS || []),
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
   // Descuento distinto de 20% para comprobar que las boletas usan la configuración
-  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45 }], usuarios: [ADMIN], pagos: [], turnos: [],
+  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45, valor_uma: 117.31,
+    reglamento: 'Reglamento de Movilidad, Tránsito y Seguridad Vial de San Pedro Garza García, Nuevo León', fundamento_general: 'Artículos 16 y 21 de la Constitución' }],
+  // Extracto del catálogo del reglamento (articulos.sql)
+  catalogo_infracciones: [
+    { numero: 112, descripcion: 'Exceder la velocidad máxima de 50 km/h', texto: 'La velocidad máxima en el Municipio es de 50 km/h.', articulo: '59', fraccion: 'primer párrafo', inciso: '', cuotas_min: 12, cuotas_max: 15, grave: true, tipo_rapido: 'Exceso de velocidad', activo: true },
+    { numero: 82, descripcion: 'Sujetar el celular u otro aparato electrónico al conducir', texto: 'Sujetar aparatos de telecomunicación… <img src=x onerror="window.__xss=1">', articulo: '58', fraccion: 'II', inciso: '', cuotas_min: 20, cuotas_max: 30, grave: true, tipo_rapido: 'Uso de celular al conducir', activo: true },
+    { numero: 136, descripcion: 'Estacionarse en lugar prohibido', texto: 'Se prohíbe estacionar vehículos…', articulo: '80', fraccion: 'III, IV y V', inciso: '', cuotas_min: 10, cuotas_max: 20, grave: false, tipo_rapido: 'Estacionamiento prohibido', activo: true }
+  ], usuarios: [ADMIN], pagos: [], turnos: [],
   auditoria: [
     { id: 1, ts: '2026-06-03T10:05:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'cambio', usuario_nombre: XSS, resumen: XSS, cambios: { monto: { antes: 800, despues: XSS } } },
     { id: 2, ts: '2026-06-03T10:00:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'alta', usuario_nombre: 'Admin Prueba', resumen: 'INF-2026-0001', cambios: { tipo: XSS, placa: 'XSS-001' } }
@@ -203,6 +210,34 @@ function check(name, errors, extra) {
       for (const p of popups.splice(0)) { html += await p.content().catch(() => ''); await p.close().catch(() => {}); }
       check(fn + ' usa el descuento configurado', errors, html.includes('10% descuento') && !html.includes('20% descuento') ? null : 'no mostró 10% de descuento');
     }
+
+    // Fundamento legal: el tipo rápido propone su artículo y el monto mínimo del tabulador
+    await page.evaluate(() => openNewInfraccion());
+    await page.waitForTimeout(800);
+    await page.selectOption('#inf-tipo', 'Exceso de velocidad');
+    await page.evaluate(() => autoFillMonto());
+    await page.waitForTimeout(500);
+    const alta = await page.evaluate(() => ({ cat: $('inf-catalogo').value, monto: $('inf-monto').value, card: $('inf-fundamento').textContent }));
+    check('alta: artículo y monto del tabulador', errors, alta.cat === '112' && alta.monto === '1407' && /Art\. 59, primer párrafo/.test(alta.card) && /Grave/.test(alta.card) ? null : JSON.stringify(alta));
+    // Búsqueda en el reglamento por artículo
+    await page.evaluate(() => { const c = catalogoPorNumero(82); $('inf-catalogo-buscar').value = etiquetaCatalogo(c); onCatalogoBuscar(); });
+    const busq = await page.evaluate(() => ({ cat: $('inf-catalogo').value, tipo: $('inf-tipo').value, monto: $('inf-monto').value }));
+    check('búsqueda por artículo del reglamento', errors, busq.cat === '82' && busq.tipo === 'Uso de celular al conducir' && busq.monto === '2346' ? null : JSON.stringify(busq));
+    await page.evaluate(() => { document.querySelector('#inf-fundamento details').open = true; });
+    check('disposición del reglamento escapada', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    await page.evaluate(() => closeModal('modal-infraccion'));
+    // Ticket de una infracción grave: con fundamento y sin descuento
+    const graveInf = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.id !== pendId);
+    Object.assign(graveInf, { catalogo_numero: 112, fundamento: 'Artículo 59, primer párrafo, del Reglamento de Movilidad' });
+    await page.evaluate(id => printTicket80(id), graveInf.id);
+    await page.waitForTimeout(800);
+    let tk = ''; for (const p of popups.splice(0)) { tk += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    check('ticket de infracción grave', errors, tk.includes('Fundamento: Artículo 59') && tk.includes('SIN DESCUENTO') && !tk.includes('% descuento pagando') ? null : 'ticket sin fundamento o con descuento');
+    await page.evaluate(id => viewDetail('infracciones', id), graveInf.id);
+    await page.waitForTimeout(800);
+    const det = await page.evaluate(() => $('modal-detail').textContent);
+    check('detalle muestra el fundamento', errors, /Fundamento legal/.test(det) && /Artículo 59/.test(det) ? null : 'sin fundamento en el detalle');
+    await page.evaluate(() => closeModal('modal-detail'));
 
     // Cobro: pasa por registrar_pago (el servidor calcula el descuento)
     await page.evaluate(id => openRegistrarPago(id), pendId);
