@@ -381,8 +381,9 @@ revoke all on function public.registrar_pago(bigint, boolean, text, text) from p
 grant execute on function public.registrar_pago(bigint, boolean, text, text) to authenticated;
 
 -- ── Portal ciudadano: fundamento y si aplica descuento ────
-drop function if exists public.consulta_publica(text, boolean);
-create function public.consulta_publica(p_q text, p_historial boolean default false)
+-- Función nueva (consulta_publica conserva su forma para versiones anteriores
+-- de la página).
+create or replace function public.consulta_ciudadana(p_q text, p_historial boolean default false)
 returns table (id bigint, folio text, fecha timestamptz, placa text, infractor text, tipo text,
                monto integer, estado text, ubicacion text, obs text, fundamento text, grave boolean)
 language sql stable security definer
@@ -399,7 +400,7 @@ as $$
   order by i.fecha desc
   limit 25
 $$;
-grant execute on function public.consulta_publica(text, boolean) to anon, authenticated;
+grant execute on function public.consulta_ciudadana(text, boolean) to anon, authenticated;
 
 -- ── Acceso ────────────────────────────────────────────────
 alter table public.catalogo_infracciones enable row level security;

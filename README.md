@@ -76,7 +76,7 @@ Orden para una base nueva: `schema.sql` → `security_auth.sql` →
   pagos. Borrar registros: admin y supervisor. Configuración, gestión de
   usuarios (`admin_guardar_usuario`) y corrección de pagos: solo admin. Un
   usuario desactivado pierde el acceso aunque tenga la sesión abierta.
-- **Portal ciudadano:** solo puede llamar a `consulta_publica(placa o folio)`;
+- **Portal ciudadano:** solo puede llamar a `consulta_ciudadana(placa o folio)`;
   no tiene acceso directo a ninguna tabla.
 - El rol que guarda el navegador (`tm_session`) solo decide qué se muestra;
   quien aplica los permisos es la base de datos.

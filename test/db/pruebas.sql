@@ -271,8 +271,8 @@ reset role;
 
 set role anon;
 do $$ begin
-  assert (select fundamento from consulta_publica('FUN-001', true)) like 'Artículo 59%', 'portal muestra el fundamento';
-  assert (select grave from consulta_publica('FUN-001', true)), 'portal sabe que es grave';
+  assert (select fundamento from consulta_ciudadana('FUN-001', true)) like 'Artículo 59%', 'portal muestra el fundamento';
+  assert (select grave from consulta_ciudadana('FUN-001', true)), 'portal sabe que es grave';
 end $$;
 reset role;
 \echo 'OK   pruebas de base de datos'

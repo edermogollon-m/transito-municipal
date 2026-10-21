@@ -130,7 +130,7 @@ async function newPage(browser, { dbDown = false } = {}) {
       const c = TABLES.configuracion[0];
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify([{ descuento_pct: c.descuento_pct, dias_descuento: c.dias_descuento, dias_limite: c.dias_limite }]) });
     }
-    if (table === 'rpc/consulta_publica') {
+    if (table === 'rpc/consulta_publica' || table === 'rpc/consulta_ciudadana') {
       const q = norm(JSON.parse(req.postData() || '{}').p_q);
       rows = TABLES.infracciones.filter(i => norm(i.placa) === q || norm(i.folio) === q);
     } else if (table.startsWith('rpc/')) rows = [];

@@ -292,7 +292,7 @@ async function buscar() {
   await _paramsListos;
   let data = null, error = null;
   try {
-    ({ data, error } = await _sb.rpc('consulta_publica', { p_q: q, p_historial: _mostrarHistorial }));
+    ({ data, error } = await _sb.rpc('consulta_ciudadana', { p_q: q, p_historial: _mostrarHistorial }));
   } catch (err) { error = err; }
   spinner.style.display = 'none';
 
