@@ -292,7 +292,7 @@ async function buscar() {
   await _paramsListos;
   let data = null, error = null;
   try {
-    ({ data, error } = await _sb.rpc('consulta_publica', { p_q: q, p_historial: _mostrarHistorial }));
+    ({ data, error } = await _sb.rpc('consulta_ciudadana', { p_q: q, p_historial: _mostrarHistorial }));
   } catch (err) { error = err; }
   spinner.style.display = 'none';
 
@@ -380,7 +380,7 @@ function infCard(r) {
   // Descuento y límite
   const descFecha = new Date(fechaObj.getTime()+diasDesc*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long'});
   const limFecha  = new Date(fechaObj.getTime()+diasLim*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const descOk    = dias <= diasDesc;
+  const descOk    = dias <= diasDesc && !r.grave;   // las graves no tienen descuento (art. 192)
   const montoDesc = montoFmt(Math.round(r.monto * (1 - descPct/100)));
 
   // Barra de progreso
@@ -508,6 +508,7 @@ function infCard(r) {
       <div class="field"><label>Placa</label><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:.88rem">${esc(r.placa)}</span></div>
       <div class="field"><label>Infractor</label><span>${esc(r.infractor)}</span></div>
       ${r.ubicacion?`<div class="field full"><label>Lugar del hecho</label><span>${esc(r.ubicacion)}</span></div>`:''}
+      ${r.fundamento?`<div class="field full"><label>Fundamento legal</label><span>${esc(r.fundamento)}${r.grave?' — infracción grave, se paga sin descuento (art. 192)':''}</span></div>`:''}
     </div>
     ${paySection}
     ${actHTML}

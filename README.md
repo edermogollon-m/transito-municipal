@@ -54,9 +54,16 @@ proyectos activos a la vez).
   Vencimiento diario con pg_cron según los días límite de Configuración, y
   `parametros_pago()` para el portal ciudadano.
 
+- `articulos.sql` — fundamento legal: catálogo con las 224 infracciones del
+  tabulador del Reglamento de Movilidad, Tránsito y Seguridad Vial de San
+  Pedro Garza García (POE 27-dic-2021, última reforma POE 11-feb-2026):
+  texto, artículo, fracción, inciso, sanción en cuotas UMA y si es grave
+  (art. 192, sin descuento). Cada infracción guarda el fundamento impreso y su
+  monto debe caer en el rango del tabulador (cuotas × UMA de Configuración).
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
-`cobros.sql`. Todos son idempotentes y ya están aplicados en
+`cobros.sql` → `articulos.sql`. Todos son idempotentes y ya están aplicados en
 `transito-municipal`.
 
 ## Seguridad
@@ -69,7 +76,7 @@ Orden para una base nueva: `schema.sql` → `security_auth.sql` →
   pagos. Borrar registros: admin y supervisor. Configuración, gestión de
   usuarios (`admin_guardar_usuario`) y corrección de pagos: solo admin. Un
   usuario desactivado pierde el acceso aunque tenga la sesión abierta.
-- **Portal ciudadano:** solo puede llamar a `consulta_publica(placa o folio)`;
+- **Portal ciudadano:** solo puede llamar a `consulta_ciudadana(placa o folio)`;
   no tiene acceso directo a ninguna tabla.
 - El rol que guarda el navegador (`tm_session`) solo decide qué se muestra;
   quien aplica los permisos es la base de datos.

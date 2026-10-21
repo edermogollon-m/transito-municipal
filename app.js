@@ -654,6 +654,7 @@ async function submitInfraccion(e) {
     color_vehiculo: ($('inf-color')||{}).value?.trim()    || '',
     oficial:        ($('inf-oficial')||{}).value?.trim()  || '',
     tipo:           $('inf-tipo').value,
+    catalogo_numero: parseInt(($('inf-catalogo')||{}).value) || null,
     monto:          parseInt($('inf-monto').value)||0,
     ubicacion:      $('inf-ubicacion').value.trim(),
     estado:         $('inf-est').value,
@@ -664,6 +665,17 @@ async function submitInfraccion(e) {
     fotos:          fotosArr.length ? JSON.stringify(fotosArr) : (id ? undefined : '[]')
   };
   if (payload.fotos === undefined) delete payload.fotos;
+
+  // Fundamento legal: obligatorio en altas; el tipo libre toma la descripción del reglamento
+  const cat = catalogoPorNumero(payload.catalogo_numero);
+  if (!id && !cat) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+    alert('Selecciona el artículo del reglamento que fundamenta la infracción.');
+    $('inf-catalogo-buscar')?.focus();
+    return;
+  }
+  if (!payload.catalogo_numero) delete payload.catalogo_numero;
+  if (cat && payload.tipo === 'Otro') payload.tipo = cat.descripcion;
 
   // ── Verificar adeudos antes de registrar infracción nueva ──
   if (!id) {
@@ -720,6 +732,67 @@ async function submitInfraccion(e) {
   renderDashboard();
 }
 
+// ── Catálogo del reglamento (fundamento legal) ───────────
+// Tabulador de infracciones del Reglamento de Tránsito (ver articulos.sql).
+let _catalogo = null;
+async function cargarCatalogo() {
+  if (_catalogo) return _catalogo;
+  const { data, error } = await _sb.from('catalogo_infracciones').select('*').eq('activo', true).order('numero');
+  if (error) { console.error('catálogo:', error); return []; }
+  return (_catalogo = data || []);
+}
+function catalogoPorNumero(n) { return (_catalogo||[]).find(c => c.numero === Number(n)) || null; }
+function citaCorta(c) {
+  return `Art. ${c.articulo}${c.fraccion ? (/párrafo|anexo/i.test(c.fraccion) ? ', ' + c.fraccion : ' fr. ' + c.fraccion) : ''}${c.inciso ? ' inc. ' + c.inciso : ''}`;
+}
+function etiquetaCatalogo(c) { return `${citaCorta(c)} — ${c.descripcion} [#${c.numero}]`; }
+function rangoMonto(c, cfg) {
+  const uma = Number(cfg?.valor_uma) || 0;
+  return uma ? { min: Math.floor(c.cuotas_min * uma), max: Math.ceil(c.cuotas_max * uma), uma } : null;
+}
+function tarjetaFundamento(c, cfg) {
+  const r = rangoMonto(c, cfg);
+  return `<div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.6rem .75rem;margin-top:.4rem;font-size:.78rem;line-height:1.45">
+    <div style="font-weight:700;color:var(--ink)">${esc(citaCorta(c))} ${c.grave ? '<span class="badge-red" title="Art. 192: se paga íntegra, sin descuento">Grave · sin descuento</span>' : ''}</div>
+    <div style="color:var(--muted);margin:.15rem 0">${esc(cfg?.reglamento || 'Reglamento de Tránsito')}</div>
+    <div>Sanción: <strong>${c.cuotas_min} a ${c.cuotas_max} cuotas</strong>${r ? ` (UMA $${r.uma}) = <strong>${fmt(r.min)} a ${fmt(r.max)}</strong>` : ''}</div>
+    <details style="margin-top:.3rem"><summary style="cursor:pointer;color:var(--ac);font-weight:600">Leer la disposición</summary>
+      <div style="margin-top:.3rem;white-space:normal">${esc(c.texto)}</div></details>
+  </div>`;
+}
+
+async function prepararCatalogoForm() {
+  const cat = await cargarCatalogo();
+  const dl = $('inf-catalogo-lista');
+  if (dl && !dl.children.length) dl.innerHTML = cat.map(c => `<option value="${esc(etiquetaCatalogo(c))}"></option>`).join('');
+}
+
+// fijarMonto: en altas propone el monto mínimo del tabulador
+function seleccionarCatalogo(numero, fijarMonto) {
+  const c = catalogoPorNumero(numero);
+  if ($('inf-catalogo')) $('inf-catalogo').value = c ? c.numero : '';
+  if ($('inf-catalogo-buscar')) $('inf-catalogo-buscar').value = c ? etiquetaCatalogo(c) : '';
+  const box = $('inf-fundamento');
+  if (box) box.innerHTML = c ? tarjetaFundamento(c, _cachedConfig) : '<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Busca la infracción en el reglamento para citar el artículo.</div>';
+  const r = c && rangoMonto(c, _cachedConfig);
+  if (c && fijarMonto && r && $('inf-monto')) $('inf-monto').value = r.min;
+  if ($('inf-monto') && r) { $('inf-monto').min = r.min; $('inf-monto').max = r.max; }
+  updateInfSummary();
+}
+
+function onCatalogoBuscar() {
+  const v = $('inf-catalogo-buscar')?.value || '';
+  const m = v.match(/\[#(\d+)\]\s*$/);
+  if (!m) return;
+  const c = catalogoPorNumero(m[1]);
+  if (!c) return;
+  if ($('inf-tipo')) {
+    const opts = [...$('inf-tipo').options].map(o => o.value);
+    $('inf-tipo').value = c.tipo_rapido && opts.includes(c.tipo_rapido) ? c.tipo_rapido : 'Otro';
+  }
+  seleccionarCatalogo(c.numero, !$('inf-id').value);
+}
+
 // ── Tipos de infracción (base + personalizables) ──────────
 const TIPOS_BASE = [
   'Exceso de velocidad','Estacionamiento prohibido','No respetar señal de alto',
@@ -740,7 +813,7 @@ async function loadTiposInfraccion(currentVal) {
   el.innerHTML = all.map(t => `<option value="${esc(t)}"${t === prev ? ' selected' : ''}>${esc(t)}</option>`).join('');
 }
 
-function openNewInfraccion() {
+async function openNewInfraccion() {
   $('modal-inf-title').textContent = 'Nueva infracción';
   $('inf-form').reset();
   $('inf-id').value = '';
@@ -762,8 +835,11 @@ function openNewInfraccion() {
     $('inf-oficial').dataset.preload = _session?.name || '';
   }
   loadOficiales(['inf-oficial']);
-  loadTiposInfraccion();
   openModal('modal-infraccion');
+  if ($('inf-catalogo')) $('inf-catalogo').value = '';
+  await loadTiposInfraccion();
+  await prepararCatalogoForm();
+  autoFillMonto();
 }
 
 async function editInfraccion(id) {
@@ -792,6 +868,9 @@ async function editInfraccion(id) {
   const prev = document.getElementById('inf-fotos-preview');
   if (prev) prev.innerHTML = '';
   await loadTiposInfraccion(data.tipo);
+  if ($('inf-tipo') && $('inf-tipo').value !== data.tipo) $('inf-tipo').value = 'Otro';
+  await prepararCatalogoForm();
+  seleccionarCatalogo(data.catalogo_numero, false);
   openModal('modal-infraccion');
   updateInfSummary();
 }
@@ -819,10 +898,15 @@ function updateInfSummary() {
 async function autoFillMonto() {
   if ($('inf-id').value) return;
   const tipo = $('inf-tipo').value;
-  if (!_cachedConfig) {
-    const { data } = await _sb.from('configuracion').select('montos').eq('id',1).single();
-    if (data) _cachedConfig = data;
+  if (!_cachedConfig?.valor_uma) {
+    const { data } = await _sb.from('configuracion').select('*').eq('id',1).single();
+    if (data) _cachedConfig = { ...(_cachedConfig||{}), ...data };
   }
+  // El tipo rápido trae su artículo del reglamento y el monto mínimo del tabulador
+  const cat = await cargarCatalogo();
+  const c = cat.find(x => x.tipo_rapido === tipo);
+  if (c) { seleccionarCatalogo(c.numero, true); return; }
+  if (tipo === 'Otro') { seleccionarCatalogo(null); $('inf-catalogo-buscar')?.focus(); return; }
   if (_cachedConfig && _cachedConfig.montos) {
     const map = {
       'Exceso de velocidad':'velocidad',
@@ -1013,9 +1097,26 @@ function renovarPermiso(id) {
 }
 
 // ── Detail modal ──────────────────────────────────────────
+function fundamentoDetalle(r) {
+  const c = catalogoPorNumero(r.catalogo_numero);
+  if (!c && !r.fundamento) return '';
+  return `<div style="margin-top:.75rem">
+    <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Fundamento legal</div>
+    ${r.fundamento ? `<div style="font-size:.82rem;font-weight:600;color:var(--ink)">${esc(r.fundamento)}</div>` : '<div style="font-size:.75rem;color:var(--muted)">Registrada antes del catálogo; referencia según su tipo:</div>'}
+    ${c ? tarjetaFundamento(c, _cachedConfig) : ''}
+  </div>`;
+}
+
 async function viewDetail(tabla, id) {
   const { data, error } = await _sb.from(tabla).select('*').eq('id', id).single();
   if (error || !data) return;
+  if (tabla === 'infracciones') {
+    await cargarCatalogo();
+    if (!_cachedConfig?.valor_uma) {
+      const { data: cfg } = await _sb.from('configuracion').select('*').eq('id', 1).single();
+      if (cfg) _cachedConfig = { ...(_cachedConfig||{}), ...cfg };
+    }
+  }
   const r = data, isInf = tabla==='infracciones';
   const dm = $('modal-detail');
   if (!dm) return;
@@ -1078,6 +1179,7 @@ async function viewDetail(tabla, id) {
       ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="background:var(--blue-bg);color:var(--blue);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem;font-weight:500">${esc(r.impugnacion_motivo)}</span></div>`:''}
       ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img data-foto="${esc(f)}" alt="Foto de evidencia" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:var(--stone);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" />`).join('')}</div></div>`:''}
     </div>
+    ${fundamentoDetalle(r)}
     <div id="detail-historial"></div>
 
     <!-- Cambiar estado -->
@@ -1247,6 +1349,9 @@ async function loadConfig() {
   if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
   if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
   if($('cfg-dias-limite'))    $('cfg-dias-limite').value    = data.dias_limite    ?? 30;
+  if($('cfg-valor-uma'))      $('cfg-valor-uma').value      = data.valor_uma      ?? '';
+  if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
+  if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
@@ -1270,6 +1375,9 @@ async function saveConfig() {
     descuento_pct:  parseInt(($('cfg-descuento-pct')||{}).value)||20,
     dias_descuento: parseInt(($('cfg-dias-descuento')||{}).value)||15,
     dias_limite:    parseInt(($('cfg-dias-limite')||{}).value)||30,
+    valor_uma:      parseFloat(($('cfg-valor-uma')||{}).value) || null,
+    reglamento:     ($('cfg-reglamento')||{}).value?.trim() || null,
+    fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
     tipos_extra:    tiposExtra
   };
   const { error } = await _sb.from('configuracion').upsert(payload, { onConflict:'id' });
@@ -1322,6 +1430,9 @@ async function printInfraccion(id) {
   const horaStr   = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
   const { pct: descPct, descFecha, limFecha, montoDesc } = plazosPago(r, cfg, {day:'2-digit',month:'long',year:'numeric'});
+  await cargarCatalogo();
+  const catInf = catalogoPorNumero(r.catalogo_numero);
+  const grave = !!catInf?.grave;
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
 
   const copyHTML = (label) => `
@@ -1351,6 +1462,7 @@ async function printInfraccion(id) {
             <div class="f"><span class="fl">Hora</span><span class="fv">${horaStr}</span></div>
             <div class="f full"><span class="fl">Ubicación / Lugar de los hechos</span><span class="fv">${esc(r.ubicacion||'—')}</span></div>
             <div class="f full"><span class="fl">Tipo de infracción</span><span class="fv bold">${esc(r.tipo)}</span></div>
+            ${r.fundamento ? `<div class="f full"><span class="fl">Fundamento legal</span><span class="fv">${esc(r.fundamento)}${grave ? ' — infracción grave (art. 192)' : ''}</span></div>` : ''}
             ${r.obs ? `<div class="f full"><span class="fl">Observaciones</span><span class="fv">${esc(r.obs)}</span></div>` : ''}
           </div>
         </div>
@@ -1376,11 +1488,15 @@ async function printInfraccion(id) {
         <div class="amount-label">MONTO DE LA INFRACCIÓN</div>
         <div class="amount-num">$${montoFmt} <span class="currency">MXN</span></div>
         <div class="payment-dates">
-          <div class="pd-item discount">
+          ${grave ? `<div class="pd-item limit">
+            <div class="pd-label">Infracción grave</div>
+            <div class="pd-date">Sin descuento</div>
+            <div class="pd-amount">Se paga íntegra (art. 192)</div>
+          </div>` : `<div class="pd-item discount">
             <div class="pd-label">▼ ${descPct}% descuento si paga antes del</div>
             <div class="pd-date">${descFecha}</div>
             <div class="pd-amount">Pague solo $${montoDesc} MXN</div>
-          </div>
+          </div>`}
           <div class="pd-item limit">
             <div class="pd-label">⚠ Fecha límite de pago</div>
             <div class="pd-date">${limFecha}</div>
@@ -1410,9 +1526,9 @@ async function printInfraccion(id) {
       </div>
 
       <div class="legal-note">
-        La presente boleta fue expedida conforme a la Ley de Tránsito Municipal vigente. El no pago dentro del plazo establecido
-        generará recargos del 2% mensual y podrá derivar en inmovilización del vehículo. Para impugnar esta infracción acuda a la
-        Dirección de Tránsito dentro de los 15 días hábiles siguientes a esta fecha.
+        La presente boleta se expide con fundamento en ${esc(cfg?.fundamento_general || 'la legislación de tránsito vigente')}${r.fundamento ? '; y en el ' + esc(r.fundamento.replace(/^Artículo/, 'artículo')) : ''}.
+        El no pago dentro del plazo establecido generará la actualización y los accesorios que determinen las disposiciones fiscales.
+        Para impugnar esta infracción acuda a la Dirección de Tránsito dentro de los plazos que establece el Reglamento.
       </div>
     </div>
   </div>`;
@@ -2333,14 +2449,16 @@ async function openRegistrarPago(infId) {
   if (!r) return;
   $('pago-inf-id').value = infId;
   const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
-  const descOk = dias <= diasDesc;
+  await cargarCatalogo();
+  const grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
+  const descOk = dias <= diasDesc && !grave;
   const infoEl = $('pago-inf-info');
   if (infoEl) infoEl.innerHTML = `
     <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.35rem">Infracción</div>
     <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${esc(r.folio||'—')} — ${esc(r.tipo)}</div>
     <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${esc(r.infractor)} · Placa: <strong>${esc(r.placa)}</strong></div>
     <div style="font-size:.8rem;color:var(--text)">${fmtDateShort(r.fecha)} · <strong>${fmt(r.monto)}</strong></div>
-    ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pronto pago — menos de ${diasDesc} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Sin descuento disponible (más de ${diasDesc} días)</div>`}`;
+    ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pronto pago — menos de ${diasDesc} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">${grave ? 'Infracción grave: se paga íntegra, sin descuento (art. 192 del Reglamento)' : `Sin descuento disponible (más de ${diasDesc} días)`}</div>`}`;
   const descEl = $('pago-descuento');
   if (descEl) {
     descEl.innerHTML = `<option value="0">Sin descuento (100%)</option><option value="${descPct}">${descPct}% — pronto pago</option>`;
@@ -2621,6 +2739,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7.5pt">INFRACCIÓN:</div>
     <div>${esc(r.tipo)}</div>
+    ${r.fundamento ? `<div class="t-small" style="margin-top:.5mm">Fundamento: ${esc(r.fundamento)}</div>` : ''}
     ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${esc(r.ubicacion)}</div>`:''}
     <div class="t-solid"></div>
     <div class="t-center t-bold" style="font-size:7.5pt">MONTO A PAGAR</div>
@@ -2628,10 +2747,13 @@ function buildTicket80(r, cfg, qrDataUrl) {
       <div class="t-xl">$${montoFmt}</div>
       <div class="t-small">MXN</div>
     </div>
-    <div class="t-disc">
+    ${r._grave ? `<div class="t-disc">
+      <div class="t-bold">INFRACCIÓN GRAVE — SIN DESCUENTO</div>
+      <div>Se paga íntegra (art. 192 del Reglamento)</div>
+    </div>` : `<div class="t-disc">
       <div class="t-bold">▼ ${descPct}% descuento pagando antes del</div>
       <div>${descFecha} — solo $${montoDesc} MXN</div>
-    </div>
+    </div>`}
     <div class="t-disc" style="border-color:#DC2626;color:#DC2626">
       <div class="t-bold">⚠ Fecha límite de pago: ${limFecha}</div>
     </div>
@@ -2668,6 +2790,8 @@ async function printTicket80(id) {
     qrDataUrl = qrVerificacion(r.token_verificacion, 260);
   } catch(e) { console.warn('QR gen error:', e); }
 
+  await cargarCatalogo();
+  r._grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
