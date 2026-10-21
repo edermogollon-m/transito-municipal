@@ -14,7 +14,7 @@ const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'adm
 // ── Config cache (populated on first autoFillMonto call) ──
 let _cachedConfig = null;
 
-// ── Seed constants (used by resetData & initData) ─────────
+// ── Configuración inicial (se crea si la tabla está vacía) ─
 const SEED_CONFIG = {
   municipio: 'San Marcos',
   estado: 'Estado de México',
@@ -27,138 +27,6 @@ const SEED_CONFIG = {
   }
 };
 
-const SEED_INFRACCIONES = [
-  // Jan 2026
-  { fecha:'2026-01-05T09:15:00Z', placa:'ABC-123', infractor:'Roberto Gómez L.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Juárez #145', estado:'pagada', obs:'' },
-  { fecha:'2026-01-08T11:30:00Z', placa:'XYZ-456', infractor:'María López R.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Calle Morelos #22', estado:'pagada', obs:'' },
-  { fecha:'2026-01-12T14:45:00Z', placa:'DEF-789', infractor:'Carlos Hernández M.', tipo:'No respetar alto', monto:600, ubicacion:'Av. Hidalgo esq. Reforma', estado:'pendiente', obs:'' },
-  { fecha:'2026-01-15T08:20:00Z', placa:'GHI-012', infractor:'Ana Martínez S.', tipo:'Conducir sin licencia', monto:1200, ubicacion:'Blvd. Principal #500', estado:'pendiente', obs:'Reincidente' },
-  { fecha:'2026-01-18T16:00:00Z', placa:'JKL-345', infractor:'Pedro Sánchez V.', tipo:'Uso de celular', monto:700, ubicacion:'Calle Libertad #88', estado:'pagada', obs:'' },
-  { fecha:'2026-01-22T10:10:00Z', placa:'MNO-678', infractor:'Laura García T.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Municipal km 3', estado:'pendiente', obs:'' },
-  { fecha:'2026-01-25T13:55:00Z', placa:'PQR-901', infractor:'Jorge Ramírez H.', tipo:'Documentos incompletos', monto:400, ubicacion:'Av. Independencia #33', estado:'pagada', obs:'' },
-  // Feb 2026
-  { fecha:'2026-02-03T09:00:00Z', placa:'STU-234', infractor:'Sofía Torres N.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Juárez #200', estado:'pendiente', obs:'' },
-  { fecha:'2026-02-07T15:30:00Z', placa:'VWX-567', infractor:'Diego Flores P.', tipo:'No respetar alto', monto:600, ubicacion:'Calle Hidalgo #55', estado:'pagada', obs:'' },
-  { fecha:'2026-02-10T11:20:00Z', placa:'YZA-890', infractor:'Fernanda Cruz O.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Plaza Central', estado:'pagada', obs:'' },
-  { fecha:'2026-02-14T08:45:00Z', placa:'BCD-123', infractor:'Arturo Mendoza K.', tipo:'Circulación en sentido contrario', monto:900, ubicacion:'Blvd. Reforma #12', estado:'pendiente', obs:'' },
-  { fecha:'2026-02-17T14:10:00Z', placa:'EFG-456', infractor:'Isabel Vargas C.', tipo:'Uso de celular', monto:700, ubicacion:'Av. Morelos #45', estado:'pagada', obs:'' },
-  { fecha:'2026-02-20T16:40:00Z', placa:'HIJ-789', infractor:'Manuel Ortega L.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Sur km 5', estado:'pendiente', obs:'' },
-  { fecha:'2026-02-24T10:00:00Z', placa:'KLM-012', infractor:'Patricia Reyes M.', tipo:'Uso prohibido de vía', monto:1000, ubicacion:'Zona Escolar Benito Juárez', estado:'pagada', obs:'' },
-  // Mar 2026
-  { fecha:'2026-03-02T09:30:00Z', placa:'NOP-345', infractor:'Héctor Jiménez A.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Juárez #350', estado:'pagada', obs:'' },
-  { fecha:'2026-03-05T13:00:00Z', placa:'QRS-678', infractor:'Claudia Ríos B.', tipo:'Conducir sin licencia', monto:1200, ubicacion:'Calle Principal #100', estado:'pendiente', obs:'Primera infracción' },
-  { fecha:'2026-03-08T11:15:00Z', placa:'TUV-901', infractor:'Enrique Morales D.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Mercado Municipal', estado:'pagada', obs:'' },
-  { fecha:'2026-03-11T15:45:00Z', placa:'WXY-234', infractor:'Gloria Castillo F.', tipo:'No respetar alto', monto:600, ubicacion:'Av. 5 de Mayo esq. Juárez', estado:'pendiente', obs:'' },
-  { fecha:'2026-03-15T09:20:00Z', placa:'ZAB-567', infractor:'Raúl Herrera G.', tipo:'Uso de celular', monto:700, ubicacion:'Blvd. Norte #78', estado:'pagada', obs:'' },
-  { fecha:'2026-03-18T14:30:00Z', placa:'CDE-890', infractor:'Verónica Luna H.', tipo:'Documentos incompletos', monto:400, ubicacion:'Calle Reforma #25', estado:'pagada', obs:'' },
-  { fecha:'2026-03-22T10:50:00Z', placa:'FGH-123', infractor:'Alejandro Peña I.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Norte km 2', estado:'pendiente', obs:'' },
-  { fecha:'2026-03-25T16:15:00Z', placa:'IJK-456', infractor:'Yolanda Silva J.', tipo:'Circulación en sentido contrario', monto:900, ubicacion:'Av. Independencia #150', estado:'pagada', obs:'' },
-  // Abr 2026
-  { fecha:'2026-04-03T08:30:00Z', placa:'LMN-789', infractor:'Gustavo Vega K.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Juárez #480', estado:'pendiente', obs:'' },
-  { fecha:'2026-04-07T12:00:00Z', placa:'OPQ-012', infractor:'Beatriz Rojas L.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Centro Histórico', estado:'pagada', obs:'' },
-  { fecha:'2026-04-10T15:20:00Z', placa:'RST-345', infractor:'César Aguilar M.', tipo:'Conducir sin licencia', monto:1200, ubicacion:'Calle Hidalgo #200', estado:'pendiente', obs:'' },
-  { fecha:'2026-04-14T09:45:00Z', placa:'UVW-678', infractor:'Dolores Campos N.', tipo:'No respetar alto', monto:600, ubicacion:'Calle Morelos #99', estado:'pagada', obs:'' },
-  { fecha:'2026-04-17T11:30:00Z', placa:'XYZ-901', infractor:'Francisco Nava O.', tipo:'Uso de celular', monto:700, ubicacion:'Blvd. Sur #34', estado:'pendiente', obs:'' },
-  { fecha:'2026-04-22T14:00:00Z', placa:'ABC-234', infractor:'Guadalupe Torres P.', tipo:'Uso prohibido de vía', monto:1000, ubicacion:'Zona Peatonal Centro', estado:'pagada', obs:'' },
-  { fecha:'2026-04-25T16:30:00Z', placa:'DEF-567', infractor:'Ignacio Reyes Q.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Este km 1', estado:'pendiente', obs:'' },
-  // May 2026
-  { fecha:'2026-05-04T09:10:00Z', placa:'GHI-890', infractor:'Julia Medina R.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Av. Morelos #320', estado:'pagada', obs:'' },
-  { fecha:'2026-05-07T13:30:00Z', placa:'JKL-123', infractor:'Luis Fuentes S.', tipo:'No respetar alto', monto:600, ubicacion:'Calle 5 de Febrero #45', estado:'pendiente', obs:'' },
-  { fecha:'2026-05-10T10:00:00Z', placa:'MNO-456', infractor:'Martha Guerrero T.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Juárez #600', estado:'pagada', obs:'' },
-  { fecha:'2026-05-13T15:45:00Z', placa:'PQR-789', infractor:'Nicolás Ramos U.', tipo:'Documentos incompletos', monto:400, ubicacion:'Calle Guerrero #18', estado:'pendiente', obs:'' },
-  { fecha:'2026-05-16T08:50:00Z', placa:'STU-012', infractor:'Ofelia Cruz V.', tipo:'Circulación en sentido contrario', monto:900, ubicacion:'Blvd. Oriente #56', estado:'pagada', obs:'' },
-  { fecha:'2026-05-20T12:20:00Z', placa:'VWX-345', infractor:'Pablo Espinoza W.', tipo:'Conducir sin licencia', monto:1200, ubicacion:'Av. Hidalgo #250', estado:'pendiente', obs:'Documentos vencidos' },
-  { fecha:'2026-05-24T14:40:00Z', placa:'YZA-678', infractor:'Quintina Arias X.', tipo:'Uso de celular', monto:700, ubicacion:'Calle Independencia #77', estado:'pagada', obs:'' },
-  { fecha:'2026-05-27T10:30:00Z', placa:'BCD-901', infractor:'Rodrigo Leal Y.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Oeste km 4', estado:'pendiente', obs:'' },
-  // Jun 2026
-  { fecha:'2026-06-02T09:00:00Z', placa:'EFG-234', infractor:'Sandra Mena Z.', tipo:'Estacionamiento indebido', monto:500, ubicacion:'Av. Juárez #720', estado:'pendiente', obs:'' },
-  { fecha:'2026-06-02T11:15:00Z', placa:'HIJ-567', infractor:'Tomás Blanco A.', tipo:'No respetar alto', monto:600, ubicacion:'Calle Reforma #88', estado:'pendiente', obs:'' },
-  { fecha:'2026-06-02T14:30:00Z', placa:'KLM-890', infractor:'Ursula Navas B.', tipo:'Exceso de velocidad', monto:800, ubicacion:'Blvd. Central #12', estado:'pendiente', obs:'' },
-  { fecha:'2026-06-02T16:00:00Z', placa:'NOP-123', infractor:'Víctor Prado C.', tipo:'Uso de celular', monto:700, ubicacion:'Av. 16 de Septiembre #33', estado:'pendiente', obs:'' },
-  { fecha:'2026-06-02T17:20:00Z', placa:'QRS-456', infractor:'Wendy Quintero D.', tipo:'Documentos incompletos', monto:400, ubicacion:'Calle Hidalgo #400', estado:'pendiente', obs:'' },
-  // Infracciones con datos del padrón vehicular (reincidentes)
-  { fecha:'2026-06-03T08:10:00Z', placa:'ABC-123', infractor:'Roberto Gómez López', licencia:'MX-1234567', vehiculo:'Nissan Sentra 2019', color_vehiculo:'Blanco', tipo:'No respetar señal de alto', monto:600, ubicacion:'Av. Juárez esq. Calle Hidalgo', estado:'pendiente', telefono:'5551234567', oficial:'Agente García F.', obs:'' },
-  { fecha:'2026-05-28T16:30:00Z', placa:'ABC-123', infractor:'Roberto Gómez López', licencia:'MX-1234567', vehiculo:'Nissan Sentra 2019', color_vehiculo:'Blanco', tipo:'Uso de celular al conducir', monto:700, ubicacion:'Blvd. Central #45', estado:'vencida', telefono:'5551234567', oficial:'Agente López G.', obs:'Tercera infracción del conductor este año' },
-  { fecha:'2026-06-01T09:45:00Z', placa:'GHI-012', infractor:'Ana Martínez Soto', licencia:'MX-4443210', vehiculo:'Chevrolet Aveo 2018', color_vehiculo:'Rojo', tipo:'Estacionamiento prohibido', monto:500, ubicacion:'Zona Peatonal Centro, frente al Palacio Municipal', estado:'pendiente', telefono:'5554567890', oficial:'Agente Ramos P.', obs:'' },
-  { fecha:'2026-05-20T17:15:00Z', placa:'GHI-012', infractor:'Ana Martínez Soto', licencia:'MX-4443210', vehiculo:'Chevrolet Aveo 2018', color_vehiculo:'Rojo', tipo:'Circular en sentido contrario', monto:900, ubicacion:'Calle Morelos #120 (sentido contrario)', estado:'pendiente', telefono:'5554567890', oficial:'Agente Torres V.', obs:'Conductor ingresó por calle de un solo sentido' },
-  { fecha:'2026-06-02T07:55:00Z', placa:'KLM-890', infractor:'Ursula Navas Bravo', licencia:'CP-1234001', vehiculo:'International 4300 2017', color_vehiculo:'Blanco', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Industrial km 2, zona de bodegas', estado:'pendiente', telefono:'5558901234', oficial:'Agente Mendoza L.', obs:'' },
-  { fecha:'2026-05-15T14:00:00Z', placa:'KLM-890', infractor:'Ursula Navas Bravo', licencia:'CP-1234001', vehiculo:'International 4300 2017', color_vehiculo:'Blanco', tipo:'No portar documentos', monto:400, ubicacion:'Carretera Federal Norte km 8', estado:'pagada', telefono:'5558901234', oficial:'Agente García F.', obs:'Permiso de carga vencido' },
-  { fecha:'2026-04-30T11:20:00Z', placa:'KLM-890', infractor:'Ursula Navas Bravo', licencia:'CP-1234001', vehiculo:'International 4300 2017', color_vehiculo:'Blanco', tipo:'Uso prohibido de vía', monto:1000, ubicacion:'Zona Centro Histórico — vehículo restringido', estado:'pagada', telefono:'5558901234', oficial:'Agente López G.', obs:'Camión de carga en zona restringida sin permiso especial' },
-  { fecha:'2026-06-03T10:30:00Z', placa:'QRS-456', infractor:'Wendy Quintero Díaz', licencia:'MX-9990012', vehiculo:'Yamaha MT-07 2021', color_vehiculo:'Naranja', tipo:'Exceso de velocidad', monto:800, ubicacion:'Blvd. Oriente esq. 5 de Mayo', estado:'pendiente', telefono:'5554455667', oficial:'Agente Torres V.', obs:'Motocicleta a 85 km/h en zona de 40' },
-  { fecha:'2026-05-25T19:00:00Z', placa:'QRS-456', infractor:'Wendy Quintero Díaz', licencia:'MX-9990012', vehiculo:'Yamaha MT-07 2021', color_vehiculo:'Naranja', tipo:'Conducir sin licencia', monto:1200, ubicacion:'Av. Juárez #310', estado:'pendiente', telefono:'5554455667', oficial:'Agente García F.', obs:'Licencia vencida desde oct 2025' },
-  { fecha:'2026-06-03T13:05:00Z', placa:'RST-345', infractor:'César Aguilar Mora', licencia:'MX-3334567', vehiculo:'Honda Civic 2022', color_vehiculo:'Negro', tipo:'Uso de celular al conducir', monto:700, ubicacion:'Calle Independencia #88', estado:'pendiente', telefono:'5559012345', oficial:'Agente Martínez R.', obs:'' },
-  { fecha:'2026-05-10T08:40:00Z', placa:'RST-345', infractor:'César Aguilar Mora', licencia:'MX-3334567', vehiculo:'Honda Civic 2022', color_vehiculo:'Negro', tipo:'Estacionamiento prohibido', monto:500, ubicacion:'Frente al Hospital General', estado:'pagada', telefono:'5559012345', oficial:'Agente Ramos P.', obs:'' },
-  { fecha:'2026-06-02T14:50:00Z', placa:'VWX-345', infractor:'Pablo Espinoza Walker', licencia:'MX-3334567', vehiculo:'Mazda 3 2021', color_vehiculo:'Azul', tipo:'Exceso de velocidad', monto:800, ubicacion:'Carretera Sur km 6', estado:'pendiente', telefono:'5550123456', oficial:'Agente Mendoza L.', obs:'' },
-  { fecha:'2026-05-18T09:15:00Z', placa:'VWX-345', infractor:'Pablo Espinoza Walker', licencia:'MX-3334567', vehiculo:'Mazda 3 2021', color_vehiculo:'Azul', tipo:'Girar en U prohibido', monto:1000, ubicacion:'Av. Reforma frente al Palacio de Gobierno', estado:'impugnada', telefono:'5550123456', oficial:'Agente Torres V.', obs:'Conductor asegura que la señal no era visible' },
-  { fecha:'2026-06-03T11:20:00Z', placa:'NOP-123', infractor:'Víctor Prado Castro', licencia:'MX-7778901', vehiculo:'Hyundai Elantra 2020', color_vehiculo:'Blanco', tipo:'No respetar señal de alto', monto:600, ubicacion:'Av. 5 de Mayo esq. Guerrero', estado:'pendiente', telefono:'5553344556', oficial:'Agente García F.', obs:'' },
-  { fecha:'2026-05-30T07:30:00Z', placa:'NOP-123', infractor:'Víctor Prado Castro', licencia:'MX-7778901', vehiculo:'Hyundai Elantra 2020', color_vehiculo:'Blanco', tipo:'Exceso de velocidad', monto:800, ubicacion:'Blvd. Norte km 4', estado:'pagada', telefono:'5553344556', oficial:'Agente López G.', obs:'' },
-  { fecha:'2026-06-02T16:00:00Z', placa:'EFG-234', infractor:'Sandra Mena Zárate', licencia:'MX-5556789', vehiculo:'Seat Ibiza 2019', color_vehiculo:'Verde', tipo:'Estacionamiento prohibido', monto:500, ubicacion:'Calle Hidalgo #88, junto al mercado', estado:'pendiente', telefono:'5552233445', oficial:'Agente Ramos P.', obs:'' },
-  { fecha:'2026-05-22T18:45:00Z', placa:'EFG-234', infractor:'Sandra Mena Zárate', licencia:'MX-5556789', vehiculo:'Seat Ibiza 2019', color_vehiculo:'Verde', tipo:'Uso de celular al conducir', monto:700, ubicacion:'Av. Morelos #230', estado:'pendiente', telefono:'5552233445', oficial:'Agente Martínez R.', obs:'' },
-  { fecha:'2026-06-01T15:30:00Z', placa:'BCD-901', infractor:'Rodrigo Leal Yáñez', licencia:'MX-2223456', vehiculo:'RAM 1500 2020', color_vehiculo:'Gris', tipo:'Exceso de velocidad', monto:800, ubicacion:'Av. Industrial esq. Periférico', estado:'pendiente', telefono:'5551122334', oficial:'Agente López G.', obs:'Camioneta a 95 km/h en zona de 60' },
-  { fecha:'2026-05-05T12:00:00Z', placa:'BCD-901', infractor:'Rodrigo Leal Yáñez', licencia:'MX-2223456', vehiculo:'RAM 1500 2020', color_vehiculo:'Gris', tipo:'No portar documentos', monto:400, ubicacion:'Carretera Estatal km 15', estado:'pagada', telefono:'5551122334', oficial:'Agente García F.', obs:'' },
-  { fecha:'2026-06-03T07:20:00Z', placa:'MNO-678', infractor:'Laura García Torres', licencia:'MX-5555123', vehiculo:'Toyota Corolla 2020', color_vehiculo:'Plateado', tipo:'No respetar señal de alto', monto:600, ubicacion:'Av. Juárez esq. 5 de Febrero', estado:'pendiente', telefono:'5556789012', oficial:'Agente Torres V.', obs:'' },
-  { fecha:'2026-04-28T19:30:00Z', placa:'MNO-678', infractor:'Laura García Torres', licencia:'MX-5555123', vehiculo:'Toyota Corolla 2020', color_vehiculo:'Plateado', tipo:'Circular en sentido contrario', monto:900, ubicacion:'Calle Reforma #55 (sentido único)', estado:'pagada', telefono:'5556789012', oficial:'Agente Mendoza L.', obs:'' },
-  { fecha:'2026-06-03T09:00:00Z', placa:'XYZ-456', infractor:'María López Ramírez', licencia:'MX-2234567', vehiculo:'Ford Explorer 2021', color_vehiculo:'Gris', tipo:'Conducir en estado de ebriedad', monto:1200, ubicacion:'Av. Independencia #400', estado:'pendiente', telefono:'5552345678', oficial:'Agente Ramos P.', obs:'Prueba de alcoholímetro positiva — 0.63 g/L' },
-  { fecha:'2026-06-03T14:10:00Z', placa:'JKL-345', infractor:'Pedro Sánchez Vargas', licencia:'MX-9012345', vehiculo:'Honda CB500F 2022', color_vehiculo:'Azul', tipo:'Exceso de velocidad', monto:800, ubicacion:'Blvd. Sur #120', estado:'pendiente', telefono:'5555678901', oficial:'Agente García F.', obs:'Motocicleta a 110 km/h en zona de 60 km/h' },
-  { fecha:'2026-05-14T16:00:00Z', placa:'JKL-345', infractor:'Pedro Sánchez Vargas', licencia:'MX-9012345', vehiculo:'Honda CB500F 2022', color_vehiculo:'Azul', tipo:'No portar documentos', monto:400, ubicacion:'Calle Guerrero #33', estado:'pagada', telefono:'5555678901', oficial:'Agente López G.', obs:'' },
-  { fecha:'2026-06-02T10:15:00Z', placa:'STU-234', infractor:'Sofía Torres Nuño', licencia:'MX-7771234', vehiculo:'Kia Rio 2021', color_vehiculo:'Rojo', tipo:'Estacionamiento prohibido', monto:500, ubicacion:'Av. Morelos #88, frente a banco', estado:'pendiente', telefono:'5557890123', oficial:'Agente Torres V.', obs:'' },
-  { fecha:'2026-06-01T11:00:00Z', placa:'PQR-901', infractor:'Jorge Ramírez Herrera', licencia:'', vehiculo:'Chevrolet Silverado 2019', color_vehiculo:'Blanco', tipo:'Exceso de velocidad', monto:800, ubicacion:'Periférico Norte km 2', estado:'pendiente', telefono:'', oficial:'Agente Mendoza L.', obs:'' },
-  { fecha:'2026-06-03T08:45:00Z', placa:'DEF-789', infractor:'Carlos Hernández Mora', licencia:'MX-9876543', vehiculo:'Volkswagen Jetta 2020', color_vehiculo:'Negro', tipo:'Uso de celular al conducir', monto:700, ubicacion:'Av. Hidalgo #145 esq. Aldama', estado:'pendiente', telefono:'5553456789', oficial:'Agente García F.', obs:'' }
-];
-
-const SEED_PERMISOS = [
-  { titular:'Transportes El Águila S.A.', tipo:'Transporte de carga', placa:'TRC-001', ruta:'San Marcos – Toluca', inicio:'2026-01-01', vencimiento:'2026-12-31', estado:'vigente' },
-  { titular:'Servicios Viales Norte', tipo:'Transporte público', placa:'BUS-202', ruta:'Ruta 5 – Centro/Norte', inicio:'2026-03-01', vencimiento:'2026-08-31', estado:'vigente' },
-  { titular:'Mudanzas Rápidas Hdez', tipo:'Transporte de carga', placa:'MUD-303', ruta:'Local – Zona Industrial', inicio:'2025-11-15', vencimiento:'2026-05-15', estado:'vencido' },
-  { titular:'Autobuses Regionales SA', tipo:'Transporte público', placa:'ARG-404', ruta:'Ruta 8 – Centro/Sur', inicio:'2026-02-01', vencimiento:'2027-01-31', estado:'vigente' },
-  { titular:'Distribuidora Central', tipo:'Transporte de carga', placa:'DIS-505', ruta:'Mercado Central – Distribuidoras', inicio:'2026-04-01', vencimiento:'2026-10-01', estado:'vigente' },
-  { titular:'Taxis Ejecutivos Mun.', tipo:'Taxi ejecutivo', placa:'TAX-606', ruta:'Zona Centro', inicio:'2026-05-01', vencimiento:'2026-11-01', estado:'vigente' }
-];
-
-const SEED_ACTIVIDAD = [
-  { tipo:'infraccion', texto:'Infracción INF-2026-0045 registrada — Documentos incompletos (QRS-456)', ts: new Date().toISOString() },
-  { tipo:'infraccion', texto:'Infracción INF-2026-0044 registrada — Uso de celular (NOP-123)', ts: new Date(Date.now()-3600000).toISOString() },
-  { tipo:'permiso',    texto:'Permiso PER-2026-0001 creado — Transportes El Águila S.A.', ts: new Date(Date.now()-86400000).toISOString() },
-  { tipo:'config',    texto:'Configuración del sistema actualizada por Carlos Alvarado', ts: new Date(Date.now()-172800000).toISOString() }
-];
-
-const SEED_VEHICULOS = [
-  { placa:'ABC-123', propietario:'Roberto Gómez López',    tipo:'automovil',   marca:'Nissan',        modelo:'Sentra',    anio:2019, color:'Blanco',   num_serie:'3N1AB7AP4KL123456', estado:'activo', telefono:'5551234567' },
-  { placa:'XYZ-456', propietario:'María López Ramírez',    tipo:'camioneta',   marca:'Ford',          modelo:'Explorer',  anio:2021, color:'Gris',     num_serie:'1FMHK8D80BGA45678', estado:'activo', telefono:'5552345678' },
-  { placa:'DEF-789', propietario:'Carlos Hernández Mora',  tipo:'automovil',   marca:'Volkswagen',    modelo:'Jetta',     anio:2020, color:'Negro',    num_serie:null, estado:'activo', telefono:'5553456789' },
-  { placa:'GHI-012', propietario:'Ana Martínez Soto',      tipo:'automovil',   marca:'Chevrolet',     modelo:'Aveo',      anio:2018, color:'Rojo',     num_serie:null, estado:'activo', telefono:'5554567890' },
-  { placa:'JKL-345', propietario:'Pedro Sánchez Vargas',   tipo:'motocicleta', marca:'Honda',         modelo:'CB500F',    anio:2022, color:'Azul',     num_serie:null, estado:'activo', telefono:'5555678901' },
-  { placa:'MNO-678', propietario:'Laura García Torres',    tipo:'automovil',   marca:'Toyota',        modelo:'Corolla',   anio:2020, color:'Plateado', num_serie:'2T1BURHE8JC123789', estado:'activo', telefono:'5556789012' },
-  { placa:'PQR-901', propietario:'Jorge Ramírez Herrera',  tipo:'camioneta',   marca:'Chevrolet',     modelo:'Silverado', anio:2019, color:'Blanco',   num_serie:null, estado:'activo', telefono:null },
-  { placa:'STU-234', propietario:'Sofía Torres Nuño',      tipo:'automovil',   marca:'Kia',           modelo:'Rio',       anio:2021, color:'Rojo',     num_serie:null, estado:'activo', telefono:'5557890123' },
-  { placa:'KLM-890', propietario:'Ursula Navas Bravo',     tipo:'camion',      marca:'International', modelo:'4300',      anio:2017, color:'Blanco',   num_serie:'INTLDCFE67H123001', estado:'activo', telefono:'5558901234' },
-  { placa:'RST-345', propietario:'César Aguilar Mora',     tipo:'automovil',   marca:'Honda',         modelo:'Civic',     anio:2022, color:'Negro',    num_serie:null, estado:'activo', telefono:'5559012345' },
-  { placa:'VWX-345', propietario:'Pablo Espinoza Walker',  tipo:'automovil',   marca:'Mazda',         modelo:'3',         anio:2021, color:'Azul',     num_serie:null, estado:'activo', telefono:'5550123456' },
-  { placa:'BCD-901', propietario:'Rodrigo Leal Yáñez',    tipo:'camioneta',   marca:'RAM',           modelo:'1500',      anio:2020, color:'Gris',     num_serie:null, estado:'activo', telefono:'5551122334' },
-  { placa:'EFG-234', propietario:'Sandra Mena Zárate',     tipo:'automovil',   marca:'Seat',          modelo:'Ibiza',     anio:2019, color:'Verde',    num_serie:null, estado:'activo', telefono:'5552233445' },
-  { placa:'NOP-123', propietario:'Víctor Prado Castro',    tipo:'automovil',   marca:'Hyundai',       modelo:'Elantra',   anio:2020, color:'Blanco',   num_serie:null, estado:'activo', telefono:'5553344556' },
-  { placa:'QRS-456', propietario:'Wendy Quintero Díaz',    tipo:'motocicleta', marca:'Yamaha',        modelo:'MT-07',     anio:2021, color:'Naranja',  num_serie:null, estado:'activo', telefono:'5554455667' }
-];
-
-const SEED_GRUA = [
-  { placa:'KLM-890', propietario:'Ursula Navas Bravo',  motivo:'Doble fila',                    oficial:'Agente Martínez R.', ubicacion:'Av. Juárez esq. Hidalgo, Centro',           costo_deposito:900,  costo_diario:200, estado:'retenido', fecha:'2026-06-01T09:30:00Z', obs:'Obstruyendo carril de autobuses' },
-  { placa:'PQR-901', propietario:'Jorge Ramírez Herrera', motivo:'Obstrucción de vía pública',  oficial:'Agente López G.',    ubicacion:'Calle Morelos #88, Centro',                 costo_deposito:700,  costo_diario:150, estado:'retenido', fecha:'2026-05-28T14:15:00Z', obs:null },
-  { placa:'DEF-789', propietario:'Carlos Hernández Mora', motivo:'Sin verificación vehicular',  oficial:'Agente García F.',   ubicacion:'Blvd. Norte km 3',                          costo_deposito:600,  costo_diario:120, estado:'retenido', fecha:'2026-05-20T11:00:00Z', obs:'Verificación vencida desde enero 2026' },
-  { placa:'RST-345', propietario:'César Aguilar Mora',   motivo:'Placa no visible / inválida', oficial:'Agente García F.',   ubicacion:'Carretera Federal km 12',                   costo_deposito:600,  costo_diario:100, estado:'retenido', fecha:'2026-06-02T16:30:00Z', obs:'Placa delantera destruida intencionalmente' },
-  { placa:'GHI-012', propietario:'Ana Martínez Soto',    motivo:'Conductor en estado etílico', oficial:'Agente Ramos P.',    ubicacion:'Av. Independencia #200, Zona Centro',       costo_deposito:1200, costo_diario:250, estado:'liberado', fecha:'2026-05-10T22:45:00Z', obs:'Conductora alcoholizada en operativo nocturno', fecha_liberacion:'2026-05-11T10:00:00Z' },
-  { placa:'BCD-901', propietario:'Rodrigo Leal Yáñez',   motivo:'Vehículo abandonado',         oficial:'Agente Torres V.',   ubicacion:'Periférico Sur km 8',                       costo_deposito:800,  costo_diario:180, estado:'liberado', fecha:'2026-04-25T08:00:00Z', obs:'Abandonado más de 5 días en vía pública', fecha_liberacion:'2026-05-01T09:30:00Z' },
-  { placa:'MNO-678', propietario:'Laura García Torres',  motivo:'Zona prohibida',              oficial:'Agente Mendoza L.',  ubicacion:'Zona Escolar Benito Juárez, Col. Centro',   costo_deposito:700,  costo_diario:150, estado:'liberado', fecha:'2026-04-15T07:20:00Z', obs:null, fecha_liberacion:'2026-04-15T16:00:00Z' },
-  { placa:'VWX-345', propietario:'Pablo Espinoza Walker', motivo:'Doble fila',                 oficial:'Agente López G.',    ubicacion:'Mercado Municipal, Acceso Sur',             costo_deposito:700,  costo_diario:150, estado:'liberado', fecha:'2026-05-05T10:00:00Z', obs:null, fecha_liberacion:'2026-05-06T08:00:00Z' }
-];
-
-const SEED_ACCIDENTES = [
-  { tipo:'choque',    ubicacion:'Av. Juárez esq. Hidalgo, Centro',            descripcion:'Colisión frontal entre vehículo particular y camioneta de reparto. El conductor del vehículo menor invadió carril contrario al intentar rebasar.',                                                         lesionados:2, fallecidos:0, oficial:'Agente Martínez R.', estado:'cerrado',    fecha:'2026-05-15T08:30:00Z', obs:'Ambos conductores con lesiones leves. Daños materiales significativos.', partes:'[{"nombre":"Roberto Gómez López","placa":"ABC-123","licencia":"MX-1234567","aseguradora":"GNP Seguros"},{"nombre":"Transportes Veloz S.A.","placa":"TRP-881","licencia":"CP-8876543","aseguradora":"AXA Seguros"}]' },
-  { tipo:'atropello', ubicacion:'Calle Morelos #45, Centro Histórico',         descripcion:'Peatón cruzó fuera del cruce peatonal y fue impactado por vehículo que circulaba a velocidad reglamentaria.',                                                                                            lesionados:1, fallecidos:0, oficial:'Agente López G.', estado:'derivado',   fecha:'2026-05-22T17:45:00Z', obs:'Peatón trasladado a hospital. Expediente derivado al Ministerio Público.', partes:'[{"nombre":"Carlos Hernández Mora","placa":"DEF-789","licencia":"MX-9876543","aseguradora":"Qualitas"}]' },
-  { tipo:'choque',    ubicacion:'Blvd. Central esq. Av. Reforma',              descripcion:'Alcance en cadena entre tres vehículos durante hora pico. El primer vehículo frenó de emergencia y los siguientes no mantuvieron distancia de seguridad.',                                               lesionados:0, fallecidos:0, oficial:'Agente Ramos P.', estado:'cerrado',    fecha:'2026-04-18T18:20:00Z', obs:'Sin lesionados. Los tres conductores llegaron a acuerdo entre partes.', partes:'[{"nombre":"Laura García Torres","placa":"MNO-678","licencia":"MX-5555123","aseguradora":"GNP Seguros"},{"nombre":"Sofía Torres Nuño","placa":"STU-234","licencia":"MX-7771234","aseguradora":"HDI Seguros"},{"nombre":"Sin identificar","placa":"AAA-999","licencia":"","aseguradora":""}]' },
-  { tipo:'volcadura', ubicacion:'Carretera Municipal km 5, curva La Loma',     descripcion:'Camioneta perdió el control en curva pronunciada por exceso de velocidad. El vehículo volcó quedando sobre el acotamiento.',                                                                              lesionados:1, fallecidos:0, oficial:'Agente García F.', estado:'cerrado',   fecha:'2026-04-05T21:10:00Z', obs:'Conductor con fractura en brazo. Vehículo con daño total. Alcoholemia negativa.', partes:'[{"nombre":"Pablo Espinoza Walker","placa":"VWX-345","licencia":"MX-3334567","aseguradora":"Mapfre"}]' },
-  { tipo:'choque',    ubicacion:'Av. 16 de Septiembre esq. Calle Guerrero',    descripcion:'Colisión entre motocicleta y unidad de transporte público. La motociclista se incorporó de forma imprudente al carril de la ruta 5.',                                                                    lesionados:1, fallecidos:0, oficial:'Agente Torres V.', estado:'en_proceso', fecha:'2026-06-01T12:05:00Z', obs:'Motociclista con traumatismo leve, hospitalizada para observación. Se investigan responsabilidades.', partes:'[{"nombre":"Wendy Quintero Díaz","placa":"QRS-456","licencia":"MX-9990012","aseguradora":"Sin seguro"},{"nombre":"Autobuses del Norte S.A.","placa":"BUS-202","licencia":"CP-2234567","aseguradora":"AIG Seguros"}]' },
-  { tipo:'atropello', ubicacion:'Zona Escolar Benito Juárez, Entrada Principal',descripcion:'Menor de edad fue rozado por vehículo al salir del plantel escolar. El conductor realizó maniobra imprudente en zona de seguridad escolar.',                                                             lesionados:1, fallecidos:0, oficial:'Agente Mendoza L.', estado:'en_proceso', fecha:'2026-06-02T13:30:00Z', obs:'Menor trasladado a clínica. Padres presentaron denuncia. Conductora con aliento alcohólico.', partes:'[{"nombre":"Ana Martínez Soto","placa":"GHI-012","licencia":"MX-4443210","aseguradora":"HDI Seguros"}]' }
-];
 
 // ── Helpers ───────────────────────────────────────────────
 function fmt(n) { return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:0}).format(n||0); }
@@ -171,9 +39,17 @@ function estadoBadge(e) {
     cancelada:'badge-red', vencido:'badge-red', vencida:'badge-red',
     impugnada:'badge-blue'
   };
-  return `<span class="${map[e]||'badge-muted'}">${e||'—'}</span>`;
+  return `<span class="${map[e]||'badge-muted'}">${esc(e)||'—'}</span>`;
 }
 function $(id) { return document.getElementById(id); }
+// Escapa texto para insertarlo en HTML (contenido o atributos). Todo dato que
+// venga de la base o del usuario pasa por aquí antes de ir a innerHTML: un
+// nombre como <img onerror=...> se mostraría como texto, no se ejecutaría.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+// Argumento seguro para un onclick="fn(...)" construido con un template.
+function jsArg(v) { return esc(JSON.stringify(v ?? '')); }
 
 // ── logActivity ───────────────────────────────────────────
 async function logActivity(tipo, texto) {
@@ -395,7 +271,7 @@ async function renderDashboard() {
     $('dash-legend').innerHTML = sorted.map(([k,v])=>`
       <div class="legend-row">
         <span class="legend-dot" style="background:${estadoColors[k]||'#9CA3AF'}"></span>
-        <span class="legend-label">${k.charAt(0).toUpperCase()+k.slice(1)}</span>
+        <span class="legend-label">${esc(k.charAt(0).toUpperCase()+k.slice(1))}</span>
         <span class="legend-val">${v}</span>
       </div>`).join('');
   }
@@ -410,7 +286,7 @@ async function renderDashboard() {
     $('dash-tipos-body').innerHTML = topTipos.length ? topTipos.map(([t,c])=>`
       <div style="margin-bottom:.65rem">
         <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:.25rem">
-          <span style="color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${t}</span>
+          <span style="color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">${esc(t)}</span>
           <span style="color:var(--muted);flex-shrink:0;margin-left:.4rem">${c}</span>
         </div>
         <div style="height:6px;background:var(--stone);border-radius:3px;overflow:hidden">
@@ -425,9 +301,9 @@ async function renderDashboard() {
   if($('dash-tbody')) {
     $('dash-tbody').innerHTML = recent.length ? recent.map(r=>`
       <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
-        <td class="mono" style="font-size:.72rem">${r.folio||'—'}</td>
-        <td style="font-weight:600;font-family:monospace;font-size:.78rem">${r.placa||'—'}</td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</td>
+        <td class="mono" style="font-size:.72rem">${esc(r.folio||'—')}</td>
+        <td style="font-weight:600;font-family:monospace;font-size:.78rem">${esc(r.placa||'—')}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</td>
         <td style="font-weight:600">${fmt(r.monto)}</td>
         <td>${estadoBadge(r.estado)}</td>
       </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin datos</td></tr>';
@@ -442,7 +318,7 @@ async function renderDashboard() {
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
         </span>
         <div style="flex:1;min-width:0">
-          <div class="act-txt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.texto}</div>
+          <div class="act-txt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.texto)}</div>
           <div class="act-time">${fmtDateShort(a.ts)}</div>
         </div>
       </div>`).join('') || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sin actividad reciente</div>';
@@ -466,14 +342,14 @@ async function renderDashboard() {
       html += `<div style="background:var(--amber-bg);border:1px solid #FDE68A;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#92400E">${permAlerta.length} permiso${permAlerta.length>1?'s':''} vence${permAlerta.length>1?'n':''} en los próximos 30 días</div>
-        <div style="font-size:.73rem;color:#D97706">${permAlerta.slice(0,2).map(p=>`${p.num||'—'} — ${p.titular}`).join(' · ')}${permAlerta.length>2?' · …':''}</div></div>${btn}</div>`;
+        <div style="font-size:.73rem;color:#D97706">${permAlerta.slice(0,2).map(p=>`${esc(p.num||'—')} — ${esc(p.titular)}`).join(' · ')}${permAlerta.length>2?' · …':''}</div></div>${btn}</div>`;
     }
     if (infAlerta && infAlerta.length) {
       const btn2 = `<button class="btn btn-ghost btn-sm" onclick="navigate('infracciones',document.querySelector('.nav-item[onclick*=infracciones]'))">Ver infracciones</button>`;
       html += `<div style="background:var(--red-bg);border:1px solid #FECACA;border-radius:var(--r);padding:.8rem 1.1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <div style="flex:1"><div style="font-size:.8rem;font-weight:700;color:#991B1B">${infAlerta.length} infracción${infAlerta.length>1?'es':''} pendiente${infAlerta.length>1?'s':''} con más de 25 días sin pagar</div>
-        <div style="font-size:.73rem;color:#DC2626">${infAlerta.slice(0,2).map(i=>`${i.folio||'—'} (${i.placa})`).join(' · ')}${infAlerta.length>2?' · …':''}</div></div>${btn2}</div>`;
+        <div style="font-size:.73rem;color:#DC2626">${infAlerta.slice(0,2).map(i=>`${esc(i.folio||'—')} (${esc(i.placa)})`).join(' · ')}${infAlerta.length>2?' · …':''}</div></div>${btn2}</div>`;
     }
     alertsEl.innerHTML = html;
   }
@@ -512,7 +388,7 @@ async function renderAlertas() {
   if (!alertas.length) { panel.style.display='none'; return; }
   panel.style.display='grid';
   panel.innerHTML = alertas.map(a => `
-    <div class="alerta-card ${a.color}" style="background:${a.bg};border-color:${a.ic}33" onclick="navigate('${a.view}')" title="Ver ${a.view}">
+    <div class="alerta-card ${esc(a.color)}" style="background:${a.bg};border-color:${a.ic}33" onclick="navigate('${a.view}')" title="Ver ${a.view}">
       <div class="alerta-icon" style="background:${a.ic}18"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${a.ic}" stroke-width="2">${a.icon}</svg></div>
       <div class="alerta-body"><div class="alerta-title" style="color:${a.ic}">${a.title}</div><div class="alerta-sub" style="color:${a.ic}bb">${a.sub}</div></div>
     </div>`).join('');
@@ -575,7 +451,7 @@ async function renderInfracciones() {
     const tipos = [...TIPOS_BASE];
     if (_cachedConfig?.tipos_extra) tipos.push(...(_cachedConfig.tipos_extra||[]));
     tipoEl.innerHTML = '<option value="">Todos los tipos</option>' +
-      [...new Set(tipos)].filter(t=>t&&t!=='Otro').map(t=>`<option value="${t}">${t}</option>`).join('') +
+      [...new Set(tipos)].filter(t=>t&&t!=='Otro').map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('') +
       '<option value="Otro">Otro</option>';
   }
 
@@ -600,7 +476,7 @@ async function renderInfracciones() {
   else q = q.order('fecha', {ascending: asc});
 
   const { data, error } = await q;
-  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${esc(error.message)}</td></tr>`; return; }
 
   const all = data || [];
 
@@ -652,29 +528,28 @@ async function renderInfracciones() {
   if (_infPage > pages) _infPage = pages;
   const rows = all.slice((_infPage-1)*INF_PAGE_SIZE, _infPage*INF_PAGE_SIZE);
 
-  const esc = s => (s||'').replace(/"/g,'&quot;');
   const montoColor = { pagada:'var(--green)', vencida:'var(--red)', pendiente:'var(--amber)', impugnada:'var(--blue)', cancelada:'var(--muted)' };
 
   tbody.innerHTML = rows.length ? rows.map(r=>`
     <tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
-      <td class="mono" style="font-size:.73rem;font-weight:700">${r.folio||'—'}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.folio||'—')}</td>
       <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(r.fecha)}</td>
       <td>
-        <span style="font-family:monospace;font-weight:700;font-size:.8rem">${r.placa}</span>
+        <span style="font-family:monospace;font-weight:700;font-size:.8rem">${esc(r.placa)}</span>
         ${placaCount[r.placa]>1?`<span title="${placaCount[r.placa]} infracciones — Reincidente" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--amber-bg);color:var(--amber);font-size:.55rem;font-weight:800;margin-left:.25rem;cursor:default">R</span>`:''}
       </td>
-      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.infractor}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${r.tipo}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.infractor)}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${esc(r.tipo)}</td>
       <td style="font-weight:700;color:${montoColor[r.estado]||'var(--text)'}">${fmt(r.monto)}</td>
       <td>${estadoBadge(r.estado)}</td>
-      <td style="font-size:.75rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.oficial||'—'}</td>
+      <td style="font-size:.75rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.oficial||'—')}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
         ${r.estado==='pendiente'?`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border:1px solid #A7F3D0;padding:.25rem .6rem;font-size:.72rem" onclick="event.stopPropagation();openRegistrarPago('${r.id}')" title="Registrar pago">Cobrar</button>`:''}
         ${r.telefono?`<button class="btn-wa-icon" style="margin-left:.2rem"
           data-tel="${r.telefono.replace(/\D/g,'')}"
           data-nombre="${esc(r.infractor)}"
-          data-folio="${r.folio||''}"
-          data-placa="${r.placa||''}"
+          data-folio="${esc(r.folio||'')}"
+          data-placa="${esc(r.placa||'')}"
           data-tipo="${esc(r.tipo)}"
           data-monto="${r.monto||0}"
           data-ubicacion="${esc(r.ubicacion)}"
@@ -769,7 +644,7 @@ async function submitInfraccion(e) {
       const folios = adeudos.slice(0,3).map(a=>a.folio||'—').join(', ');
       const confirmMsg =
         `⚠ ADEUDOS PENDIENTES DE PAGO\n\n` +
-        `La placa ${payload.placa} tiene ${adeudos.length} infracción${adeudos.length>1?'es':''} sin pagar por un total de $${montoAdeudos.toLocaleString('es-MX')} MXN.\n` +
+        `La placa ${esc(payload.placa)} tiene ${adeudos.length} infracción${adeudos.length>1?'es':''} sin pagar por un total de $${montoAdeudos.toLocaleString('es-MX')} MXN.\n` +
         `Folios: ${folios}${adeudos.length>3?` y ${adeudos.length-3} más`:''}\n\n` +
         `El infractor deberá regularizar sus adeudos en Tesorería Municipal.\n\n` +
         `¿Desea registrar la nueva infracción de todas formas?`;
@@ -823,7 +698,7 @@ async function loadTiposInfraccion(currentVal) {
   const el = $('inf-tipo');
   if (!el) return;
   const prev = currentVal ?? el.value;
-  el.innerHTML = all.map(t => `<option value="${t}"${t === prev ? ' selected' : ''}>${t}</option>`).join('');
+  el.innerHTML = all.map(t => `<option value="${esc(t)}"${t === prev ? ' selected' : ''}>${esc(t)}</option>`).join('');
 }
 
 function openNewInfraccion() {
@@ -894,8 +769,8 @@ function updateInfSummary() {
     sumEl.style.display = 'block';
     sumEl.innerHTML =
       `<span style="color:var(--muted)">Se registrará: </span>` +
-      (tipo   ? `<strong>${tipo}</strong>` : '') +
-      (placa  ? ` · Placa <strong style="font-family:monospace">${placa}</strong>` : '') +
+      (tipo   ? `<strong>${esc(tipo)}</strong>` : '') +
+      (placa  ? ` · Placa <strong style="font-family:monospace">${esc(placa)}</strong>` : '') +
       (monto  ? ` · <strong style="color:var(--ac)">${fmt(monto)}</strong>` : '');
   } else {
     sumEl.style.display = 'none';
@@ -945,7 +820,7 @@ async function renderPermisos() {
   if (_perTipo)   q = q.eq('tipo', _perTipo);
   if (_perSearch) q = q.or(`titular.ilike.%${_perSearch}%,placa.ilike.%${_perSearch}%,num.ilike.%${_perSearch}%,ruta.ilike.%${_perSearch}%`);
   const { data, error } = await q;
-  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${esc(error.message)}</td></tr>`; return; }
 
   const all = data || [];
 
@@ -987,11 +862,11 @@ async function renderPermisos() {
     const diasTxt = dias === null ? '—' : dias < 0 ? `${Math.abs(dias)}d vencido` : dias === 0 ? 'Vence hoy' : `${dias}d`;
     const diasBg  = dias !== null && dias < 0 ? 'var(--red-bg)' : dias !== null && dias <= 30 ? 'var(--amber-bg)' : 'transparent';
     return `<tr onclick="viewDetail('permisos','${r.id}')" style="cursor:pointer">
-      <td class="mono" style="font-size:.73rem;font-weight:700">${r.num||'—'}</td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${r.titular}</td>
-      <td style="font-size:.78rem">${r.tipo}</td>
-      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${r.placa||'—'}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${r.ruta||'—'}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.num||'—')}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(r.titular)}</td>
+      <td style="font-size:.78rem">${esc(r.tipo)}</td>
+      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${esc(r.placa||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${esc(r.ruta||'—')}</td>
       <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(r.vencimiento)}</td>
       <td><span style="background:${diasBg};color:${diasColor};font-weight:700;font-size:.78rem;padding:.15rem .5rem;border-radius:6px">${diasTxt}</span></td>
       <td>${estadoBadge(r.estado)}</td>
@@ -1125,8 +1000,8 @@ async function viewDetail(tabla, id) {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem">
         <div style="flex:1;min-width:0">
           <div style="font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Folio</div>
-          <div style="font-family:monospace;font-size:1.15rem;font-weight:800;color:var(--ink)">${r.folio||'—'}</div>
-          <div style="font-size:.88rem;font-weight:700;color:var(--ink);margin-top:.3rem">${r.tipo}</div>
+          <div style="font-family:monospace;font-size:1.15rem;font-weight:800;color:var(--ink)">${esc(r.folio||'—')}</div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--ink);margin-top:.3rem">${esc(r.tipo)}</div>
           <div style="font-size:.75rem;color:var(--muted);margin-top:.2rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
             <span>${new Date(r.fecha).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
             <span style="font-weight:600;color:${diasAlerta?'var(--red)':'var(--muted)'}">${diasStr}</span>
@@ -1143,25 +1018,25 @@ async function viewDetail(tabla, id) {
     <div class="detail-grid">
       <!-- Vehículo -->
       <div class="detail-field full">${secLabel('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>','Vehículo')}</div>
-      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-size:1rem;font-weight:800">${r.placa}</span></div>
-      <div class="detail-field"><label>Color</label><span>${r.color_vehiculo||'—'}</span></div>
-      <div class="detail-field full"><label>Marca y modelo</label><span>${r.vehiculo||'—'}</span></div>
+      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-size:1rem;font-weight:800">${esc(r.placa)}</span></div>
+      <div class="detail-field"><label>Color</label><span>${esc(r.color_vehiculo||'—')}</span></div>
+      <div class="detail-field full"><label>Marca y modelo</label><span>${esc(r.vehiculo||'—')}</span></div>
 
       <!-- Infractor -->
       <div class="detail-field full">${secLabel('<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>','Infractor')}</div>
-      <div class="detail-field full"><label>Nombre</label><span style="font-weight:600;font-size:.88rem">${r.infractor}</span></div>
-      <div class="detail-field"><label>Núm. licencia</label><span>${r.licencia||'—'}</span></div>
-      <div class="detail-field"><label>Teléfono</label><span>${r.telefono?`<a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none;display:inline-flex;align-items:center;gap:.3rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${r.telefono}</a>`:'—'}</span></div>
+      <div class="detail-field full"><label>Nombre</label><span style="font-weight:600;font-size:.88rem">${esc(r.infractor)}</span></div>
+      <div class="detail-field"><label>Núm. licencia</label><span>${esc(r.licencia||'—')}</span></div>
+      <div class="detail-field"><label>Teléfono</label><span>${r.telefono?`<a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none;display:inline-flex;align-items:center;gap:.3rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${esc(r.telefono)}</a>`:'—'}</span></div>
 
       <!-- Infracción -->
       <div class="detail-field full">${secLabel('<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>','Datos de la infracción')}</div>
-      <div class="detail-field"><label>Oficial</label><span>${r.oficial||'—'}</span></div>
+      <div class="detail-field"><label>Oficial</label><span>${esc(r.oficial||'—')}</span></div>
       <div class="detail-field"><label>Estado actual</label><span>${estadoBadge(r.estado)}</span></div>
       <div class="detail-field full"><label>Ubicación</label>
-        <span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:.25rem;color:var(--ac);font-size:.75rem;margin-left:.5rem;font-weight:600;text-decoration:none"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver en mapa</a>`:''}</span>
+        <span>${esc(r.ubicacion||'—')}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:.25rem;color:var(--ac);font-size:.75rem;margin-left:.5rem;font-weight:600;text-decoration:none"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver en mapa</a>`:''}</span>
       </div>
-      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${r.obs}</span></div>`:''}
-      ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="background:var(--blue-bg);color:var(--blue);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem;font-weight:500">${r.impugnacion_motivo}</span></div>`:''}
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${esc(r.obs)}</span></div>`:''}
+      ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="background:var(--blue-bg);color:var(--blue);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem;font-weight:500">${esc(r.impugnacion_motivo)}</span></div>`:''}
       ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img src="${f}" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" onclick="window.open('${f}','_blank')" />`).join('')}</div></div>`:''}
     </div>
 
@@ -1195,7 +1070,7 @@ async function viewDetail(tabla, id) {
       `:''}
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket 80mm</button>
       <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta carta</button>
-      ${r.telefono?`<button class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0" onclick="notificarWhatsApp({telefono:'${r.telefono}',infractor:${JSON.stringify(r.infractor)},folio:'${r.folio||''}',placa:'${r.placa}',tipo:${JSON.stringify(r.tipo)},monto:${r.monto},ubicacion:${JSON.stringify(r.ubicacion||'')},fecha:'${r.fecha||''}'})" >
+      ${r.telefono?`<button class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0" onclick="notificarWhatsApp({telefono:${jsArg(r.telefono)},infractor:${jsArg(r.infractor)},folio:${jsArg(r.folio||'')},placa:${jsArg(r.placa)},tipo:${jsArg(r.tipo)},monto:${Number(r.monto)||0},ubicacion:${jsArg(r.ubicacion||'')},fecha:${jsArg(r.fecha||'')}})" >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         WhatsApp
       </button>`:''}
@@ -1215,9 +1090,9 @@ async function viewDetail(tabla, id) {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem">
         <div style="flex:1;min-width:0">
           <div style="font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Núm. permiso</div>
-          <div style="font-family:monospace;font-size:1.1rem;font-weight:800;color:var(--ink)">${r.num||'—'}</div>
-          <div style="font-size:.92rem;font-weight:700;color:var(--ink);margin-top:.3rem">${r.titular}</div>
-          <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${r.tipo}</div>
+          <div style="font-family:monospace;font-size:1.1rem;font-weight:800;color:var(--ink)">${esc(r.num||'—')}</div>
+          <div style="font-size:.92rem;font-weight:700;color:var(--ink);margin-top:.3rem">${esc(r.titular)}</div>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${esc(r.tipo)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
           ${estadoBadge(r.estado)}
@@ -1229,15 +1104,15 @@ async function viewDetail(tabla, id) {
     <div class="detail-grid">
       <!-- Titular -->
       <div class="detail-field full">${secLabel('<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>','Datos del titular')}</div>
-      <div class="detail-field full"><label>Razón social / Nombre</label><span style="font-weight:600">${r.titular}</span></div>
-      ${r.telefono?`<div class="detail-field"><label>Teléfono</label><span><a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none">${r.telefono}</a></span></div>`:''}
+      <div class="detail-field full"><label>Razón social / Nombre</label><span style="font-weight:600">${esc(r.titular)}</span></div>
+      ${r.telefono?`<div class="detail-field"><label>Teléfono</label><span><a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none">${esc(r.telefono)}</a></span></div>`:''}
       ${r.unidades>1?`<div class="detail-field"><label>Núm. de unidades</label><span>${r.unidades}</span></div>`:''}
 
       <!-- Vehículo -->
       <div class="detail-field full">${secLabel('<rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>','Vehículo y ruta')}</div>
-      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-weight:800;font-size:.95rem">${r.placa||'—'}</span></div>
-      <div class="detail-field"><label>Tipo de permiso</label><span>${r.tipo}</span></div>
-      <div class="detail-field full"><label>Ruta / Zona de circulación</label><span>${r.ruta||'—'}</span></div>
+      <div class="detail-field"><label>Placa</label><span style="font-family:monospace;font-weight:800;font-size:.95rem">${esc(r.placa||'—')}</span></div>
+      <div class="detail-field"><label>Tipo de permiso</label><span>${esc(r.tipo)}</span></div>
+      <div class="detail-field full"><label>Ruta / Zona de circulación</label><span>${esc(r.ruta||'—')}</span></div>
 
       <!-- Vigencia -->
       <div class="detail-field full">${secLabel('<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>','Vigencia')}</div>
@@ -1246,7 +1121,7 @@ async function viewDetail(tabla, id) {
       <div class="detail-field full"><label>Días restantes</label>
         <span style="font-weight:700;font-size:.9rem;color:${diasColor}">${diasTxt}</span>
       </div>
-      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${r.obs}</span></div>`:''}
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${esc(r.obs)}</span></div>`:''}
     </div>
 
     <!-- Cambiar estado -->
@@ -1349,28 +1224,6 @@ async function saveConfig() {
   showToast('Configuración guardada correctamente');
 }
 
-async function resetData() {
-  if (!confirm('¿Restablecer todos los datos de ejemplo? Se borrarán los registros actuales.')) return;
-  await Promise.all([
-    _sb.from('infracciones').delete().neq('id', 0),
-    _sb.from('permisos').delete().neq('id', 0),
-    _sb.from('actividad').delete().neq('id', 0),
-    _sb.from('vehiculos').delete().neq('id', 0),
-    _sb.from('grua').delete().neq('id', 0),
-    _sb.from('accidentes').delete().neq('id', 0),
-  ]);
-  await _sb.from('configuracion').upsert({ ...SEED_CONFIG, id:1 }, { onConflict:'id' });
-  await _sb.from('infracciones').insert(SEED_INFRACCIONES);
-  await _sb.from('permisos').insert(SEED_PERMISOS);
-  await _sb.from('actividad').insert(SEED_ACTIVIDAD);
-  await _sb.from('vehiculos').insert(SEED_VEHICULOS);
-  await _sb.from('grua').insert(SEED_GRUA);
-  await _sb.from('accidentes').insert(SEED_ACCIDENTES);
-  _cachedConfig = null;
-  showToast('Datos restablecidos');
-  navigate('dashboard');
-}
-
 // ── Ticket de infracción ──────────────────────────────────
 async function printInfraccion(id) {
   const [{ data: r }, { data: cfg }] = await Promise.all([
@@ -1379,9 +1232,9 @@ async function printInfraccion(id) {
   ]);
   if (!r) return;
 
-  const mun      = cfg?.municipio || 'Municipio';
-  const estMun   = cfg?.estado    || '';
-  const director = cfg?.director  || '';
+  const mun      = esc(cfg?.municipio || 'Municipio');
+  const estMun   = esc(cfg?.estado    || '');
+  const director = esc(cfg?.director  || '');
 
   const fechaObj  = new Date(r.fecha);
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
@@ -1407,7 +1260,7 @@ async function printInfraccion(id) {
       </div>
       <div class="title-bar">
         <span>BOLETA DE INFRACCIÓN DE TRÁNSITO</span>
-        <span class="folio-num">${r.folio||'—'}</span>
+        <span class="folio-num">${esc(r.folio||'—')}</span>
       </div>
     </div>
 
@@ -1418,17 +1271,17 @@ async function printInfraccion(id) {
           <div class="fields-grid">
             <div class="f"><span class="fl">Fecha</span><span class="fv">${fechaStr}</span></div>
             <div class="f"><span class="fl">Hora</span><span class="fv">${horaStr}</span></div>
-            <div class="f full"><span class="fl">Ubicación / Lugar de los hechos</span><span class="fv">${r.ubicacion||'—'}</span></div>
-            <div class="f full"><span class="fl">Tipo de infracción</span><span class="fv bold">${r.tipo}</span></div>
-            ${r.obs ? `<div class="f full"><span class="fl">Observaciones</span><span class="fv">${r.obs}</span></div>` : ''}
+            <div class="f full"><span class="fl">Ubicación / Lugar de los hechos</span><span class="fv">${esc(r.ubicacion||'—')}</span></div>
+            <div class="f full"><span class="fl">Tipo de infracción</span><span class="fv bold">${esc(r.tipo)}</span></div>
+            ${r.obs ? `<div class="f full"><span class="fl">Observaciones</span><span class="fv">${esc(r.obs)}</span></div>` : ''}
           </div>
         </div>
         <div class="section" style="flex:1">
           <div class="sec-title">Datos del vehículo</div>
           <div class="fields-grid">
-            <div class="f"><span class="fl">Placa</span><span class="fv mono bold">${r.placa}</span></div>
-            <div class="f"><span class="fl">Color</span><span class="fv">${r.color_vehiculo||'—'}</span></div>
-            <div class="f full"><span class="fl">Marca y modelo</span><span class="fv">${r.vehiculo||'—'}</span></div>
+            <div class="f"><span class="fl">Placa</span><span class="fv mono bold">${esc(r.placa)}</span></div>
+            <div class="f"><span class="fl">Color</span><span class="fv">${esc(r.color_vehiculo||'—')}</span></div>
+            <div class="f full"><span class="fl">Marca y modelo</span><span class="fv">${esc(r.vehiculo||'—')}</span></div>
           </div>
         </div>
       </div>
@@ -1436,8 +1289,8 @@ async function printInfraccion(id) {
       <div class="section">
         <div class="sec-title">Datos del infractor</div>
         <div class="fields-grid">
-          <div class="f" style="flex:2"><span class="fl">Nombre completo</span><span class="fv bold">${r.infractor}</span></div>
-          <div class="f"><span class="fl">Núm. de licencia</span><span class="fv mono">${r.licencia||'—'}</span></div>
+          <div class="f" style="flex:2"><span class="fl">Nombre completo</span><span class="fv bold">${esc(r.infractor)}</span></div>
+          <div class="f"><span class="fl">Núm. de licencia</span><span class="fv mono">${esc(r.licencia||'—')}</span></div>
         </div>
       </div>
 
@@ -1462,14 +1315,14 @@ async function printInfraccion(id) {
         <div class="sec-title">Lugar de pago</div>
         <div class="pay-info">
           <strong>Tesorería Municipal de ${mun}</strong> — Lunes a Viernes de 8:00 a 15:00 hrs.<br>
-          Presente esta boleta en ventanilla de infracciones. Referencia de pago: <strong class="mono">${r.folio||'—'}</strong>
+          Presente esta boleta en ventanilla de infracciones. Referencia de pago: <strong class="mono">${esc(r.folio||'—')}</strong>
         </div>
       </div>
 
       <div class="signatures">
         <div class="sig-box">
           <div class="sig-line"></div>
-          <div class="sig-label">Oficial que levanta${r.oficial ? ': '+r.oficial : ''}</div>
+          <div class="sig-label">Oficial que levanta${r.oficial ? ': '+esc(r.oficial) : ''}</div>
         </div>
         <div class="sig-box">
           <div class="sig-line"></div>
@@ -1486,7 +1339,7 @@ async function printInfraccion(id) {
   </div>`;
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
-  <title>Boleta ${r.folio||''}</title>
+  <title>Boleta ${esc(r.folio||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:Arial,Helvetica,sans-serif;font-size:11px;background:#f5f5f5;color:#222}
@@ -1570,15 +1423,15 @@ async function printAccidente(id) {
   ]);
   if (!r) return;
   let partes = []; try { partes = JSON.parse(r.partes||'[]'); } catch(_) {}
-  const mun   = cfg?.municipio || 'Municipio';
-  const edo   = cfg?.estado    || '';
-  const dir   = cfg?.director  || '';
+  const mun   = esc(cfg?.municipio || 'Municipio');
+  const edo   = esc(cfg?.estado    || '');
+  const dir   = esc(cfg?.director  || '');
   const tipoMap = { choque:'Choque vehicular', atropello:'Atropello', volcadura:'Volcadura', otro:'Otro' };
   const estadoMap = { en_proceso:'En proceso', cerrado:'Cerrado', derivado:'Derivado al Ministerio Público' };
   const fecha = r.fecha ? new Date(r.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'}) : '—';
   const win = window.open('','_blank','width=850,height=1100');
   win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
-  <title>Parte de Accidente ${r.folio||''}</title>
+  <title>Parte de Accidente ${esc(r.folio||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Arial',sans-serif;font-size:11pt;color:#111;padding:1.5cm 2cm}
@@ -1617,35 +1470,35 @@ async function printAccidente(id) {
     </div>
     <div class="folio-box">
       <div class="lbl">Folio</div>
-      <div class="val">${r.folio||'—'}</div>
+      <div class="val">${esc(r.folio||'—')}</div>
     </div>
   </div>
 
   <div class="section-title">Datos del accidente</div>
   <div class="grid">
-    <div class="field"><label>Tipo</label><span>${tipoMap[r.tipo]||r.tipo}</span></div>
-    <div class="field"><label>Estado</label><span class="badge ${r.estado}">${estadoMap[r.estado]||r.estado}</span></div>
+    <div class="field"><label>Tipo</label><span>${esc(tipoMap[r.tipo]||r.tipo)}</span></div>
+    <div class="field"><label>Estado</label><span class="badge ${esc(r.estado)}">${esc(estadoMap[r.estado]||r.estado)}</span></div>
     <div class="field"><label>Fecha y hora</label><span>${fecha}</span></div>
-    <div class="field"><label>Oficial que levanta</label><span>${r.oficial||'—'}</span></div>
-    <div class="field full"><label>Ubicación / Lugar de los hechos</label><span>${r.ubicacion||'—'}</span></div>
+    <div class="field"><label>Oficial que levanta</label><span>${esc(r.oficial||'—')}</span></div>
+    <div class="field full"><label>Ubicación / Lugar de los hechos</label><span>${esc(r.ubicacion||'—')}</span></div>
     <div class="field"><label>Personas lesionadas</label><span>${r.lesionados||0}</span></div>
     <div class="field"><label>Personas fallecidas</label><span>${r.fallecidos||0}</span></div>
-    ${r.descripcion?`<div class="field full"><label>Descripción</label><span>${r.descripcion}</span></div>`:''}
-    ${r.obs?`<div class="field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
+    ${r.descripcion?`<div class="field full"><label>Descripción</label><span>${esc(r.descripcion)}</span></div>`:''}
+    ${r.obs?`<div class="field full"><label>Observaciones</label><span>${esc(r.obs)}</span></div>`:''}
   </div>
 
   ${partes.length ? `
   <div class="section-title">Partes involucradas</div>
   ${partes.map((p,i)=>`
     <div class="parte-box">
-      <strong>Parte ${i+1}:</strong>&nbsp; ${p.nombre||'—'} &nbsp;|&nbsp;
-      Placa: <strong>${p.placa||'—'}</strong> &nbsp;|&nbsp;
-      Licencia: ${p.licencia||'—'} &nbsp;|&nbsp;
-      Aseguradora: ${p.aseguradora||'—'}
+      <strong>Parte ${i+1}:</strong>&nbsp; ${esc(p.nombre||'—')} &nbsp;|&nbsp;
+      Placa: <strong>${esc(p.placa||'—')}</strong> &nbsp;|&nbsp;
+      Licencia: ${esc(p.licencia||'—')} &nbsp;|&nbsp;
+      Aseguradora: ${esc(p.aseguradora||'—')}
     </div>`).join('')}` : ''}
 
   <div class="firma-row">
-    <div class="firma-box">Firma del oficial<br><br><br>${r.oficial||'_________________'}</div>
+    <div class="firma-box">Firma del oficial<br><br><br>${esc(r.oficial||'_________________')}</div>
     <div class="firma-box">Testigo / Parte 1<br><br><br>_________________</div>
     <div class="firma-box">Testigo / Parte 2<br><br><br>_________________</div>
   </div>
@@ -1665,10 +1518,10 @@ async function printPermiso(id) {
   ]);
   if (!r) return;
 
-  const mun      = cfg?.municipio || 'Municipio';
-  const estMun   = cfg?.estado    || '';
-  const director = cfg?.director  || 'Director de Tránsito';
-  const correo   = cfg?.correo    || '';
+  const mun      = esc(cfg?.municipio || 'Municipio');
+  const estMun   = esc(cfg?.estado    || '');
+  const director = esc(cfg?.director  || 'Director de Tránsito');
+  const correo   = esc(cfg?.correo    || '');
 
   const hoy      = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const inicioStr = r.inicio      ? new Date(r.inicio).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
@@ -1681,7 +1534,7 @@ async function printPermiso(id) {
   const ref = (r.num||'PER').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
-  <title>Permiso ${r.num||''} — ${r.titular}</title>
+  <title>Permiso ${esc(r.num||'')} — ${esc(r.titular)}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:Arial,Helvetica,sans-serif;background:#f0f0f0;color:#222;font-size:11px}
@@ -1769,7 +1622,7 @@ async function printPermiso(id) {
       </div>
       <div class="doc-type">
         <div class="doc-type-label">Núm. de permiso</div>
-        <div class="doc-num">${r.num||'—'}</div>
+        <div class="doc-num">${esc(r.num||'—')}</div>
       </div>
     </div>
 
@@ -1777,14 +1630,14 @@ async function printPermiso(id) {
     <div class="stamp-wrap"><div class="stamp">${estadoLabel}</div></div>
     <div class="title-bar">
       <h1>Permiso de Circulación</h1>
-      <p>${r.tipo}</p>
+      <p>${esc(r.tipo)}</p>
     </div>
 
     <!-- TITULAR -->
     <div class="section">
       <div class="sec-title">Datos del titular</div>
       <div class="fields">
-        <div class="field w-full"><label>Nombre completo / Razón social</label><span class="bold">${r.titular}</span></div>
+        <div class="field w-full"><label>Nombre completo / Razón social</label><span class="bold">${esc(r.titular)}</span></div>
       </div>
     </div>
 
@@ -1792,9 +1645,9 @@ async function printPermiso(id) {
     <div class="section">
       <div class="sec-title">Datos del vehículo y ruta</div>
       <div class="fields">
-        <div class="field"><label>Placas del vehículo</label><span class="mono bold">${r.placa||'—'}</span></div>
-        <div class="field"><label>Tipo de permiso</label><span>${r.tipo}</span></div>
-        <div class="field w-full"><label>Ruta / Zona de circulación autorizada</label><span class="big">${r.ruta||'—'}</span></div>
+        <div class="field"><label>Placas del vehículo</label><span class="mono bold">${esc(r.placa||'—')}</span></div>
+        <div class="field"><label>Tipo de permiso</label><span>${esc(r.tipo)}</span></div>
+        <div class="field w-full"><label>Ruta / Zona de circulación autorizada</label><span class="big">${esc(r.ruta||'—')}</span></div>
       </div>
     </div>
 
@@ -1818,7 +1671,7 @@ async function printPermiso(id) {
     <!-- TERMS -->
     <div class="terms">
       <p><strong>Condiciones del permiso:</strong> El presente permiso de circulación es personal e intransferible y autoriza
-      exclusivamente la operación del vehículo con placas <strong>${r.placa||'indicadas'}</strong> en la ruta o zona señalada.
+      exclusivamente la operación del vehículo con placas <strong>${esc(r.placa||'indicadas')}</strong> en la ruta o zona señalada.
       Queda estrictamente prohibido ceder, transferir o hacer uso del mismo para fines distintos a los aquí autorizados.
       La dirección de Tránsito y Movilidad de ${mun} se reserva el derecho de suspender o cancelar este permiso en caso de
       incumplimiento de la normativa municipal vigente. El titular deberá portar este documento en todo momento durante la
@@ -1852,7 +1705,7 @@ async function printPermiso(id) {
       </div>
       <div class="sig-block">
         <div class="sig-line"></div>
-        <div class="sig-name">${r.titular}</div>
+        <div class="sig-name">${esc(r.titular)}</div>
         <div class="sig-title">Titular del permiso</div>
         <div class="sig-title">Firma de recibido</div>
       </div>
@@ -1919,7 +1772,7 @@ async function checkPlacaHistory() {
   // Banner verde: vehículo en padrón
   if (veh) {
     html += `<div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.55rem .9rem;margin:.35rem 0;font-size:.77rem;color:#065F46">
-      ✓ En padrón: <strong>${veh.propietario}</strong>${veh.marca?` · ${[veh.marca,veh.modelo].filter(Boolean).join(' ')}`:''}${veh.color?` · ${veh.color}`:''}
+      ✓ En padrón: <strong>${esc(veh.propietario)}</strong>${veh.marca?` · ${esc([veh.marca,veh.modelo].filter(Boolean).join(' '))}`:''}${veh.color?` · ${esc(veh.color)}`:''}
     </div>`;
   }
 
@@ -1935,9 +1788,9 @@ async function checkPlacaHistory() {
       </div>
       ${adeudos.slice(0,3).map(r=>`
         <div style="font-size:.72rem;color:#991B1B;display:flex;gap:.5rem;margin-bottom:.2rem;flex-wrap:wrap;align-items:center">
-          <span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span>
+          <span style="font-family:monospace;font-weight:700">${esc(r.folio||'—')}</span>
           <span>${fmtDateShort(r.fecha)}</span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</span>
           <span style="font-weight:700">${fmt(r.monto)}</span>
           ${estadoBadge(r.estado)}
         </div>`).join('')}
@@ -1958,9 +1811,9 @@ async function checkPlacaHistory() {
       </div>
       ${otrasInf.slice(0,2).map(r=>`
         <div style="font-size:.71rem;color:#78350F;display:flex;gap:.5rem;margin-bottom:.15rem;flex-wrap:wrap;align-items:center">
-          <span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span>
+          <span style="font-family:monospace;font-weight:700">${esc(r.folio||'—')}</span>
           <span>${fmtDateShort(r.fecha)}</span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.tipo}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</span>
           ${estadoBadge(r.estado)}
         </div>`).join('')}
     </div>`;
@@ -2013,7 +1866,7 @@ async function renderPendientesTable() {
   else q = q.order('fecha',{ascending:false});
 
   const { data, error } = await q;
-  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const all = data||[];
 
   const badge = $('badge-pendientes');
@@ -2038,13 +1891,12 @@ async function renderPendientesTable() {
     const urgColor = dias > 25 ? '#DC2626' : dias > 15 ? '#D97706' : dias > 7 ? '#1A7A82' : '#059669';
     const descOk = dias <= diasDesc;
     const montoFinal = descOk ? Math.round(Number(r.monto)*(1-descPct/100)) : Number(r.monto);
-    const esc = s => (s||'').replace(/"/g,'&quot;');
-    return `<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
+      return `<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
       <td style="width:4px;padding:0;background:${urgColor};border-radius:3px 0 0 3px"></td>
-      <td class="mono" style="font-size:.73rem;font-weight:700">${r.folio||'—'}</td>
-      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${r.placa}</td>
-      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.infractor}</td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${r.tipo}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.folio||'—')}</td>
+      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${esc(r.placa)}</td>
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.infractor)}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${esc(r.tipo)}</td>
       <td>
         <div style="font-weight:700;color:var(--amber)">${fmt(r.monto)}</div>
         ${descOk?`<div style="font-size:.68rem;color:var(--green);font-weight:600">${descPct}% dto → ${fmt(montoFinal)}</div>`:''}
@@ -2059,7 +1911,7 @@ async function renderPendientesTable() {
         </button>
         ${r.telefono?`<button class="btn-wa-icon" onclick="event.stopPropagation();_waFromBtn(this)" title="WhatsApp"
           data-tel="${r.telefono.replace(/\D/g,'')}" data-nombre="${esc(r.infractor)}"
-          data-folio="${r.folio||''}" data-placa="${r.placa||''}" data-tipo="${esc(r.tipo)}"
+          data-folio="${esc(r.folio||'')}" data-placa="${esc(r.placa||'')}" data-tipo="${esc(r.tipo)}"
           data-monto="${r.monto||0}" data-ubicacion="" data-fecha="${r.fecha||''}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         </button>`:''}
@@ -2178,7 +2030,7 @@ async function renderCajaTable() {
   if (_cajaSearch) q = q.or(`folio_inf.ilike.%${_cajaSearch}%,cajero.ilike.%${_cajaSearch}%,infracciones.placa.ilike.%${_cajaSearch}%`);
 
   const { data, error } = await q;
-  if (error) { tbody.innerHTML=`<tr><td colspan="10" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML=`<tr><td colspan="10" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const all = data||[];
 
   // Poblar cajero filter en primer render
@@ -2203,15 +2055,15 @@ async function renderCajaTable() {
   tbody.innerHTML = rows.length ? rows.map(r=>{
     const inf = r.infracciones||{};
     return `<tr>
-      <td class="mono" style="font-size:.73rem;font-weight:700">${r.folio_inf||'—'}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(r.folio_inf||'—')}</td>
       <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(r.created_at)}</td>
-      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${inf.placa||'—'}</td>
-      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${inf.infractor||'—'}</td>
+      <td style="font-family:monospace;font-weight:700;font-size:.8rem">${esc(inf.placa||'—')}</td>
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(inf.infractor||'—')}</td>
       <td style="color:var(--muted)">${fmt(r.monto_original)}</td>
       <td>${r.descuento_pct>0?`<span style="background:var(--green-bg);color:var(--green);padding:.15rem .5rem;border-radius:12px;font-size:.72rem;font-weight:700">${r.descuento_pct}%</span>`:'—'}</td>
       <td style="font-weight:800;color:var(--green)">${fmt(r.monto_final)}</td>
-      <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${r.metodo||'—'}</span></td>
-      <td style="font-size:.78rem;color:var(--muted)">${r.cajero||'—'}</td>
+      <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${esc(r.metodo||'—')}</span></td>
+      <td style="font-size:.78rem;color:var(--muted)">${esc(r.cajero||'—')}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem">Sin pagos en este período</td></tr>`;
@@ -2377,9 +2229,9 @@ async function buscarInfPago() {
   el.innerHTML = rows.length ? rows.map(r=>`
     <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')">
       <div style="flex:1">
-        <div style="font-size:.82rem;font-weight:700;font-family:monospace">${r.folio||'—'}</div>
-        <div style="font-size:.78rem;color:var(--text)">${r.infractor} · ${r.placa}</div>
-        <div style="font-size:.73rem;color:var(--muted)">${r.tipo} · ${fmtDateShort(r.fecha)}</div>
+        <div style="font-size:.82rem;font-weight:700;font-family:monospace">${esc(r.folio||'—')}</div>
+        <div style="font-size:.78rem;color:var(--text)">${esc(r.infractor)} · ${esc(r.placa)}</div>
+        <div style="font-size:.73rem;color:var(--muted)">${esc(r.tipo)} · ${fmtDateShort(r.fecha)}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:.9rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</div>
@@ -2404,8 +2256,8 @@ async function openRegistrarPago(infId) {
   const infoEl = $('pago-inf-info');
   if (infoEl) infoEl.innerHTML = `
     <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.35rem">Infracción</div>
-    <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${r.folio||'—'} — ${r.tipo}</div>
-    <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${r.infractor} · Placa: <strong>${r.placa}</strong></div>
+    <div style="font-size:.92rem;font-weight:700;color:var(--ink)">${esc(r.folio||'—')} — ${esc(r.tipo)}</div>
+    <div style="font-size:.8rem;color:var(--text);margin-top:.2rem">${esc(r.infractor)} · Placa: <strong>${esc(r.placa)}</strong></div>
     <div style="font-size:.8rem;color:var(--text)">${fmtDateShort(r.fecha)} · <strong>${fmt(r.monto)}</strong></div>
     ${descOk?`<div style="font-size:.75rem;color:var(--green);margin-top:.3rem;font-weight:600">✓ Elegible para descuento del ${descPct}% (pronto pago — menos de ${diasDesc} días)</div>`:`<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Sin descuento disponible (más de ${diasDesc} días)</div>`}`;
   const descEl = $('pago-descuento');
@@ -2486,10 +2338,10 @@ async function printReciboPago(pagoId) {
   const { data: cfg } = await _sb.from('configuracion').select('*').eq('id',1).single();
   if (!p) return;
   const inf = p.infracciones||{};
-  const mun = cfg?.municipio||'Municipio', est = cfg?.estado||'';
+  const mun = esc(cfg?.municipio||'Municipio'), est = esc(cfg?.estado||'');
   const fechaPago = new Date(p.created_at).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const horaPago  = new Date(p.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Recibo ${p.folio_inf||''}</title>
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Recibo ${esc(p.folio_inf||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#f5f5f5;font-size:11px}
     .page{width:215.9mm;min-height:139.7mm;margin:0 auto;background:#fff;padding:12mm 14mm}
@@ -2526,26 +2378,26 @@ async function printReciboPago(pagoId) {
     <div class="cols">
       <div class="col">
         <div class="sec">Infracción pagada</div>
-        <div class="f"><div class="fl">Folio</div><div class="fv" style="font-family:monospace;font-weight:700">${p.folio_inf||'—'}</div></div>
-        <div class="f"><div class="fl">Tipo</div><div class="fv">${inf.tipo||'—'}</div></div>
+        <div class="f"><div class="fl">Folio</div><div class="fv" style="font-family:monospace;font-weight:700">${esc(p.folio_inf||'—')}</div></div>
+        <div class="f"><div class="fl">Tipo</div><div class="fv">${esc(inf.tipo||'—')}</div></div>
         <div class="f"><div class="fl">Fecha infracción</div><div class="fv">${fmtDateShort(inf.fecha)}</div></div>
-        <div class="f"><div class="fl">Infractor</div><div class="fv" style="font-weight:700">${inf.infractor||'—'}</div></div>
-        <div class="f"><div class="fl">Placa</div><div class="fv" style="font-family:monospace">${inf.placa||'—'}</div></div>
+        <div class="f"><div class="fl">Infractor</div><div class="fv" style="font-weight:700">${esc(inf.infractor||'—')}</div></div>
+        <div class="f"><div class="fl">Placa</div><div class="fv" style="font-family:monospace">${esc(inf.placa||'—')}</div></div>
       </div>
       <div class="col">
         <div class="sec">Detalle del pago</div>
         <div class="f"><div class="fl">Monto original</div><div class="fv">${fmt(p.monto_original)}</div></div>
         <div class="f"><div class="fl">Descuento</div><div class="fv" style="color:#059669">${p.descuento_pct>0?p.descuento_pct+'%':'Sin descuento'}</div></div>
-        <div class="f"><div class="fl">Método de pago</div><div class="fv" style="text-transform:capitalize">${p.metodo}</div></div>
-        <div class="f"><div class="fl">Cajero</div><div class="fv">${p.cajero||'—'}</div></div>
-        <div class="amount"><div class="al">Total cobrado</div><div class="av">${fmt(p.monto_final)}</div><div class="as">MXN — ${p.metodo.charAt(0).toUpperCase()+p.metodo.slice(1)}</div></div>
+        <div class="f"><div class="fl">Método de pago</div><div class="fv" style="text-transform:capitalize">${esc(p.metodo)}</div></div>
+        <div class="f"><div class="fl">Cajero</div><div class="fv">${esc(p.cajero||'—')}</div></div>
+        <div class="amount"><div class="al">Total cobrado</div><div class="av">${fmt(p.monto_final)}</div><div class="as">MXN — ${esc(p.metodo.charAt(0).toUpperCase()+p.metodo.slice(1))}</div></div>
       </div>
     </div>
     <div class="sig">
-      <div class="sb"><div class="sl"></div><div class="sn">${p.cajero||'Cajero'}</div><div class="st">Cajero que recibe</div></div>
-      <div class="sb"><div class="sl"></div><div class="sn">${inf.infractor||'Infractor'}</div><div class="st">Firma de conformidad</div></div>
+      <div class="sb"><div class="sl"></div><div class="sn">${esc(p.cajero||'Cajero')}</div><div class="st">Cajero que recibe</div></div>
+      <div class="sb"><div class="sl"></div><div class="sn">${esc(inf.infractor||'Infractor')}</div><div class="st">Firma de conformidad</div></div>
     </div>
-    <div class="foot">Recibo REC-${String(p.id).padStart(6,'0')} · Infracción ${p.folio_inf||''}. Este documento acredita el pago total. Expedido por Dirección de Tránsito, ${mun}.</div>
+    <div class="foot">Recibo REC-${String(p.id).padStart(6,'0')} · Infracción ${esc(p.folio_inf||'')}. Este documento acredita el pago total. Expedido por Dirección de Tránsito, ${mun}.</div>
   </div>
   <script>setTimeout(()=>window.print(),600)<\/script>
   </body></html>`;
@@ -2558,7 +2410,7 @@ async function renderOficiales() {
   const tbody = $('oficiales-table'); if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
   const { data, error } = await _sb.from('infracciones').select('oficial,monto,estado,fecha');
-  if (error) { tbody.innerHTML=`<tr><td colspan="6" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML=`<tr><td colspan="6" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const map = {};
   (data||[]).forEach(r => {
     const k = r.oficial?.trim() || '(Sin asignar)';
@@ -2572,7 +2424,7 @@ async function renderOficiales() {
   const sorted = Object.entries(map).sort((a,b)=>b[1].total-a[1].total);
   tbody.innerHTML = sorted.length ? sorted.map(([n,s])=>`
     <tr>
-      <td style="font-weight:600">${n}</td>
+      <td style="font-weight:600">${esc(n)}</td>
       <td style="text-align:center;font-weight:700">${s.total}</td>
       <td>${fmt(s.monto)}</td>
       <td>${s.pend>0?`<span class="badge-yellow">${s.pend}</span>`:'<span class="badge-muted">0</span>'}</td>
@@ -2591,13 +2443,13 @@ async function renderUsuarios() {
   }
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
   const { data, error } = await _sb.from('usuarios').select(USR_COLS).order('id');
-  if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const labels = { admin:'Administrador', supervisor:'Supervisor', oficial:'Oficial' };
   tbody.innerHTML = (data||[]).map(u=>`
     <tr>
-      <td style="font-weight:600">${u.nombre}</td>
-      <td class="mono">${u.usuario}</td>
-      <td>${labels[u.rol]||u.rol}</td>
+      <td style="font-weight:600">${esc(u.nombre)}</td>
+      <td class="mono">${esc(u.usuario)}</td>
+      <td>${esc(labels[u.rol]||u.rol)}</td>
       <td>${u.activo?'<span class="badge-green">Activo</span>':'<span class="badge-muted">Inactivo</span>'}</td>
       <td style="display:flex;gap:.4rem">
         <button class="btn btn-ghost btn-sm" onclick="editUsuario(${u.id})">Editar</button>
@@ -2657,8 +2509,8 @@ async function toggleUsuario(id, activo) {
 
 // ── Ticket 80mm (print functions) ────────────────────────
 function buildTicket80(r, cfg, qrDataUrl) {
-  const mun = cfg?.municipio || 'Municipio';
-  const est = cfg?.estado || '';
+  const mun = esc(cfg?.municipio || 'Municipio');
+  const est = esc(cfg?.estado || '');
   const fechaObj = new Date(r.fecha);
   const fechaStr = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
   const horaStr  = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
@@ -2675,23 +2527,23 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-div"></div>
     <div class="t-invert">INFRACCIÓN DE TRÁNSITO</div>
     <div style="margin:1.5mm 0"></div>
-    <div class="t-center t-xl">${r.folio||'—'}</div>
+    <div class="t-center t-xl">${esc(r.folio||'—')}</div>
     <div class="t-div"></div>
     <div class="t-row"><span>FECHA:</span><span>${fechaStr}</span></div>
     <div class="t-row"><span>HORA:</span><span>${horaStr}</span></div>
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7.5pt">INFRACTOR:</div>
-    <div>${r.infractor}</div>
-    <div class="t-row t-small"><span>LIC:</span><span>${r.licencia||'N/A'}</span></div>
+    <div>${esc(r.infractor)}</div>
+    <div class="t-row t-small"><span>LIC:</span><span>${esc(r.licencia||'N/A')}</span></div>
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7.5pt">VEHÍCULO:</div>
-    <div class="t-row"><span>PLACA:</span><span class="t-bold">${r.placa}</span></div>
-    ${r.color_vehiculo?`<div class="t-row t-small"><span>COLOR:</span><span>${r.color_vehiculo}</span></div>`:''}
-    ${r.vehiculo?`<div class="t-small" style="word-break:break-word">${r.vehiculo}</div>`:''}
+    <div class="t-row"><span>PLACA:</span><span class="t-bold">${esc(r.placa)}</span></div>
+    ${r.color_vehiculo?`<div class="t-row t-small"><span>COLOR:</span><span>${esc(r.color_vehiculo)}</span></div>`:''}
+    ${r.vehiculo?`<div class="t-small" style="word-break:break-word">${esc(r.vehiculo)}</div>`:''}
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7.5pt">INFRACCIÓN:</div>
-    <div>${r.tipo}</div>
-    ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${r.ubicacion}</div>`:''}
+    <div>${esc(r.tipo)}</div>
+    ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${esc(r.ubicacion)}</div>`:''}
     <div class="t-solid"></div>
     <div class="t-center t-bold" style="font-size:7.5pt">MONTO A PAGAR</div>
     <div class="t-amount">
@@ -2714,7 +2566,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
     <div class="t-sig"></div>
-    <div class="t-small">${r.oficial||'Agente de Tránsito'}</div>
+    <div class="t-small">${esc(r.oficial||'Agente de Tránsito')}</div>
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
     <div class="t-sig"></div>
@@ -2742,7 +2594,7 @@ async function printTicket80(id) {
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
-  <title>Ticket ${r.folio||''}</title>
+  <title>Ticket ${esc(r.folio||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:'Courier New',Courier,monospace}
@@ -2783,7 +2635,7 @@ async function printTicket80(id) {
 // ── Reportes ──────────────────────────────────────────────
 async function generateReport(tipo) {
   const { data: cfg } = await _sb.from('configuracion').select('*').eq('id',1).single();
-  const mun = cfg ? cfg.municipio : 'Municipio';
+  const mun = esc(cfg ? cfg.municipio : 'Municipio');
   const dir = cfg ? cfg.director  : '';
   const now = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
 
@@ -2799,8 +2651,8 @@ async function generateReport(tipo) {
   }
 
   const tableRows = tipo==='infracciones'
-    ? rows.map(r=>`<tr><td>${r.folio||'—'}</td><td>${fmtDateShort(r.fecha)}</td><td>${r.placa}</td><td>${r.infractor}</td><td>${r.tipo}</td><td>${fmt(r.monto)}</td><td>${r.estado}</td></tr>`).join('')
-    : rows.map(r=>`<tr><td>${r.num||'—'}</td><td>${r.titular}</td><td>${r.tipo}</td><td>${r.placa||'—'}</td><td>${r.ruta||'—'}</td><td>${fmtDateShort(r.vencimiento)}</td><td>${r.estado}</td></tr>`).join('');
+    ? rows.map(r=>`<tr><td>${esc(r.folio||'—')}</td><td>${fmtDateShort(r.fecha)}</td><td>${esc(r.placa)}</td><td>${esc(r.infractor)}</td><td>${esc(r.tipo)}</td><td>${fmt(r.monto)}</td><td>${r.estado}</td></tr>`).join('')
+    : rows.map(r=>`<tr><td>${esc(r.num||'—')}</td><td>${esc(r.titular)}</td><td>${esc(r.tipo)}</td><td>${esc(r.placa||'—')}</td><td>${esc(r.ruta||'—')}</td><td>${fmtDateShort(r.vencimiento)}</td><td>${r.estado}</td></tr>`).join('');
 
   const win = window.open('','_blank','width=900,height=700');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
@@ -2922,11 +2774,11 @@ async function printCorteCaja() {
   </style></head><body>
   <div class="header">
     <h1>Corte de Caja Diario</h1>
-    <h2>${cfg.municipio||'Municipio'} — Dirección de Tránsito y Movilidad</h2>
+    <h2>${esc(cfg.municipio||'Municipio')} — Dirección de Tránsito y Movilidad</h2>
   </div>
   <div class="meta">
     Fecha: <strong>${fechaStr}</strong> &nbsp;|&nbsp; Hora de corte: <strong>${horaStr}</strong><br>
-    Elaboró: <strong>${_session?.name||'—'}</strong>
+    Elaboró: <strong>${esc(_session?.name||'—')}</strong>
   </div>
   <div class="totals">
     <div class="total-row"><span>Pagos registrados:</span><span>${totalInfracciones}</span></div>
@@ -3051,7 +2903,7 @@ async function loadOficiales(selectIds) {
     if (!el) return;
     const prev = el.dataset.preload || '';
     el.innerHTML = '<option value="">— Seleccionar oficial —</option>' +
-      _oficiales.map(n => `<option value="${n}"${n===prev?' selected':''}>${n}</option>`).join('');
+      _oficiales.map(n => `<option value="${esc(n)}"${n===prev?' selected':''}>${esc(n)}</option>`).join('');
     delete el.dataset.preload;
   });
 }
@@ -3221,7 +3073,7 @@ async function renderVehiculos() {
     _sb.from('vehiculos').select('*'),
     _sb.from('infracciones').select('placa,monto,estado')
   ]);
-  if (vehRes.error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${vehRes.error.message}</td></tr>`; return; }
+  if (vehRes.error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(vehRes.error.message)}</td></tr>`; return; }
 
   // Build infraction count map (for all plates)
   const allInfMap = {};
@@ -3290,13 +3142,13 @@ async function renderVehiculos() {
     const esReincidente = ic.total > 1;
     return `<tr onclick="viewVehiculoDetalle('${r.id}')" style="cursor:pointer">
       <td>
-        <span style="font-family:monospace;font-weight:800;font-size:.85rem">${r.placa}</span>
+        <span style="font-family:monospace;font-weight:800;font-size:.85rem">${esc(r.placa)}</span>
         ${esReincidente?`<span title="Reincidente" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--amber-bg);color:var(--amber);font-size:.55rem;font-weight:800;margin-left:.25rem">R</span>`:''}
       </td>
-      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.propietario}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.propietario)}</td>
       <td style="font-size:.78rem;color:var(--muted)">${tipoLabel[r.tipo]||'—'}</td>
-      <td style="font-size:.78rem">${[r.marca,r.modelo,r.anio].filter(Boolean).join(' ')||'—'}</td>
-      <td style="font-size:.78rem">${r.color||'—'}</td>
+      <td style="font-size:.78rem">${esc([r.marca,r.modelo,r.anio].filter(Boolean).join(' ')||'—')}</td>
+      <td style="font-size:.78rem">${esc(r.color||'—')}</td>
       <td>${estadoBadge(r.estado)}</td>
       <td>${infBadge}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
@@ -3410,9 +3262,9 @@ async function viewVehiculoDetalle(id) {
 
   const historial = infList.length ? infList.map(i => `
     <tr onclick="viewDetail('infracciones','${i.id}')" style="cursor:pointer">
-      <td class="mono" style="font-size:.73rem;font-weight:700">${i.folio||'—'}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(i.folio||'—')}</td>
       <td style="font-size:.78rem;white-space:nowrap">${fmtDateShort(i.fecha)}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${i.tipo}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem">${esc(i.tipo)}</td>
       <td style="font-weight:700">${fmt(i.monto)}</td>
       <td>${estadoBadge(i.estado)}</td>
     </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.5rem">Sin infracciones registradas</td></tr>';
@@ -3422,13 +3274,13 @@ async function viewVehiculoDetalle(id) {
     <div style="background:var(--stone);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1rem">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem">
         <div>
-          <div style="font-family:monospace;font-size:1.3rem;font-weight:800;color:var(--ink)">${v.placa}</div>
-          <div style="font-size:.9rem;font-weight:700;color:var(--ink);margin-top:.2rem">${v.propietario}</div>
-          <div style="font-size:.78rem;color:var(--muted);margin-top:.15rem">${tipoLabel[v.tipo]||''}${v.tipo&&v.color?' · ':''}${v.color||''}</div>
+          <div style="font-family:monospace;font-size:1.3rem;font-weight:800;color:var(--ink)">${esc(v.placa)}</div>
+          <div style="font-size:.9rem;font-weight:700;color:var(--ink);margin-top:.2rem">${esc(v.propietario)}</div>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.15rem">${tipoLabel[v.tipo]||''}${v.tipo&&v.color?' · ':''}${esc(v.color||'')}</div>
         </div>
         <div style="text-align:right">
           ${estadoBadge(v.estado)}
-          ${v.telefono?`<div style="margin-top:.5rem"><a href="https://wa.me/52${v.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;font-size:.78rem;text-decoration:none;display:inline-flex;align-items:center;gap:.25rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${v.telefono}</a></div>`:''}
+          ${v.telefono?`<div style="margin-top:.5rem"><a href="https://wa.me/52${v.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;font-size:.78rem;text-decoration:none;display:inline-flex;align-items:center;gap:.25rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${esc(v.telefono)}</a></div>`:''}
         </div>
       </div>
     </div>
@@ -3451,12 +3303,12 @@ async function viewVehiculoDetalle(id) {
 
     <!-- Datos técnicos -->
     <div class="detail-grid" style="margin-bottom:1rem">
-      <div class="detail-field"><label>Marca / Modelo</label><span>${[v.marca,v.modelo,v.anio].filter(Boolean).join(' ')||'—'}</span></div>
-      <div class="detail-field"><label>Color</label><span>${v.color||'—'}</span></div>
-      ${v.num_serie?`<div class="detail-field"><label>Núm. de serie</label><span style="font-family:monospace;font-size:.8rem">${v.num_serie}</span></div>`:''}
-      ${v.num_motor?`<div class="detail-field"><label>Núm. de motor</label><span style="font-family:monospace;font-size:.8rem">${v.num_motor}</span></div>`:''}
+      <div class="detail-field"><label>Marca / Modelo</label><span>${esc([v.marca,v.modelo,v.anio].filter(Boolean).join(' ')||'—')}</span></div>
+      <div class="detail-field"><label>Color</label><span>${esc(v.color||'—')}</span></div>
+      ${v.num_serie?`<div class="detail-field"><label>Núm. de serie</label><span style="font-family:monospace;font-size:.8rem">${esc(v.num_serie)}</span></div>`:''}
+      ${v.num_motor?`<div class="detail-field"><label>Núm. de motor</label><span style="font-family:monospace;font-size:.8rem">${esc(v.num_motor)}</span></div>`:''}
       <div class="detail-field"><label>Registrado</label><span>${fmtDateShort(v.created_at)}</span></div>
-      ${v.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.4rem .65rem;border-radius:6px;font-size:.82rem">${v.obs}</span></div>`:''}
+      ${v.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.4rem .65rem;border-radius:6px;font-size:.82rem">${esc(v.obs)}</span></div>`:''}
     </div>
 
     <!-- Historial -->
@@ -3470,7 +3322,7 @@ async function viewVehiculoDetalle(id) {
 
     <!-- Acciones -->
     <div class="modal-actions" style="margin-top:1rem;flex-wrap:wrap;gap:.5rem">
-      <button class="btn btn-primary btn-sm" onclick="nuevaInfraccionParaVehiculo('${v.placa}','${(v.propietario||'').replace(/'/g,"\\'")}','${v.color||''}','${[v.marca,v.modelo,v.anio].filter(Boolean).join(' ')}','${v.telefono||''}')" title="Registrar infracción para este vehículo">
+      <button class="btn btn-primary btn-sm" onclick="nuevaInfraccionParaVehiculo(${jsArg(v.placa)},${jsArg(v.propietario||'')},${jsArg(v.color||'')},${jsArg([v.marca,v.modelo,v.anio].filter(Boolean).join(' '))},${jsArg(v.telefono||'')})" title="Registrar infracción para este vehículo">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nueva infracción
       </button>
@@ -3497,7 +3349,7 @@ async function renderGrua() {
   if (_gruaEstado) q = q.eq('estado', _gruaEstado);
   q = q.order('fecha', {ascending:false});
   const { data, error } = await q;
-  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`; return; }
+  if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const all = data||[];
 
   // Stats
@@ -3518,11 +3370,11 @@ async function renderGrua() {
     const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
     const costoAcum = Number(r.costo_deposito||0) + dias*Number(r.costo_diario||0);
     return `<tr>
-      <td class="mono">${r.folio||'—'}</td>
+      <td class="mono">${esc(r.folio||'—')}</td>
       <td>${fmtDateShort(r.fecha)}</td>
-      <td class="mono" style="font-weight:700">${r.placa}</td>
-      <td>${r.propietario||'—'}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.motivo||'—'}</td>
+      <td class="mono" style="font-weight:700">${esc(r.placa)}</td>
+      <td>${esc(r.propietario||'—')}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.motivo||'—')}</td>
       <td style="font-weight:700">${fmt(costoAcum)}</td>
       <td>${estadoBadge(r.estado)}</td>
       <td style="white-space:nowrap">
@@ -3666,8 +3518,8 @@ async function renderMapa() {
     });
     const marker = L.marker([r.lat, r.lng], {icon}).addTo(_leafletMap);
     marker.bindPopup(`<div style="font-family:'DM Sans',sans-serif;font-size:.8rem;min-width:180px">
-      <div style="font-weight:700;margin-bottom:.3rem">${r.folio||'—'} · ${r.placa}</div>
-      <div style="color:#374151">${r.tipo}</div>
+      <div style="font-weight:700;margin-bottom:.3rem">${esc(r.folio||'—')} · ${esc(r.placa)}</div>
+      <div style="color:#374151">${esc(r.tipo)}</div>
       <div style="display:flex;justify-content:space-between;margin-top:.4rem">
         <span style="color:#6B7280;font-size:.75rem">${fmtDateShort(r.fecha)}</span>
         <strong>$${Number(r.monto).toLocaleString('es-MX')}</strong>
@@ -3726,7 +3578,7 @@ async function renderRendimiento() {
   if (statsEl) statsEl.innerHTML = `
     <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${totalGlobal}</div><div class="stat-label">Infracciones levantadas</div></div><div class="stat-icon" style="background:#FEF2F2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div></div></div>
     <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${sorted.length}</div><div class="stat-label">Oficiales activos</div></div><div class="stat-icon" style="background:var(--ac-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div></div></div>
-    <div class="stat-card"><div class="stat-top"><div><div class="stat-num" style="font-size:1.1rem;letter-spacing:0">${topOficial.split(' ').slice(0,2).join(' ')}</div><div class="stat-label">Oficial más activo</div></div><div class="stat-icon" style="background:#ECFDF5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div></div></div>
+    <div class="stat-card"><div class="stat-top"><div><div class="stat-num" style="font-size:1.1rem;letter-spacing:0">${esc(topOficial.split(' ').slice(0,2).join(' '))}</div><div class="stat-label">Oficial más activo</div></div><div class="stat-icon" style="background:#ECFDF5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></div></div></div>
     <div class="stat-card"><div class="stat-top"><div><div class="stat-num">${fmt(montoGlobal)}</div><div class="stat-label">Monto total levantado</div></div><div class="stat-icon" style="background:var(--ac-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div></div></div>`;
 
   const tbody = $('rendimiento-table');
@@ -3734,7 +3586,7 @@ async function renderRendimiento() {
     const tasa = o.total>0 ? Math.round(o.pagadas/o.total*100) : 0;
     const bar = `<div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden;width:80px"><div style="height:100%;background:var(--ac);width:${Math.round(o.total/maxTotal*100)}%"></div></div>`;
     return `<tr>
-      <td style="font-weight:600">${o.nombre}</td>
+      <td style="font-weight:600">${esc(o.nombre)}</td>
       <td style="font-weight:700;font-size:.95rem">${o.total}</td>
       <td>${fmt(o.monto)}</td>
       <td style="color:var(--green);font-weight:600">${o.pagadas}</td>
@@ -3750,10 +3602,10 @@ async function renderRendimiento() {
   if (chartEl && sorted.length) {
     chartEl.innerHTML = sorted.slice(0,8).map(o => {
       const pct = Math.max(4, Math.round(o.total/maxTotal*100));
-      return `<div class="bar-col"><div class="bar-fill" style="height:${pct}%;background:var(--ac)" title="${o.nombre}: ${o.total} infracciones"></div></div>`;
+      return `<div class="bar-col"><div class="bar-fill" style="height:${pct}%;background:var(--ac)" title="${esc(o.nombre)}: ${o.total} infracciones"></div></div>`;
     }).join('');
     if (labelsEl) labelsEl.innerHTML = sorted.slice(0,8).map(o=>
-      `<span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${o.nombre.split(' ')[0]}</span>`).join('');
+      `<span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${esc(o.nombre.split(' ')[0])}</span>`).join('');
   }
 }
 
@@ -3789,7 +3641,7 @@ async function runGlobalSearch() {
       <div class="gs-section-label">Infracciones</div>
       ${infs.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('infracciones');setTimeout(()=>viewDetail('infracciones','${r.id}'),300)">
         <div class="gs-item-icon" style="background:#FEF2F2"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
-        <div class="gs-item-body"><div class="gs-item-title">${r.folio||'—'} · ${r.placa}</div><div class="gs-item-sub">${r.infractor} · ${r.tipo}</div></div>
+        <div class="gs-item-body"><div class="gs-item-title">${esc(r.folio||'—')} · ${esc(r.placa)}</div><div class="gs-item-sub">${esc(r.infractor)} · ${esc(r.tipo)}</div></div>
         <div>${estadoBadge(r.estado)}</div>
       </div>`).join('')}`);
 
@@ -3797,7 +3649,7 @@ async function runGlobalSearch() {
       <div class="gs-section-label">Vehículos</div>
       ${vehs.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('vehiculos');setTimeout(()=>viewVehiculoDetalle('${r.id}'),300)">
         <div class="gs-item-icon" style="background:var(--ac-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
-        <div class="gs-item-body"><div class="gs-item-title">${r.placa}</div><div class="gs-item-sub">${r.propietario} · ${[r.marca,r.modelo].filter(Boolean).join(' ')||'—'}</div></div>
+        <div class="gs-item-body"><div class="gs-item-title">${esc(r.placa)}</div><div class="gs-item-sub">${esc(r.propietario)} · ${esc([r.marca,r.modelo].filter(Boolean).join(' ')||'—')}</div></div>
         <div>${estadoBadge(r.estado)}</div>
       </div>`).join('')}`);
 
@@ -3805,7 +3657,7 @@ async function runGlobalSearch() {
       <div class="gs-section-label">Permisos</div>
       ${pers.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('permisos');setTimeout(()=>viewDetail('permisos','${r.id}'),300)">
         <div class="gs-item-icon" style="background:#EFF6FF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-        <div class="gs-item-body"><div class="gs-item-title">${r.num||'—'} · ${r.placa||'—'}</div><div class="gs-item-sub">${r.titular} · ${r.tipo}</div></div>
+        <div class="gs-item-body"><div class="gs-item-title">${esc(r.num||'—')} · ${esc(r.placa||'—')}</div><div class="gs-item-sub">${esc(r.titular)} · ${esc(r.tipo)}</div></div>
         <div>${estadoBadge(r.estado)}</div>
       </div>`).join('')}`);
 
@@ -3813,13 +3665,13 @@ async function runGlobalSearch() {
       <div class="gs-section-label">Grúa / Corralón</div>
       ${gru.map(r => `<div class="gs-item" onclick="closeModal('modal-search');navigate('grua')">
         <div class="gs-item-icon" style="background:#FFFBEB"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M18 8h2a2 2 0 012 2v6h-4M6 8H2v10h2"/></svg></div>
-        <div class="gs-item-body"><div class="gs-item-title">${r.folio||'—'} · ${r.placa}</div><div class="gs-item-sub">${r.propietario||'—'} · ${r.motivo||'—'}</div></div>
+        <div class="gs-item-body"><div class="gs-item-title">${esc(r.folio||'—')} · ${esc(r.placa)}</div><div class="gs-item-sub">${esc(r.propietario||'—')} · ${esc(r.motivo||'—')}</div></div>
         <div>${estadoBadge(r.estado)}</div>
       </div>`).join('')}`);
 
     res.innerHTML = sections.length
       ? sections.join('')
-      : `<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.85rem">Sin resultados para <strong>${q}</strong></div>`;
+      : `<div style="padding:2rem;text-align:center;color:var(--muted);font-size:.85rem">Sin resultados para <strong>${esc(q)}</strong></div>`;
   }, 280);
 }
 
@@ -3893,8 +3745,8 @@ async function showCalDay(y, m, d) {
     <div class="table-wrap"><table>
       <thead><tr><th>Folio</th><th>Placa</th><th>Tipo</th><th>Monto</th><th>Estado</th></tr></thead>
       <tbody>${data.map(r=>`<tr onclick="viewDetail('infracciones','${r.id}')" style="cursor:pointer">
-        <td class="mono">${r.folio||'—'}</td><td class="mono">${r.placa}</td>
-        <td>${r.tipo}</td><td>${fmt(r.monto)}</td><td>${estadoBadge(r.estado)}</td>
+        <td class="mono">${esc(r.folio||'—')}</td><td class="mono">${esc(r.placa)}</td>
+        <td>${esc(r.tipo)}</td><td>${fmt(r.monto)}</td><td>${estadoBadge(r.estado)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>`;
@@ -3916,7 +3768,7 @@ async function renderAccidentes() {
   if(_accEstado) q=q.eq('estado',_accEstado);
   q=q.order('fecha',{ascending:false});
   const {data,error}=await q;
-  if(error){tbody.innerHTML=`<tr><td colspan="8" style="color:red">${error.message}</td></tr>`;return;}
+  if(error){tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`;return;}
   const all=data||[];
   // stats
   const enProceso=all.filter(r=>r.estado==='en_proceso').length;
@@ -3933,13 +3785,13 @@ async function renderAccidentes() {
   const tipoLabel={choque:'Choque',atropello:'Atropello',volcadura:'Volcadura',otro:'Otro'};
   const estadoAcc={en_proceso:'<span class="badge pendiente">En proceso</span>',cerrado:'<span class="badge pagada">Cerrado</span>',derivado:'<span class="badge impugnada">Derivado a MP</span>'};
   tbody.innerHTML=rows.length?rows.map(r=>`<tr onclick="viewAccidenteDetalle('${r.id}')">
-    <td class="mono" style="font-weight:700">${r.folio||'—'}</td>
+    <td class="mono" style="font-weight:700">${esc(r.folio||'—')}</td>
     <td>${fmtDateShort(r.fecha)}</td>
-    <td>${tipoLabel[r.tipo]||r.tipo}</td>
-    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.ubicacion||'—'}</td>
+    <td>${esc(tipoLabel[r.tipo]||r.tipo)}</td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.ubicacion||'—')}</td>
     <td style="text-align:center">${r.lesionados||0}${r.fallecidos>0?` / <span style="color:var(--red);font-weight:700">${r.fallecidos} fall.</span>`:''}</td>
-    <td>${r.oficial||'—'}</td>
-    <td>${estadoAcc[r.estado]||r.estado}</td>
+    <td>${esc(r.oficial||'—')}</td>
+    <td>${esc(estadoAcc[r.estado]||r.estado)}</td>
     <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editAccidente('${r.id}')">Editar</button></td>
   </tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin accidentes registrados</td></tr>';
   renderPager('accidentes-pager',_accPage,pages,'goAccPage');
@@ -3963,12 +3815,12 @@ function renderPartesForm(){
     <div style="border:1px solid var(--border);border-radius:8px;padding:.75rem;margin-bottom:.5rem;background:var(--stone)">
       <div style="display:flex;justify-content:space-between;margin-bottom:.5rem;font-size:.75rem;font-weight:700;color:var(--muted)">Parte ${i+1} <button type="button" class="btn btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.7rem" onclick="removeParte(${i})">✕</button></div>
       <div class="form-row">
-        <input class="form-input" placeholder="Nombre" value="${p.nombre}" oninput="_accPartes[${i}].nombre=this.value" style="font-size:.8rem"/>
-        <input class="form-input" placeholder="Placa" value="${p.placa}" oninput="_accPartes[${i}].placa=this.value.toUpperCase()" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Nombre" value="${esc(p.nombre)}" oninput="_accPartes[${i}].nombre=this.value" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Placa" value="${esc(p.placa)}" oninput="_accPartes[${i}].placa=this.value.toUpperCase()" style="font-size:.8rem"/>
       </div>
       <div class="form-row" style="margin-top:.4rem">
-        <input class="form-input" placeholder="Núm. licencia" value="${p.licencia}" oninput="_accPartes[${i}].licencia=this.value" style="font-size:.8rem"/>
-        <input class="form-input" placeholder="Aseguradora" value="${p.aseguradora}" oninput="_accPartes[${i}].aseguradora=this.value" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Núm. licencia" value="${esc(p.licencia)}" oninput="_accPartes[${i}].licencia=this.value" style="font-size:.8rem"/>
+        <input class="form-input" placeholder="Aseguradora" value="${esc(p.aseguradora)}" oninput="_accPartes[${i}].aseguradora=this.value" style="font-size:.8rem"/>
       </div>
     </div>`).join('');
 }
@@ -4046,19 +3898,19 @@ async function viewAccidenteDetalle(id){
   dm.querySelector('.modal-title').textContent=`Accidente ${r.folio||'—'}`;
   dm.querySelector('.detail-body').innerHTML=`
     <div class="detail-grid">
-      <div class="detail-field"><label>Folio</label><span style="font-family:monospace;font-weight:700">${r.folio||'—'}</span></div>
+      <div class="detail-field"><label>Folio</label><span style="font-family:monospace;font-weight:700">${esc(r.folio||'—')}</span></div>
       <div class="detail-field"><label>Fecha</label><span>${fmtDateShort(r.fecha)}</span></div>
-      <div class="detail-field"><label>Tipo</label><span>${tipoLabel[r.tipo]||r.tipo}</span></div>
-      <div class="detail-field"><label>Estado</label><span>${estadoAcc[r.estado]||r.estado}</span></div>
-      <div class="detail-field full"><label>Ubicación</label><span>${r.ubicacion||'—'}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" style="color:var(--ac);font-size:.75rem;margin-left:.4rem">Ver mapa ↗</a>`:''}</span></div>
+      <div class="detail-field"><label>Tipo</label><span>${esc(tipoLabel[r.tipo]||r.tipo)}</span></div>
+      <div class="detail-field"><label>Estado</label><span>${esc(estadoAcc[r.estado]||r.estado)}</span></div>
+      <div class="detail-field full"><label>Ubicación</label><span>${esc(r.ubicacion||'—')}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" style="color:var(--ac);font-size:.75rem;margin-left:.4rem">Ver mapa ↗</a>`:''}</span></div>
       <div class="detail-field"><label>Lesionados</label><span style="font-weight:700;color:var(--amber)">${r.lesionados||0}</span></div>
       <div class="detail-field"><label>Fallecidos</label><span style="font-weight:700;color:var(--red)">${r.fallecidos||0}</span></div>
-      <div class="detail-field"><label>Oficial</label><span>${r.oficial||'—'}</span></div>
-      ${r.descripcion?`<div class="detail-field full"><label>Descripción</label><span>${r.descripcion}</span></div>`:''}
-      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${r.obs}</span></div>`:''}
+      <div class="detail-field"><label>Oficial</label><span>${esc(r.oficial||'—')}</span></div>
+      ${r.descripcion?`<div class="detail-field full"><label>Descripción</label><span>${esc(r.descripcion)}</span></div>`:''}
+      ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span>${esc(r.obs)}</span></div>`:''}
       ${partes.length?`<div class="detail-field full"><label>Partes involucradas</label>
         <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.4rem">
-          ${partes.map((p,i)=>`<div style="background:var(--stone);border-radius:6px;padding:.5rem .75rem;font-size:.8rem"><strong>Parte ${i+1}:</strong> ${p.nombre||'—'} · Placa: ${p.placa||'—'} · Lic: ${p.licencia||'—'} · Aseg: ${p.aseguradora||'—'}</div>`).join('')}
+          ${partes.map((p,i)=>`<div style="background:var(--stone);border-radius:6px;padding:.5rem .75rem;font-size:.8rem"><strong>Parte ${i+1}:</strong> ${esc(p.nombre||'—')} · Placa: ${esc(p.placa||'—')} · Lic: ${esc(p.licencia||'—')} · Aseg: ${esc(p.aseguradora||'—')}</div>`).join('')}
         </div></div>`:''}
       ${fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')"/>`).join('')}</div></div>`:''}
     </div>
@@ -4152,7 +4004,7 @@ async function cerrarTurno(turno) {
             <div style="font-size:.72rem;color:var(--muted)">Duración del turno</div>
           </div>
         </div>
-        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem">Oficial: <strong>${turno.oficial}</strong></div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem">Oficial: <strong>${esc(turno.oficial)}</strong></div>
         <div style="font-size:.78rem;color:var(--muted);margin-bottom:1rem">Periodo: ${new Date(turno.inicio).toLocaleString('es-MX')} → ${new Date(fin).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeModal('modal-turno-resumen')">Cerrar</button>
@@ -4171,7 +4023,7 @@ function printTurnoResumen(d) {
   .meta{font-size:9pt;color:#555;margin-bottom:.3cm}.firma{margin-top:2cm;display:flex;justify-content:space-between}.firma-line{border-top:1px solid #333;padding-top:.2cm;font-size:9pt;color:#555;text-align:center;width:44%}
   </style></head><body>
   <h1>Resumen de Turno</h1><h2>Dirección de Tránsito y Movilidad Municipal</h2>
-  <div class="meta">Oficial: <strong>${d.oficial}</strong></div>
+  <div class="meta">Oficial: <strong>${esc(d.oficial)}</strong></div>
   <div class="meta">Inicio: ${new Date(d.inicio).toLocaleString('es-MX')} &nbsp;|&nbsp; Fin: ${new Date(d.fin).toLocaleString('es-MX')}</div>
   <div class="meta" style="margin-bottom:.8cm">Duración: <strong>${d.durHrs}h ${d.durM}m</strong></div>
   <div class="grid">
@@ -4239,7 +4091,7 @@ async function printCredencial(userId) {
   let qrDataUrl='';
   try{qrDataUrl=new QRious({value:qrVal,size:180,padding:8,backgroundAlpha:1}).toDataURL();}catch(e){}
 
-  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Credencial — ${data.nombre}</title>
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Credencial — ${esc(data.nombre)}</title>
   <style>*{margin:0;padding:0;box-sizing:border-box}@page{size:85.6mm 53.98mm;margin:0}
   body{width:85.6mm;height:53.98mm;font-family:Arial,sans-serif;background:#fff;overflow:hidden}
   .card{width:100%;height:100%;display:flex;flex-direction:column;border:1.5px solid #1A7A82}
@@ -4255,17 +4107,17 @@ async function printCredencial(userId) {
   </style></head><body>
   <div class="card">
     <div class="card-top">
-      <div class="avatar">${iniciales}</div>
+      <div class="avatar">${esc(iniciales)}</div>
       <div class="card-info">
-        <div class="card-name">${data.nombre}</div>
-        <div class="card-role">${rolLabel[data.rol]||data.rol}</div>
+        <div class="card-name">${esc(data.nombre)}</div>
+        <div class="card-role">${esc(rolLabel[data.rol]||data.rol)}</div>
       </div>
       <div class="card-logo">HCE</div>
     </div>
     <div class="card-body">
       <div class="card-fields">
-        <div class="field"><div class="field-label">Usuario</div><div class="field-val">${data.usuario}</div></div>
-        <div class="field"><div class="field-label">Rol</div><div class="field-val">${rolLabel[data.rol]||data.rol}</div></div>
+        <div class="field"><div class="field-label">Usuario</div><div class="field-val">${esc(data.usuario)}</div></div>
+        <div class="field"><div class="field-label">Rol</div><div class="field-val">${esc(rolLabel[data.rol]||data.rol)}</div></div>
         <div class="field"><div class="field-label">Estado</div><div class="field-val" style="color:${data.activo?'#059669':'#DC2626'}">${data.activo?'Activo':'Inactivo'}</div></div>
       </div>
       ${qrDataUrl?`<div class="card-qr"><img src="${qrDataUrl}"/></div>`:''}
@@ -4276,29 +4128,13 @@ async function printCredencial(userId) {
   const w=window.open('','_blank','width=420,height=320');w.document.write(html);w.document.close();w.onload=()=>{w.focus();w.print();};
 }
 
-// ── initData (seed configuracion if empty) ────────────────
+// ── initData: crea la fila de configuración si no existe ──
+// Ya no inserta datos de demostración: en producción una tabla vacía es
+// legítima y no debe llenarse con infracciones ficticias.
 async function initData() {
   const { count: cfgCount } = await _sb.from('configuracion').select('*',{count:'exact',head:true});
   if (!cfgCount) {
     await _sb.from('configuracion').insert({ ...SEED_CONFIG, id:1 });
-  }
-  const { count: infCount } = await _sb.from('infracciones').select('*',{count:'exact',head:true});
-  if (!infCount) {
-    await _sb.from('infracciones').insert(SEED_INFRACCIONES);
-    await _sb.from('permisos').insert(SEED_PERMISOS);
-    await _sb.from('actividad').insert(SEED_ACTIVIDAD);
-  }
-  const { count: vehCount } = await _sb.from('vehiculos').select('*',{count:'exact',head:true});
-  if (!vehCount) {
-    await _sb.from('vehiculos').insert(SEED_VEHICULOS);
-  }
-  const { count: gruaCount } = await _sb.from('grua').select('*',{count:'exact',head:true});
-  if (!gruaCount) {
-    await _sb.from('grua').insert(SEED_GRUA);
-  }
-  const { count: accCount } = await _sb.from('accidentes').select('*',{count:'exact',head:true});
-  if (!accCount) {
-    await _sb.from('accidentes').insert(SEED_ACCIDENTES);
   }
 }
 
