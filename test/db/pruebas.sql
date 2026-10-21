@@ -253,13 +253,9 @@ end $$;
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
 set role authenticated;
 do $$ declare v_id bigint; begin
-  -- Celular (art. 160 fr. I): grave, 16 UMA y 30 con agravante
-  begin
-    insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 800, 1133);
-    raise exception 'monto fuera del tabulador';
-  exception when others then if sqlerrm = 'monto fuera del tabulador' then raise; end if;
-  end;
-  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 1876, 1133) returning id into v_id;
+  -- Celular (art. 160 fr. I): grave, 16 UMA y 30 con agravante; el monto lo fija el servidor
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('VER-001', 'X', 'Uso de celular al conducir', 800, 1133) returning id into v_id;
+  assert (select monto from infracciones where id = v_id) = 1876, 'UMA base sin agravantes';
   assert (select fundamento from infracciones where id = v_id) like 'Artículo 160 fracción I, del Reglamento%', 'fundamento guardado';
   assert (registrar_pago(v_id, true, 'efectivo')).descuento_pct = 75, '75% dentro de 5 días';
 
@@ -280,7 +276,7 @@ do $$ declare v_id bigint; begin
     raise exception 'descuento en ebriedad';
   exception when others then if sqlerrm = 'descuento en ebriedad' then raise; end if;
   end;
-  assert (registrar_pago(v_id, false, 'efectivo')).monto_final = 9385, 'ebriedad se cobra íntegra';
+  assert (registrar_pago(v_id, false, 'efectivo')).monto_final = 9384, 'ebriedad se cobra íntegra';
 
   -- Amonestación verbal: sin multa
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero)
@@ -334,6 +330,43 @@ do $$ begin
   assert reporte_mensual(null) is not null, 'envío automático con la llave de servicio';
 end $$;
 select set_config('request.jwt.claim.role', '', false);
+
+-- ── Boleta: arts. 327 y 331 (boleta.sql) ────────────────────────────
+update usuarios set numero_placa = 'PV-7', adscripcion = 'Delegación Misantla' where usuario = 'ofi';
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+do $$ declare v_id bigint; v_id2 bigint; begin
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, oficial, circunstancias, boleta,
+                            infractor_domicilio, infractor_correo, licencia_tipo)
+  values ('BOL-001', 'X', 'Conducir sin licencia', 1, 1216, 'Oficial', '["agr_g","ate_d"]', 'GRUPO-A', 'Calle 1', 'x@x.mx', 'Automovilista')
+  returning id into v_id;
+  assert (select monto from infracciones where id = v_id) = 3519, 'con agravante: 30 UMA';
+  assert (select oficial_placa || '|' || oficial_adscripcion from infracciones where id = v_id) = 'PV-7|Delegación Misantla', 'placa y adscripción del policía vial';
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, boleta)
+  values ('BOL-001', 'X', 'Uso de celular al conducir', 1, 1133, 'GRUPO-A') returning id into v_id2;
+  assert (select count(*) from infracciones where boleta = 'GRUPO-A') = 2, 'varias infracciones en una boleta';
+  begin
+    update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
+    raise exception 'se pudieron cambiar las circunstancias';
+  exception when insufficient_privilege then null;   -- inmutable.sql
+  end;
+  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('BOL-002', 'X', 'Uso de celular al conducir', 1, 1133) returning id into v_id;
+  assert (select boleta = folio from infracciones where id = v_id), 'sin grupo, la boleta es el folio';
+  begin
+    insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, circunstancias) values ('BOL-003', 'X', 'Otro', 1, 1133, '["agr_z"]');
+    raise exception 'circunstancia inventada aceptada';
+  exception when others then if sqlerrm = 'circunstancia inventada aceptada' then raise; end if;
+  end;
+  assert (select count(*) from circunstancias_331) = 14, 'circunstancias del art. 331';
+end $$;
+reset role;
+-- El recálculo por circunstancias sigue funcionando (mantenimiento con el dueño de la base)
+do $$ declare v_id2 bigint := (select id from infracciones where boleta = 'GRUPO-A' and catalogo_numero = 1133); begin
+  update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
+  assert (select monto from infracciones where id = v_id2) = 3519, 'agravante agregada recalcula el monto';
+  update infracciones set circunstancias = '[]' where id = v_id2;
+  assert (select monto from infracciones where id = v_id2) = 1876, 'sin agravantes vuelve a la UMA base';
+end $$;
 
 -- ── Infracciones inmutables (inmutable.sql) ──────────────────────────
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);

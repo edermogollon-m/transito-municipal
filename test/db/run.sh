@@ -9,5 +9,5 @@ $P -f schema.sql
 $P -f test/db/datos_previos.sql
 $P -f security_auth.sql
 $P -f security_auth.sql
-for f in auditoria.sql evidencias_storage.sql verificacion.sql cobros.sql articulos.sql veracruz.sql reporte_mensual.sql inmutable.sql; do $P -f $f; $P -f $f; done
+for f in auditoria.sql evidencias_storage.sql verificacion.sql cobros.sql articulos.sql veracruz.sql reporte_mensual.sql boleta.sql inmutable.sql; do $P -f $f; $P -f $f; done
 $P -f test/db/pruebas.sql

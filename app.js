@@ -8,7 +8,7 @@ const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
 const _sbToken = localStorage.getItem(`sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`);
 if (!_session || !_sbToken) { localStorage.removeItem('tm_session'); window.location.replace('/login'); }
 // Columnas visibles de usuarios (las contraseñas viven en Supabase Auth)
-const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at';
+const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at,numero_placa,adscripcion';
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
 // ── Config cache (populated on first autoFillMonto call) ──
@@ -664,6 +664,11 @@ async function submitInfraccion(e) {
     estado:         $('inf-est').value,
     obs:            $('inf-obs').value.trim(),
     telefono:       ($('inf-telefono')||{}).value?.trim() || '',
+    infractor_domicilio: ($('inf-domicilio')||{}).value?.trim() || '',
+    infractor_correo:    ($('inf-correo')||{}).value?.trim() || '',
+    infractor_ausente:   !!($('inf-ausente')||{}).checked,
+    licencia_tipo:       ($('inf-licencia-tipo')||{}).value?.trim() || '',
+    circunstancias:      circunstanciasSeleccionadas(),
     lat:            window._infLat || null,
     lng:            window._infLng || null,
     fotos:          fotosArr.length ? JSON.stringify(fotosArr) : (id ? undefined : '[]')
@@ -681,11 +686,27 @@ async function submitInfraccion(e) {
   if (!payload.catalogo_numero) delete payload.catalogo_numero;
   if (cat && payload.tipo === 'Otro') payload.tipo = cat.descripcion;
 
+  // Motivación (art. 327 fr. II inciso b): domicilio, o constancia de que no se proporcionó
+  if (!id && !payload.infractor_domicilio && !payload.infractor_ausente) {
+    if (!confirm('Falta el domicilio del infractor.\n\n¿Hacer constar que no se encontraba presente o no lo proporcionó (art. 327)?')) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+      $('inf-domicilio')?.focus();
+      return;
+    }
+    payload.infractor_ausente = true;
+    if ($('inf-ausente')) $('inf-ausente').checked = true;
+  }
+  if (!id) payload.boleta = _boletaGrupo || (_boletaGrupo = crypto.randomUUID());
+  const continuar = { datos: datosBoletaActual(), circunstancias: [], lat: window._infLat, lng: window._infLng };
+
   if (sinSenal) {
     await encolarBoleta(payload, fotosPendientes);
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
     closeModal('modal-infraccion');
     showToast('Sin señal: la boleta quedó guardada en este dispositivo y se subirá sola');
+    if (confirm('¿Registrar otra infracción del mismo conductor en esta boleta?')) {
+      _boletaGrupo = payload.boleta; continuar.n = await contarBoleta(payload.boleta); openNewInfraccion(continuar);
+    }
     return;
   }
 
@@ -698,8 +719,8 @@ async function submitInfraccion(e) {
     // Si el cache está vacío o puede ser de otra placa, consultar de nuevo
     if (!adeudos.length) {
       const { data: adData } = await _sb.from('infracciones')
-        .select('folio,monto,tipo').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
-      adeudos = adData || [];
+        .select('folio,monto,tipo,boleta').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
+      adeudos = (adData || []).filter(r => !(_boletaGrupo && r.boleta === _boletaGrupo));
       montoAdeudos = adeudos.reduce((a,r)=>a+Number(r.monto),0);
     }
 
@@ -744,12 +765,31 @@ async function submitInfraccion(e) {
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
+    if (confirm(`Infracción ${data.folio} registrada.\n\n¿Registrar otra infracción del mismo conductor en esta boleta? (art. 327)`)) {
+      continuar.n = await contarBoleta(data.boleta);
+      openNewInfraccion(continuar);
+      renderInfracciones(); renderDashboard();
+      return;
+    }
+    _boletaGrupo = null;
     printTicket80(data.id);
     if (payload.telefono) notificarWhatsApp(data);
   }
 
   renderInfracciones();
   renderDashboard();
+}
+
+async function contarBoleta(boleta) {
+  try { const { count } = await _sb.from('infracciones').select('id', { count: 'exact', head: true }).eq('boleta', boleta); return count || 1; }
+  catch (_) { return 1; }
+}
+
+// Infracciones de la misma boleta, con la de mayor cuantía primero
+async function infraccionesDeBoleta(r) {
+  if (!r.boleta) return [r];
+  const { data } = await _sb.from('infracciones').select('id,folio,tipo,fundamento,monto,circunstancias,catalogo_numero').eq('boleta', r.boleta).order('monto', { ascending: false });
+  return data && data.length ? data : [r];
 }
 
 // ── Boletas sin señal ─────────────────────────────────────
@@ -911,7 +951,8 @@ function etiquetaCatalogo(c) { return `${citaCorta(c)} — ${c.descripcion} [#${
 function rangoMonto(c, cfg) {
   const uma = Number(cfg?.valor_uma) || 0;
   if (c.cuotas_min == null) return { min: 0, max: 0, uma, sinMulta: true };   // amonestación / arresto
-  return uma ? { min: Math.floor(c.cuotas_min * uma), max: Math.ceil(c.cuotas_max * uma), uma } : null;
+  // Igual que el servidor (aplicar_fundamento): UMA × cuotas, redondeado hacia abajo
+  return uma ? { min: Math.floor(c.cuotas_min * uma), max: Math.floor(c.cuotas_max * uma), uma } : null;
 }
 // Texto de los artículos del reglamento citados (se cargan al abrirlos)
 const _articulos = {};
@@ -947,6 +988,65 @@ function tarjetaFundamento(c, cfg) {
   </div>`;
 }
 
+// ── Circunstancias agravantes y atenuantes (art. 331) ──────
+// La lista es la del Reglamento (también en la tabla circunstancias_331, que
+// valida el servidor). Con al menos una agravante se cobra la UMA "con
+// agravante" del tabulador; sin agravantes, la UMA base.
+const CIRCUNSTANCIAS_331 = [
+  ['agr_a','agravante','II','a','Cometer la infracción en estado de ebriedad o de intoxicación por sustancias estupefacientes o psicotrópicas'],
+  ['agr_b','agravante','II','b','Abandonar a las víctimas del accidente o no procurarles la ayuda requerida, pudiendo hacerlo'],
+  ['agr_c','agravante','II','c','Evadir la acción de la justicia por fuga u ocultamiento'],
+  ['agr_d','agravante','II','d','Borrar, alterar u ocultar señales, huellas, indicios o vestigios de la infracción, u obstaculizar las investigaciones'],
+  ['agr_e','agravante','II','e','Tener infracciones anteriores sin haber sido pagadas'],
+  ['agr_f','agravante','II','f','Conducir sin licencia, con licencia vencida o que no corresponda al vehículo, o con la licencia suspendida'],
+  ['agr_g','agravante','II','g','La reincidencia'],
+  ['agr_h','agravante','II','h','No cumplir con las obligaciones y requisitos señalados en la Ley y el Reglamento'],
+  ['agr_i','agravante','II','i','Que la infracción ocasione o pueda ocasionar lesiones o daños, o ponga en peligro a las personas o a su patrimonio'],
+  ['ate_a','atenuante','I','a','El auxilio y ayuda inmediata a las víctimas de un accidente'],
+  ['ate_b','atenuante','I','b','Oportuna y espontánea reparación de daños y perjuicios ocasionados'],
+  ['ate_c','atenuante','I','c','Avisar a la autoridad más cercana'],
+  ['ate_d','atenuante','I','d','Respeto a autoridades y policías viales'],
+  ['ate_e','atenuante','I','e','Acatamiento a las órdenes y disposiciones de las autoridades']
+].map(([codigo, tipo, fraccion, inciso, descripcion]) => ({ codigo, tipo, fraccion, inciso, descripcion }));
+
+function renderCircunstancias(seleccion) {
+  const box = $('inf-circunstancias'); if (!box) return;
+  const sel = new Set(seleccion || []);
+  const grupo = (tipo, titulo) => `<div style="font-weight:700;margin:.3rem 0 .15rem;color:${tipo==='agravante'?'var(--red)':'var(--green)'}">${titulo}</div>` +
+    CIRCUNSTANCIAS_331.filter(x => x.tipo === tipo).map(x => `<label style="display:flex;gap:.4rem;align-items:flex-start;cursor:pointer;margin:.1rem 0">
+      <input type="checkbox" class="inf-circ" value="${x.codigo}" ${sel.has(x.codigo)?'checked':''} onchange="this.dataset.tocado='1';recalcularMonto()"/>
+      <span>${esc(x.descripcion)} <span style="color:var(--muted)">(fr. ${x.fraccion}, inc. ${x.inciso})</span><span class="circ-nota" data-c="${x.codigo}" style="color:var(--amber);font-weight:600"></span></span></label>`).join('');
+  box.innerHTML = grupo('agravante', 'Agravantes (fr. II)') + grupo('atenuante', 'Atenuantes (fr. I)');
+  recalcularMonto(false);
+}
+function circunstanciasSeleccionadas() { return [...document.querySelectorAll('.inf-circ:checked')].map(x => x.value); }
+function textoCircunstancia(codigo) {
+  const x = CIRCUNSTANCIAS_331.find(c => c.codigo === codigo);
+  return x ? `${x.descripcion} (art. 331, fr. ${x.fraccion}, inc. ${x.inciso})` : codigo;
+}
+
+// Monto del tabulador: UMA base, o UMA con agravante si hay alguna agravante
+function recalcularMonto(fijar = true) {
+  const sel = circunstanciasSeleccionadas();
+  const agr = sel.some(c => c.startsWith('agr_'));
+  const res = $('inf-circ-resumen');
+  if (res) res.textContent = sel.length ? `— ${sel.filter(c=>c.startsWith('agr_')).length} agravante(s), ${sel.filter(c=>c.startsWith('ate_')).length} atenuante(s)` : '';
+  const c = catalogoPorNumero(($('inf-catalogo')||{}).value);
+  const r = c && rangoMonto(c, _cachedConfig);
+  if (fijar && r && $('inf-monto')) $('inf-monto').value = r.sinMulta ? 0 : (agr ? r.max : r.min);
+  updateInfSummary();
+}
+
+// Sugerir la agravante del inciso e) cuando la placa tiene multas sin pagar
+function sugerirAgravanteAdeudos() {
+  if ($('inf-id')?.value) return;
+  const cb = document.querySelector('.inf-circ[value="agr_e"]');
+  const nota = document.querySelector('.circ-nota[data-c="agr_e"]');
+  const n = (window._placaAdeudos || []).length;
+  if (nota) nota.textContent = n ? ` — sugerida: ${n} infracción(es) sin pagar` : '';
+  if (cb && !cb.dataset.tocado) { cb.checked = n > 0; recalcularMonto(); }
+}
+
 async function prepararCatalogoForm() {
   const cat = await cargarCatalogo();
   const dl = $('inf-catalogo-lista');
@@ -961,7 +1061,7 @@ function seleccionarCatalogo(numero, fijarMonto) {
   const box = $('inf-fundamento');
   if (box) box.innerHTML = c ? tarjetaFundamento(c, _cachedConfig) : '<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Busca la infracción en el reglamento para citar el artículo.</div>';
   const r = c && rangoMonto(c, _cachedConfig);
-  if (c && fijarMonto && r && $('inf-monto')) $('inf-monto').value = r.min;
+  if (c && fijarMonto && r && $('inf-monto')) $('inf-monto').value = r.sinMulta ? 0 : (circunstanciasSeleccionadas().some(x => x.startsWith('agr_')) ? r.max : r.min);
   if ($('inf-monto')) {
     $('inf-monto').min = r ? r.min : 1; $('inf-monto').max = r && !r.sinMulta ? r.max : '';
     $('inf-monto').readOnly = !!r?.sinMulta; $('inf-monto').required = !r?.sinMulta;
@@ -1002,8 +1102,15 @@ async function loadTiposInfraccion(currentVal) {
   el.innerHTML = all.map(t => `<option value="${esc(t)}"${t === prev ? ' selected' : ''}>${esc(t)}</option>`).join('');
 }
 
-async function openNewInfraccion() {
-  $('modal-inf-title').textContent = 'Nueva infracción';
+// Varias infracciones del mismo conductor van en una sola boleta (art. 327,
+// último párrafo). _boletaGrupo identifica la boleta; se genera en el teléfono
+// para que también funcione sin señal.
+let _boletaGrupo = null;
+
+async function openNewInfraccion(continuar) {
+  const previos = continuar ? continuar.datos : null;
+  if (!continuar) _boletaGrupo = null;
+  $('modal-inf-title').textContent = continuar ? `Otra infracción en la misma boleta (${continuar.n + 1})` : 'Nueva infracción';
   $('inf-form').reset();
   $('inf-id').value = '';
   $('inf-fecha').value = new Date().toISOString().slice(0,16);
@@ -1024,12 +1131,27 @@ async function openNewInfraccion() {
   if ($('inf-oficial')) {
     $('inf-oficial').dataset.preload = _session?.name || '';
   }
+  if (previos) {
+    // Misma boleta: se conservan los datos del conductor, vehículo y lugar
+    Object.entries(previos).forEach(([k, v]) => { const el = $(k); if (!el) return; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; });
+    if ($('inf-oficial')) $('inf-oficial').dataset.preload = previos['inf-oficial'] || '';
+    window._infLat = continuar.lat; window._infLng = continuar.lng;
+  }
   loadOficiales(['inf-oficial']);
   openModal('modal-infraccion');
   if ($('inf-catalogo')) $('inf-catalogo').value = '';
+  renderCircunstancias(previos ? continuar.circunstancias : []);
   await loadTiposInfraccion();
   await prepararCatalogoForm();
   autoFillMonto();
+  if (previos?.["inf-placa"]) checkPlacaHistory();
+}
+
+const CAMPOS_BOLETA = ['inf-fecha','inf-placa','inf-vehiculo','inf-color','inf-infractor','inf-licencia','inf-licencia-tipo','inf-correo','inf-domicilio','inf-ausente','inf-telefono','inf-ubicacion','inf-oficial'];
+function datosBoletaActual() {
+  const d = {};
+  CAMPOS_BOLETA.forEach(k => { const el = $(k); if (el) d[k] = el.type === 'checkbox' ? el.checked : el.value; });
+  return d;
 }
 
 async function editInfraccion(id) {
@@ -1045,6 +1167,11 @@ async function editInfraccion(id) {
   $('inf-placa').value    = data.placa;
   $('inf-infractor').value= data.infractor;
   $('inf-licencia').value = data.licencia||'';
+  if ($('inf-licencia-tipo')) $('inf-licencia-tipo').value = data.licencia_tipo||'';
+  if ($('inf-domicilio')) $('inf-domicilio').value = data.infractor_domicilio||'';
+  if ($('inf-correo')) $('inf-correo').value = data.infractor_correo||'';
+  if ($('inf-ausente')) $('inf-ausente').checked = !!data.infractor_ausente;
+  renderCircunstancias(data.circunstancias || []);
   $('inf-vehiculo').value = data.vehiculo||'';
   $('inf-color').value    = data.color_vehiculo||'';
   if ($('inf-oficial')) $('inf-oficial').dataset.preload = data.oficial||'';
@@ -1100,20 +1227,6 @@ async function autoFillMonto() {
   const c = cat.find(x => x.tipo_rapido === tipo);
   if (c) { seleccionarCatalogo(c.numero, true); return; }
   if (tipo === 'Otro') { seleccionarCatalogo(null); $('inf-catalogo-buscar')?.focus(); return; }
-  if (_cachedConfig && _cachedConfig.montos) {
-    const map = {
-      'Exceso de velocidad':'velocidad',
-      'Estacionamiento prohibido':'estacionamiento',
-      'No respetar señal de alto':'alto',
-      'Conducir sin licencia':'sinlicencia',
-      'Uso de celular al conducir':'celular',
-      'Circular en sentido contrario':'contrario',
-      'Girar en U prohibido':'uprohibido',
-      'No portar documentos':'documentos'
-    };
-    const key = map[tipo];
-    if (key && _cachedConfig.montos[key]) $('inf-monto').value = _cachedConfig.montos[key];
-  }
   updateInfSummary();
 }
 
@@ -1358,12 +1471,13 @@ async function viewDetail(tabla, id) {
       <!-- Infractor -->
       <div class="detail-field full">${secLabel('<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>','Infractor')}</div>
       <div class="detail-field full"><label>Nombre</label><span style="font-weight:600;font-size:.88rem">${esc(r.infractor)}</span></div>
-      <div class="detail-field"><label>Núm. licencia</label><span>${esc(r.licencia||'—')}</span></div>
+      <div class="detail-field"><label>Licencia o permiso</label><span>${esc(r.licencia||'—')}${r.licencia_tipo ? ' · ' + esc(r.licencia_tipo) : ''}</span></div>
+      <div class="detail-field full"><label>Domicilio y correo</label><span>${r.infractor_ausente && !r.infractor_domicilio ? '<em>No se encontraba presente o no los proporcionó</em>' : `${esc(r.infractor_domicilio||'—')}${r.infractor_correo ? ' · ' + esc(r.infractor_correo) : ''}`}</span></div>
       <div class="detail-field"><label>Teléfono</label><span>${r.telefono?`<a href="https://wa.me/52${r.telefono.replace(/\D/g,'')}" target="_blank" rel="noopener" style="color:#128C7E;text-decoration:none;display:inline-flex;align-items:center;gap:.3rem"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>${esc(r.telefono)}</a>`:'—'}</span></div>
 
       <!-- Infracción -->
       <div class="detail-field full">${secLabel('<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>','Datos de la infracción')}</div>
-      <div class="detail-field"><label>Oficial</label><span>${esc(r.oficial||'—')}</span></div>
+      <div class="detail-field"><label>Oficial</label><span>${esc(r.oficial||'—')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}${r.oficial_adscripcion ? ' · ' + esc(r.oficial_adscripcion) : ''}</span></div>
       <div class="detail-field"><label>Estado actual</label><span>${estadoBadge(r.estado)}</span></div>
       <div class="detail-field full"><label>Ubicación</label>
         <span>${esc(r.ubicacion||'—')}${r.lat?` <a href="https://maps.google.com/?q=${r.lat},${r.lng}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:.25rem;color:var(--ac);font-size:.75rem;margin-left:.5rem;font-weight:600;text-decoration:none"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>Ver en mapa</a>`:''}</span>
@@ -1373,6 +1487,9 @@ async function viewDetail(tabla, id) {
       ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img data-foto="${esc(f)}" alt="Foto de evidencia" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:var(--stone);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" />`).join('')}</div></div>`:''}
     </div>
     ${fundamentoDetalle(r)}
+    ${(r.circunstancias||[]).length ? `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Circunstancias (art. 331)</div>
+      <ul style="margin:0;padding-left:1.1rem;font-size:.8rem">${r.circunstancias.map(c => `<li>${esc(textoCircunstancia(c))}</li>`).join('')}</ul></div>` : ''}
+    <div id="detail-boleta"></div>
     <div id="detail-historial"></div>
 
     <!-- Cambiar estado -->
@@ -1492,6 +1609,11 @@ async function viewDetail(tabla, id) {
   openModal('modal-detail');
   hidratarFotos($('modal-detail'));
   if (isInf) cargarHistorial('infracciones', r.id, $('detail-historial'));
+  if (isInf && r.boleta) infraccionesDeBoleta(r).then(lista => {
+    const box = $('detail-boleta'); if (!box || lista.length < 2) return;
+    box.innerHTML = `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Infracciones de esta boleta (art. 327)</div>
+      ${lista.map((x, i) => `<div style="font-size:.8rem;display:flex;justify-content:space-between;gap:.5rem;padding:.15rem 0;${x.id===r.id?'font-weight:700':''}"><span>${esc(x.folio||'—')} · ${esc(x.tipo)}${i===0?' <span class="badge-yellow">Mayor cuantía</span>':''}</span><span>${fmt(x.monto)}</span></div>`).join('')}</div>`;
+  });
 }
 
 async function saveDetailEstado(tabla, id) {
@@ -1533,10 +1655,6 @@ async function loadConfig() {
   if($('cfg-director'))  $('cfg-director').value  = data.director||'';
   if($('cfg-correo'))    $('cfg-correo').value     = data.correo||'';
   if($('cfg-correo-reporte')) $('cfg-correo-reporte').value = data.correo_reporte||'';
-  const m = data.montos || {};
-  ['velocidad','estacionamiento','alto','sinlicencia','celular','contrario','uprohibido','documentos'].forEach(k=>{
-    if($('cfg-m-'+k)) $('cfg-m-'+k).value = m[k]||'';
-  });
   if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
   if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
   if($('cfg-dias-limite'))    $('cfg-dias-limite').value    = data.dias_limite    ?? 30;
@@ -1545,6 +1663,7 @@ async function loadConfig() {
   if($('cfg-valor-uma'))      $('cfg-valor-uma').value      = data.valor_uma      ?? '';
   if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
   if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
+  if($('cfg-recurso'))        $('cfg-recurso').value        = data.leyenda_recurso || '';
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
@@ -1552,10 +1671,6 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  const montos = {};
-  ['velocidad','estacionamiento','alto','sinlicencia','celular','contrario','uprohibido','documentos'].forEach(k=>{
-    montos[k] = parseInt(($('cfg-m-'+k)||{}).value)||0;
-  });
   const tiposRaw = ($('cfg-tipos-extra')||{}).value||'';
   const tiposExtra = tiposRaw.split('\n').map(s=>s.trim()).filter(Boolean);
   const payload = {
@@ -1564,7 +1679,6 @@ async function saveConfig() {
     estado:    ($('cfg-estado')||{}).value||'',
     director:  ($('cfg-director')||{}).value||'',
     correo:    ($('cfg-correo')||{}).value||'',
-    montos,
     descuento_pct:  parseInt(($('cfg-descuento-pct')||{}).value)||20,
     dias_descuento: parseInt(($('cfg-dias-descuento')||{}).value)||15,
     dias_limite:    parseInt(($('cfg-dias-limite')||{}).value)||30,
@@ -1573,6 +1687,7 @@ async function saveConfig() {
     valor_uma:      parseFloat(($('cfg-valor-uma')||{}).value) || null,
     reglamento:     ($('cfg-reglamento')||{}).value?.trim() || null,
     fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
+    leyenda_recurso:    ($('cfg-recurso')||{}).value?.trim() || null,
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
@@ -1618,6 +1733,18 @@ function plazosPago(r, cfg, fmtFecha) {
   return { tramos, dLim, limFecha: new Date(t + dLim*86400000).toLocaleDateString('es-MX', fmtFecha) };
 }
 
+// Motivación del monto (art. 331) y relación de infracciones de la boleta (art. 327)
+function htmlCircunstancias(r) {
+  const c = r.circunstancias || [];
+  if (!c.length) return 'Sin circunstancias agravantes ni atenuantes; se aplica la UMA base del tabulador (art. 333).';
+  const agr = c.some(x => x.startsWith('agr_'));
+  return c.map(x => esc(textoCircunstancia(x))).join('; ') + (agr ? '. Por existir agravante se aplica la UMA con agravante del tabulador (arts. 331 y 333).' : '.');
+}
+function htmlDatosInfractor(r) {
+  if (r.infractor_ausente && !r.infractor_domicilio) return 'No se encontraba presente o no proporcionó domicilio ni correo electrónico (art. 327, fr. II, inciso b).';
+  return `${esc(r.infractor_domicilio || 'Domicilio no proporcionado')} · ${esc(r.infractor_correo || 'correo no proporcionado')}`;
+}
+
 async function printInfraccion(id) {
   const [{ data: r }, { data: cfg }] = await Promise.all([
     _sb.from('infracciones').select('*').eq('id', id).single(),
@@ -1639,6 +1766,7 @@ async function printInfraccion(id) {
   const catInf = catalogoPorNumero(r.catalogo_numero);
   const grave = !!catInf?.grave;
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
+  const lista = await infraccionesDeBoleta(r);
 
   const copyHTML = (label) => `
   <div class="copy">
@@ -1685,9 +1813,19 @@ async function printInfraccion(id) {
         <div class="sec-title">Datos del infractor</div>
         <div class="fields-grid">
           <div class="f" style="flex:2"><span class="fl">Nombre completo</span><span class="fv bold">${esc(r.infractor)}</span></div>
-          <div class="f"><span class="fl">Núm. de licencia</span><span class="fv mono">${esc(r.licencia||'—')}</span></div>
+          <div class="f"><span class="fl">Licencia o permiso</span><span class="fv mono">${esc(r.licencia||'—')}${r.licencia_tipo ? ' · ' + esc(r.licencia_tipo) : ''}</span></div>
+          <div class="f full"><span class="fl">Domicilio y correo electrónico</span><span class="fv">${htmlDatosInfractor(r)}</span></div>
         </div>
       </div>
+
+      <div class="section">
+        <div class="sec-title">Motivación — circunstancias (art. 331)</div>
+        <div class="pay-info">${htmlCircunstancias(r)}</div>
+      </div>
+      ${lista.length > 1 ? `<div class="section">
+        <div class="sec-title">Infracciones de esta boleta (art. 327)</div>
+        ${lista.map((x, i) => `<div class="pay-info" style="display:flex;justify-content:space-between;gap:3mm"><span><strong>${esc(x.folio||'—')}</strong> · ${esc(x.tipo)}${x.fundamento ? ' — ' + esc(x.fundamento) : ''}</span><span style="white-space:nowrap">${i===0?'<strong>Sanción de mayor cuantía:</strong> ':''}$${Number(x.monto).toLocaleString('es-MX')}</span></div>`).join('')}
+      </div>` : ''}
 
       <div class="amount-section">
         <div class="amount-label">MONTO DE LA INFRACCIÓN</div>
@@ -1722,7 +1860,7 @@ async function printInfraccion(id) {
       <div class="signatures">
         <div class="sig-box">
           <div class="sig-line"></div>
-          <div class="sig-label">Oficial que levanta${r.oficial ? ': '+esc(r.oficial) : ''}</div>
+          <div class="sig-label">Policía vial: ${esc(r.oficial||'—')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}${r.oficial_adscripcion ? ' · ' + esc(r.oficial_adscripcion) : ''}</div>
         </div>
         <div class="sig-box">
           <div class="sig-line"></div>
@@ -1733,7 +1871,7 @@ async function printInfraccion(id) {
       <div class="legal-note">
         La presente boleta se expide con fundamento en ${esc(cfg?.fundamento_general || 'la legislación de tránsito vigente')}${r.fundamento ? '; y en el ' + esc(r.fundamento.replace(/^Artículo/, 'artículo')) : ''}.
         El no pago dentro del plazo establecido generará la actualización y los accesorios que determinen las disposiciones fiscales.
-        Para impugnar esta infracción acuda a la Dirección de Tránsito dentro de los plazos que establece el Reglamento.
+        ${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación en los términos de la legislación aplicable.')}
       </div>
     </div>
   </div>`;
@@ -2225,7 +2363,7 @@ async function checkPlacaHistory() {
 
   // Consultar historial completo y padrón vehicular en paralelo
   const [{ data }, { data: veh }] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto').eq('placa', placa).order('fecha',{ascending:false}),
+    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,boleta').eq('placa', placa).order('fecha',{ascending:false}),
     _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').eq('placa', placa).maybeSingle()
   ]);
 
@@ -2243,11 +2381,13 @@ async function checkPlacaHistory() {
 
   const prevId  = $('inf-id')?.value;
   const prev    = (data||[]).filter(r => String(r.id) !== String(prevId));
-  const adeudos = prev.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
+  // Las infracciones de la boleta que se está levantando no son adeudos anteriores
+  const adeudos = prev.filter(r => (r.estado === 'pendiente' || r.estado === 'vencida') && !(_boletaGrupo && r.boleta === _boletaGrupo));
   const montoAdeudos = adeudos.reduce((a,r) => a + Number(r.monto), 0);
 
   // Guardar adeudos para consultarlos en submitInfraccion sin otra llamada a la BD
   window._placaAdeudos = adeudos;
+  sugerirAgravanteAdeudos();
   window._placaMontoAdeudos = montoAdeudos;
 
   let html = '';
@@ -2952,7 +3092,7 @@ async function renderUsuarios() {
 
 function openNewUsuario() {
   $('modal-usr-title').textContent = 'Nuevo usuario';
-  ['usr-id','usr-nombre','usr-usuario','usr-pass','usr-iniciales'].forEach(id=>{ if($(id)) $(id).value=''; });
+  ['usr-id','usr-nombre','usr-usuario','usr-pass','usr-iniciales','usr-placa','usr-adscripcion'].forEach(id=>{ if($(id)) $(id).value=''; });
   if ($('usr-rol')) $('usr-rol').value = 'oficial';
   if ($('usr-pass')) $('usr-pass').placeholder = 'Contraseña requerida';
   openModal('modal-usuario');
@@ -2968,6 +3108,8 @@ async function editUsuario(id) {
   $('usr-pass').value      = '';
   $('usr-iniciales').value = data.iniciales||'';
   $('usr-rol').value       = data.rol;
+  if ($('usr-placa')) $('usr-placa').value = data.numero_placa||'';
+  if ($('usr-adscripcion')) $('usr-adscripcion').value = data.adscripcion||'';
   if ($('usr-pass')) $('usr-pass').placeholder = 'Dejar vacío para no cambiar';
   openModal('modal-usuario');
 }
@@ -2982,11 +3124,17 @@ async function submitUsuario() {
   if (!nombre||!usuario) { alert('Nombre y usuario son requeridos'); return; }
   if (!id && !pass) { alert('La contraseña es requerida para nuevos usuarios'); return; }
   if (pass && pass.length < 6) { alert('La contraseña debe tener al menos 6 caracteres'); return; }
-  const { error } = await _sb.rpc('admin_guardar_usuario', {
+  const { data: usrId, error } = await _sb.rpc('admin_guardar_usuario', {
     p_id: id ? parseInt(id) : null, p_nombre: nombre, p_usuario: usuario,
     p_rol: rol, p_iniciales: iniciales, p_contrasena: pass || null
   });
   if (error) { alert('Error: '+error.message); return; }
+  // Datos del policía vial que se imprimen en la boleta (art. 327)
+  const { error: e2 } = await _sb.from('usuarios').update({
+    numero_placa: ($('usr-placa')||{}).value?.trim() || '',
+    adscripcion:  ($('usr-adscripcion')||{}).value?.trim() || ''
+  }).eq('id', usrId || id);
+  if (e2) { alert('Usuario guardado, pero no la placa/adscripción: '+e2.message); }
   closeModal('modal-usuario');
   renderUsuarios();
   showToast('Usuario '+(id?'actualizado':'creado')+' correctamente');
@@ -3023,7 +3171,8 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7.5pt">INFRACTOR:</div>
     <div>${esc(r.infractor)}</div>
-    <div class="t-row t-small"><span>LIC:</span><span>${esc(r.licencia||'N/A')}</span></div>
+    <div class="t-row t-small"><span>LIC:</span><span>${esc(r.licencia||'N/A')}${r.licencia_tipo ? ' ' + esc(r.licencia_tipo) : ''}</span></div>
+    <div class="t-small" style="word-break:break-word">${htmlDatosInfractor(r)}</div>
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7.5pt">VEHÍCULO:</div>
     <div class="t-row"><span>PLACA:</span><span class="t-bold">${esc(r.placa)}</span></div>
@@ -3034,6 +3183,10 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div>${esc(r.tipo)}</div>
     ${r.fundamento ? `<div class="t-small" style="margin-top:.5mm">Fundamento: ${esc(r.fundamento)}</div>` : ''}
     ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${esc(r.ubicacion)}</div>`:''}
+    <div class="t-small" style="margin-top:.5mm">Circunstancias (art. 331): ${htmlCircunstancias(r)}</div>
+    ${(r._lista||[]).length > 1 ? `<div class="t-div"></div>
+    <div class="t-bold" style="font-size:7pt">INFRACCIONES DE ESTA BOLETA (ART. 327):</div>
+    ${r._lista.map((x, i) => `<div class="t-row t-small"><span>${esc(x.folio||'—')}${i===0?' (mayor cuantía)':''}</span><span>$${Number(x.monto).toLocaleString('es-MX')}</span></div>`).join('')}` : ''}
     <div class="t-solid"></div>
     <div class="t-center t-bold" style="font-size:7.5pt">MONTO A PAGAR</div>
     <div class="t-amount">
@@ -3059,13 +3212,13 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
     <div class="t-sig"></div>
-    <div class="t-small">${esc(r.oficial||'Agente de Tránsito')}</div>
+    <div class="t-small">${esc(r.oficial||'Agente de Tránsito')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}</div>
+    ${r.oficial_adscripcion ? `<div class="t-small">${esc(r.oficial_adscripcion)}</div>` : ''}
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
     <div class="t-sig"></div>
     <div class="t-div"></div>
-    <div class="t-center t-small">El no pago genera recargos del 2%</div>
-    <div class="t-center t-small">mensual e inmovilización del vehículo.</div>
+    <div class="t-small" style="text-align:justify">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
     <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
   </div>`;
 }
@@ -3085,6 +3238,7 @@ async function printTicket80(id) {
 
   await cargarCatalogo();
   r._grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
+  r._lista = await infraccionesDeBoleta(r);
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
@@ -3553,7 +3707,7 @@ function _waFromBtn(btn) {
 // ══════════════════════════════════════════════════════════
 const BIT_MODULOS = { infracciones:'Infracciones', pagos:'Pagos', permisos:'Permisos', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', usuarios:'Usuarios', configuracion:'Configuración', turnos:'Turnos' };
 const BIT_ACCIONES = { alta:['Alta','badge-green'], cambio:['Cambio','badge-blue'], baja:['Baja','badge-red'] };
-const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte' };
+const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte', infractor_domicilio:'Domicilio del infractor', infractor_correo:'Correo del infractor', infractor_ausente:'Infractor ausente', licencia_tipo:'Tipo de licencia', circunstancias:'Circunstancias (art. 331)', numero_placa:'Placa del policía vial', adscripcion:'Adscripción', leyenda_recurso:'Medio de defensa' };
 let _bitDesde = 0;
 
 function _bitValor(v) {
