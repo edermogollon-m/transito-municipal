@@ -233,7 +233,7 @@
       <div class="paso-num">3</div>
       <div>
         <div class="paso-title">Paga y regulariza</div>
-        <div class="paso-txt">Si pagas dentro de los primeros 15 días obtienes <strong>20% de descuento</strong></div>
+        <div class="paso-txt">Si pagas dentro de los primeros <span id="p-dias-desc">15</span> días obtienes <strong><span id="p-desc-pct">20</span>% de descuento</strong></div>
       </div>
     </div>
   </div>
@@ -289,9 +289,10 @@ async function buscar() {
   if (pasos) pasos.style.display = 'none';
 
   // Búsqueda exacta por placa o folio (la BD no expone la tabla al público)
+  await _paramsListos;
   let data = null, error = null;
   try {
-    ({ data, error } = await _sb.rpc('consulta_publica', { p_q: q, p_historial: _mostrarHistorial }));
+    ({ data, error } = await _sb.rpc('consulta_ciudadana', { p_q: q, p_historial: _mostrarHistorial }));
   } catch (err) { error = err; }
   spinner.style.display = 'none';
 
@@ -374,13 +375,13 @@ function infCard(r) {
   const fechaObj  = new Date(r.fecha);
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const dias      = Math.floor((Date.now()-fechaObj.getTime())/86400000);
-  const diasDesc  = 15, diasLim = 30;
+  const { descuento_pct: descPct, dias_descuento: diasDesc, dias_limite: diasLim } = _params;
 
   // Descuento y límite
   const descFecha = new Date(fechaObj.getTime()+diasDesc*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long'});
   const limFecha  = new Date(fechaObj.getTime()+diasLim*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const descOk    = dias <= diasDesc;
-  const montoDesc = montoFmt(r.monto * 0.80);
+  const descOk    = dias <= diasDesc && !r.grave;   // las graves no tienen descuento (art. 192)
+  const montoDesc = montoFmt(Math.round(r.monto * (1 - descPct/100)));
 
   // Barra de progreso
   const esActiva = r.estado === 'pendiente' || r.estado === 'vencida';
@@ -447,7 +448,7 @@ function infCard(r) {
       </div>` : descOk ? `
       <div class="pay-discount">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
-        <div>Pago anticipado — obtén <strong>20% de descuento</strong> antes del ${descFecha}: paga solo <strong>${montoDesc}</strong></div>
+        <div>Pago anticipado — obtén <strong>${descPct}% de descuento</strong> antes del ${descFecha}: paga solo <strong>${montoDesc}</strong></div>
       </div>` : `
       <div class="pay-deadline">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -507,6 +508,7 @@ function infCard(r) {
       <div class="field"><label>Placa</label><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:.88rem">${esc(r.placa)}</span></div>
       <div class="field"><label>Infractor</label><span>${esc(r.infractor)}</span></div>
       ${r.ubicacion?`<div class="field full"><label>Lugar del hecho</label><span>${esc(r.ubicacion)}</span></div>`:''}
+      ${r.fundamento?`<div class="field full"><label>Fundamento legal</label><span>${esc(r.fundamento)}${r.grave?' — infracción grave, se paga sin descuento (art. 192)':''}</span></div>`:''}
     </div>
     ${paySection}
     ${actHTML}
@@ -544,6 +546,15 @@ function showToast(msg) {
 }
 
 // Auto-search from URL param
+// Descuento y plazos vigentes (Configuración del municipio)
+let _params = { descuento_pct: 20, dias_descuento: 15, dias_limite: 30 };
+const _paramsListos = _sb.rpc('parametros_pago').then(({ data }) => {
+  if (data && data[0]) _params = data[0];
+  const d = $('p-dias-desc'), p = $('p-desc-pct');
+  if (d) d.textContent = _params.dias_descuento;
+  if (p) p.textContent = _params.descuento_pct;
+}).catch(() => {});
+
 window.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   const q = params.get('q');

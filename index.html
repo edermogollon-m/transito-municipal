@@ -872,7 +872,7 @@
           <button class="btn btn-primary" onclick="saveConfig()">Actualizar montos</button>
         </div>
         <div class="card">
-          <div class="card-title" style="margin-bottom:1rem">Descuento de pronto pago</div>
+          <div class="card-title" style="margin-bottom:1rem">Descuento y plazo de pago</div>
           <div class="form-row">
             <div class="form-field">
               <label>Descuento (%)</label>
@@ -882,9 +882,32 @@
               <label>Días para aplicarlo</label>
               <input class="form-input" id="cfg-dias-descuento" type="number" min="1" placeholder="15"/>
             </div>
+            <div class="form-field">
+              <label>Días límite de pago</label>
+              <input class="form-input" id="cfg-dias-limite" type="number" min="1" placeholder="30"/>
+            </div>
           </div>
-          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">El descuento se aplica si el pago se realiza dentro de los N días posteriores a la infracción.</p>
-          <button class="btn btn-primary" onclick="saveConfig()">Guardar descuento</button>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">El descuento se aplica si el pago se realiza dentro de los N días posteriores a la infracción. Pasado el límite, la infracción se marca como vencida automáticamente cada noche. Estos valores se imprimen en boletas y tickets.</p>
+          <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:1rem">Fundamento legal</div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Valor diario de la UMA ($)</label>
+              <input class="form-input" id="cfg-valor-uma" type="number" min="1" step="0.01" placeholder="117.31"/>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Reglamento que se cita</label>
+            <input class="form-input" id="cfg-reglamento" type="text" placeholder="Reglamento de Movilidad, Tránsito y Seguridad Vial de …"/>
+          </div>
+          <div class="form-field">
+            <label>Fundamento general (se imprime en la boleta)</label>
+            <textarea class="form-input" id="cfg-fundamento" rows="3"></textarea>
+          </div>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Las multas del tabulador se expresan en cuotas: el monto permitido es cuotas × UMA. Actualiza la UMA cada año cuando el INEGI publique el nuevo valor (DOF, enero; vigente desde el 1 de febrero).</p>
+          <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
         </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:.75rem">Tipos de infracción adicionales</div>
@@ -1382,6 +1405,14 @@
         </div>
       </div>
       <div class="form-field">
+        <label for="inf-catalogo-buscar">Fundamento legal (artículo del reglamento) *</label>
+        <input id="inf-catalogo-buscar" class="form-input" list="inf-catalogo-lista" autocomplete="off"
+          placeholder="Busca por artículo o palabra: «58 fr. II», «celular», «estacionar»…" oninput="onCatalogoBuscar()"/>
+        <datalist id="inf-catalogo-lista"></datalist>
+        <input type="hidden" id="inf-catalogo"/>
+        <div id="inf-fundamento"></div>
+      </div>
+      <div class="form-field">
         <label>Ubicación / Lugar de los hechos</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <input id="inf-ubicacion" class="form-input" placeholder="Calle, avenida o cruce" type="text" style="flex:1"/>
@@ -1558,8 +1589,8 @@
         </select>
       </div>
       <div class="form-field">
-        <label>Cajero / Oficial</label>
-        <input id="pago-cajero" class="form-input" placeholder="Nombre del cajero" type="text"/>
+        <label>Cajero</label>
+        <input id="pago-cajero" class="form-input" type="text" readonly title="Se registra el usuario con sesión iniciada"/>
       </div>
     </div>
 
