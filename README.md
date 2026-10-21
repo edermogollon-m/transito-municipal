@@ -1,0 +1,70 @@
+# Tránsito Municipal
+
+Sistema de Tránsito y Movilidad Municipal. HTML/CSS/JS puro (sin build) con
+Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
+**Supervisor** y **Operador (oficial)**.
+
+## Páginas
+
+- `login.html` — acceso del personal.
+- `index.html` + `app.js` — panel: dashboard, infracciones, permisos de
+  circulación, pagos/caja (corte de caja), padrón vehicular, grúa/corralón,
+  accidentes viales, calendario, mapa de infracciones, rendimiento de
+  oficiales, reportes (Excel), oficiales/bitácora de turno, configuración y
+  usuarios. Búsqueda global con ⌘K y avisos en tiempo real.
+- `consulta.html` — portal ciudadano: consulta de infracciones por placa o
+  folio exactos, sin iniciar sesión.
+- `offline.html` — se muestra si la app se abre sin internet (PWA).
+
+## Configuración
+
+`config.js` tiene la URL y la llave pública (anon) del proyecto de Supabase
+`transito-municipal`. Si la app muestra la franja roja "No hay conexión con
+la base de datos" o el login dice "No se pudo conectar con el servidor",
+revisa primero en el panel de Supabase que el proyecto no esté **pausado**
+(el workflow `supabase-keepalive.yml` lo consulta cada 3 días para evitarlo)
+(en el plan gratis Supabase pausa los proyectos inactivos y solo permite 2
+proyectos activos a la vez).
+
+## Base de datos
+
+- `schema.sql` — esquema completo (tablas, folios automáticos, vencimiento,
+  tiempo real y políticas). Sirve para recrear la base en un proyecto nuevo.
+- `security_auth.sql` — login con Supabase Auth y permisos por rol (RLS).
+  Crea una cuenta de Auth por cada usuario (`<usuario>@transito.local`) con
+  su misma contraseña, elimina las contraseñas en texto plano y reemplaza las
+  políticas abiertas. Correr **después** de `schema.sql`. Es idempotente.
+  Ya está aplicado en el proyecto `transito-municipal`.
+
+## Seguridad
+
+- **Login:** Supabase Auth. En pantalla se escribe solo el usuario (`admin`);
+  por dentro es `admin@transito.local`. Las contraseñas solo existen como hash
+  bcrypt en `auth.users`.
+- **Permisos (RLS):** sin sesión no se puede leer ni escribir nada. El personal
+  activo opera infracciones, permisos, padrón, grúa, accidentes, turnos y
+  pagos. Borrar registros: admin y supervisor. Configuración, gestión de
+  usuarios (`admin_guardar_usuario`) y corrección de pagos: solo admin. Un
+  usuario desactivado pierde el acceso aunque tenga la sesión abierta.
+- **Portal ciudadano:** solo puede llamar a `consulta_publica(placa o folio)`;
+  no tiene acceso directo a ninguna tabla.
+- El rol que guarda el navegador (`tm_session`) solo decide qué se muestra;
+  quien aplica los permisos es la base de datos.
+- Recomendado: en Supabase → Authentication desactivar "Allow new users to
+  sign up" y activar la protección de contraseñas filtradas.
+
+## Pruebas
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
+`npm test` revisa la sintaxis de los scripts y abre la app real en Chromium
+con un Supabase simulado: inicia sesión, abre cada módulo del panel, busca en
+el portal ciudadano y comprueba los avisos cuando no hay servidor. Falla ante
+cualquier error de JavaScript. `test/db/run.sh` aplica `schema.sql` y
+`security_auth.sql` en un Postgres limpio y prueba folios, migración de
+contraseñas y permisos por rol.
+Ambos corren en cada PR (`.github/workflows/ci.yml`).

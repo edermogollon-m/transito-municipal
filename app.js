@@ -7,6 +7,8 @@
 const _session = JSON.parse(localStorage.getItem('tm_session') || 'null');
 const _sbToken = localStorage.getItem(`sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`);
 if (!_session || !_sbToken) { localStorage.removeItem('tm_session'); window.location.replace('/login'); }
+// Columnas visibles de usuarios (las contraseñas viven en Supabase Auth)
+const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at';
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
 // ── Config cache (populated on first autoFillMonto call) ──
@@ -2588,7 +2590,7 @@ async function renderUsuarios() {
     return;
   }
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  const { data, error } = await _sb.from('usuarios').select('*').order('id');
+  const { data, error } = await _sb.from('usuarios').select(USR_COLS).order('id');
   if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${error.message}</td></tr>`; return; }
   const labels = { admin:'Administrador', supervisor:'Supervisor', oficial:'Oficial' };
   tbody.innerHTML = (data||[]).map(u=>`
@@ -2614,7 +2616,7 @@ function openNewUsuario() {
 }
 
 async function editUsuario(id) {
-  const { data } = await _sb.from('usuarios').select('*').eq('id',id).single();
+  const { data } = await _sb.from('usuarios').select(USR_COLS).eq('id',id).single();
   if (!data) return;
   $('modal-usr-title').textContent = 'Editar usuario';
   $('usr-id').value        = data.id;
@@ -3189,7 +3191,8 @@ async function logout() {
 async function verificarSesion() {
   const { data: { session } } = await _sb.auth.getSession();
   if (!session) { await logout(); return false; }
-  const { data: u } = await _sb.from('usuarios').select('rol,activo').eq('auth_id', session.user.id).maybeSingle();
+  const { data: u, error } = await _sb.from('usuarios').select('rol,activo').eq('auth_id', session.user.id).maybeSingle();
+  if (error) { console.error('sesión:', error); return true; }   // falla de red: la BD sigue aplicando permisos
   if (!u || !u.activo) { await logout(); return false; }
   if (u.rol !== _rol) {
     // El rol cambió desde el último login: refrescar perfil y recargar la UI
@@ -4228,7 +4231,7 @@ async function setupPushNotifications() {
 // CREDENCIAL DIGITAL DEL OFICIAL
 // ══════════════════════════════════════════════════════════
 async function printCredencial(userId) {
-  const {data,error}=await _sb.from('usuarios').select('*').eq('id',userId).single();
+  const {data,error}=await _sb.from('usuarios').select(USR_COLS).eq('id',userId).single();
   if(error||!data){alert('No se pudo cargar el usuario.');return;}
   const rolLabel={admin:'Director de Tránsito',supervisor:'Supervisor de Tránsito',oficial:'Oficial de Tránsito'};
   const iniciales=(data.iniciales||data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2)).toUpperCase();
@@ -4299,13 +4302,39 @@ async function initData() {
   }
 }
 
+// ── Conexión con la base de datos ─────────────────────────
+// Si Supabase no responde (sin internet, o el proyecto está pausado), cada
+// módulo se vería vacío sin explicación. Avisarlo con una franja visible.
+async function checkConexion() {
+  let ok = false;
+  try {
+    const { error } = await _sb.from('configuracion').select('id', { head: true, count: 'exact' });
+    ok = !error;
+    if (error) console.error('conexión:', error);
+  } catch (err) { console.error('conexión:', err.message); }
+  let bar = document.getElementById('conn-banner');
+  if (ok) { if (bar) bar.remove(); return true; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'conn-banner';
+    bar.setAttribute('role', 'alert');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#DC2626;color:#fff;font:600 .8rem DM Sans,sans-serif;padding:.55rem 1rem;text-align:center;display:flex;gap:.75rem;justify-content:center;align-items:center;flex-wrap:wrap';
+    bar.innerHTML = '<span>No hay conexión con la base de datos. Los datos no se pueden cargar ni guardar.</span>'
+      + '<button type="button" style="background:#fff;color:#DC2626;border:none;border-radius:6px;padding:.25rem .7rem;font:inherit;cursor:pointer">Reintentar</button>';
+    bar.querySelector('button').onclick = async () => { if (await checkConexion()) location.reload(); };
+    document.body.appendChild(bar);
+  }
+  return false;
+}
+
 // ── Boot ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
   }
-  if (!(await verificarSesion())) return;
   initUI();
+  if (!(await checkConexion())) { navigate('dashboard'); return; }
+  if (!(await verificarSesion())) return;
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }

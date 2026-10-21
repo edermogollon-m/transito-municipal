@@ -8,7 +8,8 @@
 -- 4. El portal ciudadano consulta mediante consulta_publica(), que solo
 --    acepta placa o folio exactos.
 --
--- Se ejecuta completa en una transacción: si algo falla, no cambia nada.
+-- Correr después de schema.sql. Se ejecuta en una transacción (si algo
+-- falla, no cambia nada) y es idempotente: se puede correr más de una vez.
 
 begin;
 
@@ -55,11 +56,15 @@ begin
 end $$;
 revoke all on function public._sync_auth_user(bigint, text) from public, anon, authenticated;
 
--- Migrar usuarios existentes conservando su contraseña
-select public._sync_auth_user(id, contrasena) from public.usuarios where auth_id is null;
-
--- Ya no se guardan contraseñas en texto plano
-alter table public.usuarios drop column contrasena;
+-- Migrar usuarios existentes conservando su contraseña y eliminar la
+-- columna de texto plano (solo si todavía existe)
+do $$ begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'usuarios' and column_name = 'contrasena') then
+    perform public._sync_auth_user(id, contrasena) from public.usuarios where auth_id is null;
+    alter table public.usuarios drop column contrasena;
+  end if;
+end $$;
 
 -- ── Helpers de rol ────────────────────────────────────────
 create or replace function public.mi_rol()
@@ -128,12 +133,15 @@ grant execute on function public.marcar_infracciones_vencidas() to authenticated
 
 -- ── Políticas RLS ─────────────────────────────────────────
 do $$
-declare t text;
+declare t text; pol text;
 begin
   foreach t in array array['configuracion','usuarios','infracciones','pagos','permisos','actividad',
                            'vehiculos','grua','accidentes','turnos'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists public_all on public.%I', t);
+    for pol in select policyname from pg_policies where schemaname = 'public' and tablename = t loop
+      execute format('drop policy %I on public.%I', pol, t);
+    end loop;
   end loop;
 
   -- Operación diaria: cualquier miembro activo del personal

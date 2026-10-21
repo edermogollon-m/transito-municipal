@@ -200,13 +200,26 @@
       document.getElementById('password').focus();
     };
 
-    const { data: auth, error: authErr } = await _sb.auth.signInWithPassword({
-      email: user + '@transito.local', password: pass
-    });
-    if (authErr || !auth?.user) return fail('Usuario o contraseña incorrectos.');
+    // Un error de red/servidor no es lo mismo que una contraseña mal escrita:
+    // si la base de datos no responde (p. ej. proyecto de Supabase pausado),
+    // decirlo claramente en vez de culpar al usuario.
+    const SIN_SERVIDOR = 'No se pudo conectar con el servidor. Revisa tu conexión a internet o intenta de nuevo en unos minutos.';
+    let auth = null, authErr = null;
+    try {
+      ({ data: auth, error: authErr } = await _sb.auth.signInWithPassword({
+        email: user + '@transito.local', password: pass
+      }));
+    } catch (err) { authErr = { status: 0, message: err.message }; }
+    if (authErr) {
+      console.error('login:', authErr);
+      const credenciales = authErr.status === 400 || authErr.code === 'invalid_credentials';
+      return fail(credenciales ? 'Usuario o contraseña incorrectos.' : SIN_SERVIDOR);
+    }
+    if (!auth?.user) return fail('Usuario o contraseña incorrectos.');
 
-    const { data } = await _sb.from('usuarios')
+    const { data, error } = await _sb.from('usuarios')
       .select('id,usuario,nombre,rol,iniciales,activo').eq('auth_id', auth.user.id).maybeSingle();
+    if (error) { await _sb.auth.signOut(); console.error('login:', error); return fail(SIN_SERVIDOR); }
     if (!data || !data.activo) {
       await _sb.auth.signOut();
       return fail(data ? 'Tu usuario está desactivado. Contacta al administrador.' : 'Usuario o contraseña incorrectos.');
