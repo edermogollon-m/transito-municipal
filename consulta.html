@@ -233,7 +233,7 @@
       <div class="paso-num">3</div>
       <div>
         <div class="paso-title">Paga y regulariza</div>
-        <div class="paso-txt">Si pagas dentro de los primeros <span id="p-dias-desc">15</span> días obtienes <strong><span id="p-desc-pct">20</span>% de descuento</strong></div>
+        <div class="paso-txt" id="p-descuentos">Si pagas pronto obtienes descuento sobre el total de la multa</div>
       </div>
     </div>
   </div>
@@ -375,12 +375,16 @@ function infCard(r) {
   const fechaObj  = new Date(r.fecha);
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const dias      = Math.floor((Date.now()-fechaObj.getTime())/86400000);
-  const { descuento_pct: descPct, dias_descuento: diasDesc, dias_limite: diasLim } = _params;
-
-  // Descuento y límite
+  const diasLim = _params.dias_limite;
+  // Tramos de descuento (Veracruz, art. 330: 75% en 5 días, 50% del 6.º al 10.º)
+  const tramos = [[_params.descuento_pct, _params.dias_descuento], [_params.descuento2_pct, _params.dias_descuento2]]
+    .filter(([p, d]) => p > 0 && d > 0).map(([pct, d]) => ({ pct, dias: d }));
+  const tramo     = r.grave ? null : tramos.find(x => dias <= x.dias);   // conducir en ebriedad: sin descuento
+  const diasDesc  = tramo ? tramo.dias : (tramos.slice(-1)[0]?.dias || 0);
+  const descPct   = tramo?.pct || 0;
   const descFecha = new Date(fechaObj.getTime()+diasDesc*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long'});
   const limFecha  = new Date(fechaObj.getTime()+diasLim*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const descOk    = dias <= diasDesc && !r.grave;   // las graves no tienen descuento (art. 192)
+  const descOk    = !!tramo;
   const montoDesc = montoFmt(Math.round(r.monto * (1 - descPct/100)));
 
   // Barra de progreso
@@ -448,7 +452,7 @@ function infCard(r) {
       </div>` : descOk ? `
       <div class="pay-discount">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>
-        <div>Pago anticipado — obtén <strong>${descPct}% de descuento</strong> antes del ${descFecha}: paga solo <strong>${montoDesc}</strong></div>
+        <div>Pago anticipado — obtén <strong>${descPct}% de descuento</strong> pagando a más tardar el ${descFecha}: paga solo <strong>${montoDesc}</strong></div>
       </div>` : `
       <div class="pay-deadline">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -508,7 +512,7 @@ function infCard(r) {
       <div class="field"><label>Placa</label><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:.88rem">${esc(r.placa)}</span></div>
       <div class="field"><label>Infractor</label><span>${esc(r.infractor)}</span></div>
       ${r.ubicacion?`<div class="field full"><label>Lugar del hecho</label><span>${esc(r.ubicacion)}</span></div>`:''}
-      ${r.fundamento?`<div class="field full"><label>Fundamento legal</label><span>${esc(r.fundamento)}${r.grave?' — infracción grave, se paga sin descuento (art. 192)':''}</span></div>`:''}
+      ${r.fundamento?`<div class="field full"><label>Fundamento legal</label><span>${esc(r.fundamento)}${r.grave?' — se paga íntegra, sin descuento':''}</span></div>`:''}
     </div>
     ${paySection}
     ${actHTML}
@@ -547,12 +551,14 @@ function showToast(msg) {
 
 // Auto-search from URL param
 // Descuento y plazos vigentes (Configuración del municipio)
-let _params = { descuento_pct: 20, dias_descuento: 15, dias_limite: 30 };
-const _paramsListos = _sb.rpc('parametros_pago').then(({ data }) => {
-  if (data && data[0]) _params = data[0];
-  const d = $('p-dias-desc'), p = $('p-desc-pct');
-  if (d) d.textContent = _params.dias_descuento;
-  if (p) p.textContent = _params.descuento_pct;
+let _params = { descuento_pct: 0, dias_descuento: 0, descuento2_pct: 0, dias_descuento2: 0, dias_limite: 30 };
+const _paramsListos = _sb.rpc('parametros_descuento').then(({ data }) => {
+  if (data) _params = { ..._params, ...data };
+  const el = $('p-descuentos');
+  const partes = [];
+  if (_params.descuento_pct > 0) partes.push(`<strong>${_params.descuento_pct}%</strong> si pagas dentro de los ${_params.dias_descuento} días siguientes`);
+  if (_params.descuento2_pct > 0 && _params.dias_descuento2) partes.push(`<strong>${_params.descuento2_pct}%</strong> si pagas a más tardar el día ${_params.dias_descuento2}`);
+  if (el && partes.length) el.innerHTML = 'Descuento de ' + partes.join(', o ') + '.';
 }).catch(() => {});
 
 window.addEventListener('DOMContentLoaded', () => {

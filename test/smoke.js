@@ -61,11 +61,16 @@ const TABLES = {
   // Descuento distinto de 20% para comprobar que las boletas usan la configuración
   configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45, valor_uma: 117.31,
     reglamento: 'Reglamento de Movilidad, Tránsito y Seguridad Vial de San Pedro Garza García, Nuevo León', fundamento_general: 'Artículos 16 y 21 de la Constitución' }],
-  // Extracto del catálogo del reglamento (articulos.sql)
+  // Extracto del catálogo del Reglamento de la Ley 561 de Veracruz (veracruz.sql)
   catalogo_infracciones: [
-    { numero: 112, descripcion: 'Exceder la velocidad máxima de 50 km/h', texto: 'La velocidad máxima en el Municipio es de 50 km/h.', articulo: '59', fraccion: 'primer párrafo', inciso: '', cuotas_min: 12, cuotas_max: 15, grave: true, tipo_rapido: 'Exceso de velocidad', activo: true },
-    { numero: 82, descripcion: 'Sujetar el celular u otro aparato electrónico al conducir', texto: 'Sujetar aparatos de telecomunicación… <img src=x onerror="window.__xss=1">', articulo: '58', fraccion: 'II', inciso: '', cuotas_min: 20, cuotas_max: 30, grave: true, tipo_rapido: 'Uso de celular al conducir', activo: true },
-    { numero: 136, descripcion: 'Estacionarse en lugar prohibido', texto: 'Se prohíbe estacionar vehículos…', articulo: '80', fraccion: 'III, IV y V', inciso: '', cuotas_min: 10, cuotas_max: 20, grave: false, tipo_rapido: 'Estacionamiento prohibido', activo: true }
+    { numero: 1091, descripcion: 'Exceder los límites de velocidad establecidos.', texto: 'Exceder los límites de velocidad establecidos.', articulo: '75, 153 F. IV', fraccion: '', inciso: '', cuotas_min: 5, cuotas_max: 15, grave: false, tipo_rapido: 'Exceso de velocidad', clasificacion: 'Leve', categoria: 'Circulación de vehículos', nota: '', articulos_ref: ['75', '153'], activo: true },
+    { numero: 1133, descripcion: 'Utilizar el teléfono o cualquier otro dispositivo tecnológico que implique distracción mientras se conduce.', texto: 'Utilizar el teléfono…', articulo: '160 F. I', fraccion: '', inciso: '', cuotas_min: 16, cuotas_max: 30, grave: false, tipo_rapido: 'Uso de celular al conducir', clasificacion: 'Grave', categoria: 'Circulación de vehículos', nota: '', articulos_ref: ['160'], activo: true },
+    { numero: 1011, descripcion: 'Conducir en estado de ebriedad o bajo el influjo de estupefacientes.', texto: 'Conducir en estado de ebriedad…', articulo: '244, 248, 347 F. VII y XI', fraccion: '', inciso: '', cuotas_min: 80, cuotas_max: 115, grave: true, tipo_rapido: 'Conducir en estado de ebriedad', clasificacion: 'Muy Grave', categoria: 'Aliento alcohólico', nota: '', articulos_ref: ['244'], activo: true },
+    { numero: 1023, descripcion: 'Ciclistas, circular en sentido contrario.', texto: 'Ciclistas, circular en sentido contrario.', articulo: '172 F. II', fraccion: '', inciso: '', cuotas_min: null, cuotas_max: null, grave: false, tipo_rapido: null, clasificacion: 'Amonestación verbal', categoria: 'Ciclistas y motociclistas', nota: '', articulos_ref: ['172'], activo: true }
+  ],
+  reglamento_articulos: [
+    { numero: '160', texto: 'Artículo 160. Los conductores tendrán las siguientes prohibiciones: I. Utilizar dispositivos… <img src=x onerror="window.__xss=1">' },
+    { numero: '75', texto: 'Artículo 75. Límites de velocidad…' }, { numero: '153', texto: 'Artículo 153. Todo conductor…' }
   ], usuarios: [ADMIN], pagos: [], turnos: [],
   auditoria: [
     { id: 1, ts: '2026-06-03T10:05:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'cambio', usuario_nombre: XSS, resumen: XSS, cambios: { monto: { antes: 800, despues: XSS } } },
@@ -125,6 +130,10 @@ async function newPage(browser, { dbDown = false } = {}) {
       const pago = withIds({ infraccion_id: inf.id, folio_inf: inf.folio, monto_original: inf.monto, descuento_pct: pct, monto_final: Math.round(inf.monto * (1 - pct / 100)), metodo: b.p_metodo, cajero: ADMIN.nombre })[0];
       TABLES.pagos.push(pago);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(pago) });
+    }
+    if (table === 'rpc/parametros_descuento') {
+      const c = TABLES.configuracion[0];
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ descuento_pct: c.descuento_pct, dias_descuento: c.dias_descuento, descuento2_pct: 0, dias_descuento2: null, dias_limite: c.dias_limite }) });
     }
     if (table === 'rpc/parametros_pago') {
       const c = TABLES.configuracion[0];
@@ -218,25 +227,32 @@ function check(name, errors, extra) {
     await page.evaluate(() => autoFillMonto());
     await page.waitForTimeout(500);
     const alta = await page.evaluate(() => ({ cat: $('inf-catalogo').value, monto: $('inf-monto').value, card: $('inf-fundamento').textContent }));
-    check('alta: artículo y monto del tabulador', errors, alta.cat === '112' && alta.monto === '1407' && /Art\. 59, primer párrafo/.test(alta.card) && /Grave/.test(alta.card) ? null : JSON.stringify(alta));
+    check('alta: artículo y monto del tabulador', errors, alta.cat === '1091' && alta.monto === '586' && /Art\. 75, 153 F\. IV/.test(alta.card) && /Leve/.test(alta.card) && /con agravante 15 UMA/.test(alta.card) ? null : JSON.stringify(alta));
     // Búsqueda en el reglamento por artículo
-    await page.evaluate(() => { const c = catalogoPorNumero(82); $('inf-catalogo-buscar').value = etiquetaCatalogo(c); onCatalogoBuscar(); });
+    await page.evaluate(() => { const c = catalogoPorNumero(1133); $('inf-catalogo-buscar').value = etiquetaCatalogo(c); onCatalogoBuscar(); });
     const busq = await page.evaluate(() => ({ cat: $('inf-catalogo').value, tipo: $('inf-tipo').value, monto: $('inf-monto').value }));
-    check('búsqueda por artículo del reglamento', errors, busq.cat === '82' && busq.tipo === 'Uso de celular al conducir' && busq.monto === '2346' ? null : JSON.stringify(busq));
+    check('búsqueda por artículo del reglamento', errors, busq.cat === '1133' && busq.tipo === 'Uso de celular al conducir' && busq.monto === '1876' ? null : JSON.stringify(busq));
     await page.evaluate(() => { document.querySelector('#inf-fundamento details').open = true; });
-    check('disposición del reglamento escapada', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    await page.waitForTimeout(600);
+    const artTxt = await page.evaluate(() => $('inf-fundamento').querySelector('.fund-articulos').textContent);
+    check('lee los artículos del reglamento', errors, /Artículo 160\. Los conductores/.test(artTxt) ? null : 'texto: ' + artTxt.slice(0, 80));
+    check('artículos del reglamento escapados', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    // Amonestación verbal: sin multa
+    await page.evaluate(() => { const c = catalogoPorNumero(1023); $('inf-catalogo-buscar').value = etiquetaCatalogo(c); onCatalogoBuscar(); });
+    const amon = await page.evaluate(() => ({ monto: $('inf-monto').value, ro: $('inf-monto').readOnly, card: $('inf-fundamento').textContent }));
+    check('amonestación verbal sin multa', errors, amon.monto === '0' && amon.ro && /sin multa/.test(amon.card) ? null : JSON.stringify(amon).slice(0, 160));
     await page.evaluate(() => closeModal('modal-infraccion'));
     // Ticket de una infracción grave: con fundamento y sin descuento
     const graveInf = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.id !== pendId);
-    Object.assign(graveInf, { catalogo_numero: 112, fundamento: 'Artículo 59, primer párrafo, del Reglamento de Movilidad' });
+    Object.assign(graveInf, { catalogo_numero: 1011, fundamento: 'Artículos 244, 248, 347 fracción VII y XI, del Reglamento de la Ley Número 561' });
     await page.evaluate(id => printTicket80(id), graveInf.id);
     await page.waitForTimeout(800);
     let tk = ''; for (const p of popups.splice(0)) { tk += await p.content().catch(() => ''); await p.close().catch(() => {}); }
-    check('ticket de infracción grave', errors, tk.includes('Fundamento: Artículo 59') && tk.includes('SIN DESCUENTO') && !tk.includes('% descuento pagando') ? null : 'ticket sin fundamento o con descuento');
+    check('ticket de ebriedad sin descuento', errors, tk.includes('Fundamento: Artículos 244') && tk.includes('SIN DESCUENTO') && !tk.includes('% descuento pagando') ? null : 'ticket sin fundamento o con descuento');
     await page.evaluate(id => viewDetail('infracciones', id), graveInf.id);
     await page.waitForTimeout(800);
     const det = await page.evaluate(() => $('modal-detail').textContent);
-    check('detalle muestra el fundamento', errors, /Fundamento legal/.test(det) && /Artículo 59/.test(det) ? null : 'sin fundamento en el detalle');
+    check('detalle muestra el fundamento', errors, /Fundamento legal/.test(det) && /Artículos 244/.test(det) && /Muy Grave/.test(det) ? null : 'sin fundamento en el detalle');
     await page.evaluate(() => closeModal('modal-detail'));
 
     // Cobro: pasa por registrar_pago (el servidor calcula el descuento)
