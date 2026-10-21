@@ -64,7 +64,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','bitacora','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -86,6 +86,45 @@ async function compressPhoto(file, maxPx = 1000) {
       img.src = e.target.result;
     };
     reader.readAsDataURL(file);
+  });
+}
+
+// ── Fotos de evidencia en Supabase Storage (bucket privado "evidencias") ──
+// La columna fotos guarda rutas como "infracciones/2026/<uuid>.jpg". Las fotos
+// antiguas pueden ser data: URLs (antes se guardaban dentro de la base).
+async function subirFotos(fileInput, carpeta) {
+  const rutas = [];
+  if (!fileInput || !fileInput.files.length) return rutas;
+  for (let i = 0; i < Math.min(fileInput.files.length, 3); i++) {
+    const blob = await (await fetch(await compressPhoto(fileInput.files[i]))).blob();
+    const ruta = `${carpeta}/${new Date().getFullYear()}/${crypto.randomUUID()}.jpg`;
+    const { error } = await _sb.storage.from('evidencias').upload(ruta, blob, { contentType: 'image/jpeg' });
+    if (error) throw error;
+    rutas.push(ruta);
+  }
+  return rutas;
+}
+
+async function urlsFotos(fotos) {
+  const esData = f => String(f).startsWith('data:');
+  const rutas = fotos.filter(f => !esData(f));
+  const firmadas = {};
+  if (rutas.length) {
+    const { data } = await _sb.storage.from('evidencias').createSignedUrls(rutas, 3600);
+    (data || []).forEach(d => { if (d.signedUrl) firmadas[d.path] = d.signedUrl; });
+  }
+  return fotos.map(f => esData(f) ? f : (firmadas[f] || ''));
+}
+
+// Pone el enlace firmado (válido 1 h) en cada <img data-foto="ruta"> de root.
+async function hidratarFotos(root) {
+  const imgs = root ? [...root.querySelectorAll('img[data-foto]')] : [];
+  if (!imgs.length) return;
+  const urls = await urlsFotos(imgs.map(img => img.dataset.foto));
+  imgs.forEach((img, i) => {
+    if (!urls[i]) return;
+    img.src = urls[i];
+    img.onclick = () => window.open(urls[i], '_blank', 'noopener');
   });
 }
 
@@ -165,8 +204,8 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', bitacora:'Bitácora', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', bitacora:'Bitácora', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
@@ -176,6 +215,7 @@ function navigate(view, btn) {
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
+  if (view==='bitacora')      renderBitacora();
   if (view==='vehiculos')     renderVehiculos();
   if (view==='grua')          renderGrua();
   if (view==='mapa')          renderMapa();
@@ -597,13 +637,12 @@ async function submitInfraccion(e) {
 
   const id = $('inf-id').value;
 
-  // Compress photos
-  const fileInput = document.getElementById('inf-fotos');
-  const fotosArr = [];
-  if (fileInput && fileInput.files.length > 0) {
-    for (let i = 0; i < Math.min(fileInput.files.length, 3); i++) {
-      fotosArr.push(await compressPhoto(fileInput.files[i]));
-    }
+  // Fotos: se comprimen y se suben a Storage; en la base solo van las rutas
+  let fotosArr = [];
+  try { fotosArr = await subirFotos(document.getElementById('inf-fotos'), 'infracciones'); }
+  catch (err) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+    alert('No se pudieron subir las fotos: ' + err.message); return;
   }
 
   const payload = {
@@ -1037,8 +1076,9 @@ async function viewDetail(tabla, id) {
       </div>
       ${r.obs?`<div class="detail-field full"><label>Observaciones</label><span style="background:var(--stone);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem">${esc(r.obs)}</span></div>`:''}
       ${r.impugnacion_motivo?`<div class="detail-field full"><label>Motivo de impugnación</label><span style="background:var(--blue-bg);color:var(--blue);display:block;padding:.45rem .7rem;border-radius:6px;font-size:.82rem;font-weight:500">${esc(r.impugnacion_motivo)}</span></div>`:''}
-      ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img src="${f}" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" onclick="window.open('${f}','_blank')" />`).join('')}</div></div>`:''}
+      ${fotos.length?`<div class="detail-field full"><label>Evidencia fotográfica</label><div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.4rem">${fotos.map(f=>`<img data-foto="${esc(f)}" alt="Foto de evidencia" style="width:110px;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:var(--stone);cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.75'" onmouseleave="this.style.opacity='1'" />`).join('')}</div></div>`:''}
     </div>
+    <div id="detail-historial"></div>
 
     <!-- Cambiar estado -->
     <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
@@ -1158,6 +1198,8 @@ async function viewDetail(tabla, id) {
     </div>`;
   })();
   openModal('modal-detail');
+  hidratarFotos($('modal-detail'));
+  if (isInf) cargarHistorial('infracciones', r.id, $('detail-historial'));
 }
 
 async function saveDetailEstado(tabla, id) {
@@ -1225,6 +1267,17 @@ async function saveConfig() {
 }
 
 // ── Ticket de infracción ──────────────────────────────────
+// ── QR de verificación (verificacion.sql) ───────────────────
+// Apunta a /verificar?t=<token aleatorio>: cualquiera puede comprobar que el
+// documento es auténtico y su estado actual, sin iniciar sesión. El escáner de
+// Caja también lo reconoce para cobrar.
+function urlVerificacion(token) { return token ? `${window.location.origin}/verificar?t=${token}` : ''; }
+function qrVerificacion(token, size = 220) {
+  if (!token) return '';
+  try { return new QRious({ value: urlVerificacion(token), size, padding: 6, backgroundAlpha: 1 }).toDataURL(); }
+  catch (e) { console.warn('QR:', e); return ''; }
+}
+
 async function printInfraccion(id) {
   const [{ data: r }, { data: cfg }] = await Promise.all([
     _sb.from('infracciones').select('*').eq('id', id).single(),
@@ -1235,6 +1288,7 @@ async function printInfraccion(id) {
   const mun      = esc(cfg?.municipio || 'Municipio');
   const estMun   = esc(cfg?.estado    || '');
   const director = esc(cfg?.director  || '');
+  const qrBoleta = qrVerificacion(r.token_verificacion);
 
   const fechaObj  = new Date(r.fecha);
   const fechaStr  = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
@@ -1317,6 +1371,7 @@ async function printInfraccion(id) {
           <strong>Tesorería Municipal de ${mun}</strong> — Lunes a Viernes de 8:00 a 15:00 hrs.<br>
           Presente esta boleta en ventanilla de infracciones. Referencia de pago: <strong class="mono">${esc(r.folio||'—')}</strong>
         </div>
+        ${qrBoleta?`<div style="display:flex;align-items:center;gap:3mm;margin-top:2mm"><img src="${qrBoleta}" style="width:22mm;height:22mm"/><div style="font-size:7.5pt;color:#555;line-height:1.4">Escanee el código para verificar que esta boleta es auténtica y consultar su estado.</div></div>`:''}
       </div>
 
       <div class="signatures">
@@ -2193,7 +2248,11 @@ function stopQRScan() {
 
 async function handleQRResult(data) {
   let infId = null;
-  try {
+  const tok = String(data).match(/[?&]t=([0-9a-f-]{36})/i);
+  if (tok) {
+    const { data: r } = await _sb.from('infracciones').select('id').eq('token_verificacion', tok[1]).maybeSingle();
+    if (r) infId = r.id;
+  } else try {
     const obj = JSON.parse(data);
     infId = obj.id || null;
     if (!infId && obj.folio) {
@@ -2223,8 +2282,9 @@ async function buscarInfPago() {
   const q = ($('buscar-pago-input')||{}).value?.trim()||'';
   const el = $('buscar-pago-results'); if (!el) return;
   if (q.length < 2) { el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe al menos 2 caracteres</div>'; return; }
+  const qf = q.replace(/[,()"'\\%*]/g, ' ').trim();
   const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado')
-    .eq('estado','pendiente').or(`placa.ilike.%${q}%,infractor.ilike.%${q}%,folio.ilike.%${q}%`).order('fecha',{ascending:false}).limit(10);
+    .eq('estado','pendiente').or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(10);
   const rows = data||[];
   el.innerHTML = rows.length ? rows.map(r=>`
     <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')">
@@ -2339,6 +2399,7 @@ async function printReciboPago(pagoId) {
   if (!p) return;
   const inf = p.infracciones||{};
   const mun = esc(cfg?.municipio||'Municipio'), est = esc(cfg?.estado||'');
+  const qrRecibo = qrVerificacion(p.token_verificacion);
   const fechaPago = new Date(p.created_at).toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
   const horaPago  = new Date(p.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Recibo ${esc(p.folio_inf||'')}</title>
@@ -2397,6 +2458,7 @@ async function printReciboPago(pagoId) {
       <div class="sb"><div class="sl"></div><div class="sn">${esc(p.cajero||'Cajero')}</div><div class="st">Cajero que recibe</div></div>
       <div class="sb"><div class="sl"></div><div class="sn">${esc(inf.infractor||'Infractor')}</div><div class="st">Firma de conformidad</div></div>
     </div>
+    ${qrRecibo?`<div style="display:flex;align-items:center;justify-content:center;gap:3mm;margin-top:4mm"><img src="${qrRecibo}" style="width:20mm;height:20mm"/><div style="font-size:7.5px;color:#555;max-width:70mm;line-height:1.4">Escanee el código para verificar que este recibo es auténtico.</div></div>`:''}
     <div class="foot">Recibo REC-${String(p.id).padStart(6,'0')} · Infracción ${esc(p.folio_inf||'')}. Este documento acredita el pago total. Expedido por Dirección de Tránsito, ${mun}.</div>
   </div>
   <script>setTimeout(()=>window.print(),600)<\/script>
@@ -2562,7 +2624,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-center t-small">Lunes a Viernes 8:00–15:00 hrs</div>
     <div class="t-center t-small" style="margin-top:.5mm">Referencia de pago:</div>
     <div class="t-barref">${ref}</div>
-    ${qrDataUrl?`<div style="text-align:center;margin:2mm 0 1mm"><img src="${qrDataUrl}" style="width:130px;height:130px;display:block;margin:0 auto"/><div style="font-size:6.5pt;margin-top:.5mm;color:#444">Escanea para cobrar</div></div>`:''}
+    ${qrDataUrl?`<div style="text-align:center;margin:2mm 0 1mm"><img src="${qrDataUrl}" style="width:130px;height:130px;display:block;margin:0 auto"/><div style="font-size:6.5pt;margin-top:.5mm;color:#444">Escanea para verificar o pagar</div></div>`:''}
     <div class="t-div"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
     <div class="t-sig"></div>
@@ -2587,8 +2649,7 @@ async function printTicket80(id) {
 
   let qrDataUrl = '';
   try {
-    const qrPayload = JSON.stringify({ id: r.id, folio: r.folio||'', placa: r.placa, monto: r.monto, infractor: r.infractor });
-    qrDataUrl = new QRious({ value: qrPayload, size: 260, padding: 6, backgroundAlpha: 1 }).toDataURL();
+    qrDataUrl = qrVerificacion(r.token_verificacion, 260);
   } catch(e) { console.warn('QR gen error:', e); }
 
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
@@ -2958,6 +3019,77 @@ function _waFromBtn(btn) {
     placa:d.placa, tipo:d.tipo, monto:d.monto, ubicacion:d.ubicacion, fecha:d.fecha });
 }
 
+// ══════════════════════════════════════════════════════════
+// BITÁCORA (tabla auditoria, la llenan triggers en el servidor)
+// ══════════════════════════════════════════════════════════
+const BIT_MODULOS = { infracciones:'Infracciones', pagos:'Pagos', permisos:'Permisos', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', usuarios:'Usuarios', configuracion:'Configuración', turnos:'Turnos' };
+const BIT_ACCIONES = { alta:['Alta','badge-green'], cambio:['Cambio','badge-blue'], baja:['Baja','badge-red'] };
+const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas' };
+let _bitDesde = 0;
+
+function _bitValor(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return fmtDateShort(v);
+  return String(v);
+}
+
+function _bitDetalle(e) {
+  const c = e.cambios || {};
+  if (e.accion === 'cambio') {
+    return Object.entries(c).map(([k, v]) =>
+      `<div><span style="color:var(--muted)">${esc(BIT_CAMPOS[k] || k)}:</span> ${esc(_bitValor(v.antes))} → <strong>${esc(_bitValor(v.despues))}</strong></div>`).join('');
+  }
+  const clave = ['tipo','placa','infractor','monto','monto_final','estado','titular','nombre','rol'].filter(k => c[k] !== undefined && c[k] !== '');
+  return clave.slice(0, 4).map(k => `<span style="color:var(--muted)">${esc(BIT_CAMPOS[k] || k)}:</span> ${esc(_bitValor(c[k]))}`).join(' · ');
+}
+
+async function renderBitacora(mas) {
+  const tbody = $('bitacora-table'); if (!tbody) return;
+  if (!mas) { _bitDesde = 0; tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>'; }
+  const PAG = 100;
+  let q = _sb.from('auditoria').select('*').order('ts', { ascending: false }).range(_bitDesde, _bitDesde + PAG - 1);
+  const tabla = $('bit-tabla')?.value, accion = $('bit-accion')?.value;
+  const desde = $('bit-desde')?.value, hasta = $('bit-hasta')?.value;
+  const buscar = ($('bit-buscar')?.value || '').trim().replace(/[,()"'\\%*]/g, ' ').trim();
+  if (tabla)  q = q.eq('tabla', tabla);
+  if (accion) q = q.eq('accion', accion);
+  if (desde)  q = q.gte('ts', desde + 'T00:00:00');
+  if (hasta)  q = q.lte('ts', hasta + 'T23:59:59');
+  if (buscar) q = q.or(`usuario_nombre.ilike.%${buscar}%,resumen.ilike.%${buscar}%`);
+  const { data, error } = await q;
+  if (error) { tbody.innerHTML = `<tr><td colspan="6" style="color:red">${esc(error.message)}</td></tr>`; return; }
+  const filas = (data || []).map(e => {
+    const [acc, cls] = BIT_ACCIONES[e.accion] || [e.accion, 'badge-muted'];
+    return `<tr>
+      <td style="white-space:nowrap">${esc(new Date(e.ts).toLocaleString('es-MX', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</td>
+      <td style="font-weight:600">${esc(e.usuario_nombre || '—')}</td>
+      <td><span class="${cls}">${esc(acc)}</span></td>
+      <td>${esc(BIT_MODULOS[e.tabla] || e.tabla)}</td>
+      <td class="mono">${esc(e.resumen || e.registro_id || '—')}</td>
+      <td style="font-size:.78rem;line-height:1.5">${_bitDetalle(e)}</td>
+    </tr>`;
+  }).join('');
+  if (!mas) tbody.innerHTML = filas || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin movimientos con estos filtros</td></tr>';
+  else tbody.insertAdjacentHTML('beforeend', filas);
+  _bitDesde += (data || []).length;
+  const btnMas = $('bit-mas'); if (btnMas) btnMas.style.display = (data || []).length === PAG ? '' : 'none';
+}
+
+// Historial de un registro dentro de su detalle (solo lo ven mandos: RLS).
+async function cargarHistorial(tabla, id, cont) {
+  if (!cont || (_rol !== 'admin' && _rol !== 'supervisor')) return;
+  const { data } = await _sb.from('auditoria').select('*').eq('tabla', tabla).eq('registro_id', String(id)).order('ts', { ascending: true });
+  if (!data || !data.length) return;
+  cont.innerHTML = `<div style="margin-top:1rem">
+    <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.5rem">Historial</div>
+    ${data.map(e => `<div style="font-size:.78rem;padding:.4rem 0;border-top:1px solid var(--border)">
+      <div><strong>${esc((BIT_ACCIONES[e.accion] || [e.accion])[0])}</strong> · ${esc(e.usuario_nombre || '—')} · <span style="color:var(--muted)">${esc(new Date(e.ts).toLocaleString('es-MX'))}</span></div>
+      ${e.accion === 'cambio' ? `<div style="margin-top:.2rem">${_bitDetalle(e)}</div>` : ''}
+    </div>`).join('')}
+  </div>`;
+}
+
 // ── Toast ─────────────────────────────────────────────────
 function showToast(msg) {
   let t = document.querySelector('.toast');
@@ -2990,7 +3122,7 @@ function initUI() {
     // Ocultar sección Análisis y Sistema (excepto Reportes no aplica)
     document.querySelectorAll('.nav-item').forEach(btn => {
       const view = (btn.getAttribute('onclick')||'').match(/'(\w+)'/)?.[1];
-      if (['mapa','rendimiento','configuracion','usuarios'].includes(view)) {
+      if (['mapa','rendimiento','configuracion','usuarios','bitacora'].includes(view)) {
         btn.style.display = 'none';
       }
     });
@@ -3860,11 +3992,9 @@ async function submitAccidente(e){
   e.preventDefault();
   const btn=$('acc-submit-btn');btn.disabled=true;btn.textContent='Guardando…';
   const id=$('acc-id').value;
-  const fileInput=$('acc-fotos');
-  const fotosArr=[];
-  if(fileInput&&fileInput.files.length>0){
-    for(let i=0;i<Math.min(fileInput.files.length,3);i++) fotosArr.push(await compressPhoto(fileInput.files[i]));
-  }
+  let fotosArr=[];
+  try{ fotosArr=await subirFotos($('acc-fotos'),'accidentes'); }
+  catch(err){ btn.disabled=false; btn.textContent='Registrar accidente'; alert('No se pudieron subir las fotos: '+err.message); return; }
   const payload={
     tipo:$('acc-tipo').value,
     fecha:$('acc-fecha').value?new Date($('acc-fecha').value).toISOString():new Date().toISOString(),
@@ -3912,7 +4042,7 @@ async function viewAccidenteDetalle(id){
         <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.4rem">
           ${partes.map((p,i)=>`<div style="background:var(--stone);border-radius:6px;padding:.5rem .75rem;font-size:.8rem"><strong>Parte ${i+1}:</strong> ${esc(p.nombre||'—')} · Placa: ${esc(p.placa||'—')} · Lic: ${esc(p.licencia||'—')} · Aseg: ${esc(p.aseguradora||'—')}</div>`).join('')}
         </div></div>`:''}
-      ${fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img src="${f}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${f}','_blank')"/>`).join('')}</div></div>`:''}
+      ${fotos.length?`<div class="detail-field full"><label>Fotos de evidencia</label><div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.3rem">${fotos.map(f=>`<img data-foto="${esc(f)}" alt="Foto de evidencia" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:var(--stone);cursor:pointer"/>`).join('')}</div></div>`:''}
     </div>
     <div class="detail-actions">
       <button class="btn btn-ghost btn-sm" onclick="printAccidente('${r.id}')">
@@ -3923,6 +4053,7 @@ async function viewAccidenteDetalle(id){
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail')">Cerrar</button>
     </div>`;
   openModal('modal-detail');
+  hidratarFotos($('modal-detail'));
 }
 
 // ══════════════════════════════════════════════════════════

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Verificar documento — Tránsito Municipal</title>
+  <meta name="theme-color" content="#1A7A82"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+    :root{
+      --ac:#1A7A82;--ink:#111827;--text:#374151;--muted:#6B7280;--border:#E5E7EB;--stone:#F9FAFB;
+      --green:#059669;--green-bg:#ECFDF5;--amber:#D97706;--amber-bg:#FFFBEB;--red:#DC2626;--red-bg:#FEF2F2;
+      --blue:#2563EB;--blue-bg:#EFF6FF;
+    }
+    html,body{min-height:100%;font-family:'DM Sans',sans-serif;background:#F0F4F8;color:var(--ink);}
+    .topbar{background:var(--ac);color:#fff;padding:.8rem 1.25rem;display:flex;align-items:center;gap:.6rem;}
+    .badge{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:800;}
+    .tb-title{font-size:.9rem;font-weight:700;line-height:1.2}
+    .tb-sub{font-size:.7rem;opacity:.75}
+    main{max-width:480px;margin:2rem auto;padding:0 1rem;}
+    .card{background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.07);overflow:hidden;}
+    .status{padding:1.25rem 1.25rem 1rem;display:flex;gap:.8rem;align-items:center;}
+    .status svg{flex-shrink:0}
+    .status h1{font-size:1.05rem;}
+    .status p{font-size:.8rem;color:var(--muted);margin-top:.15rem;}
+    .ok{background:var(--green-bg);color:var(--green);}
+    .bad{background:var(--red-bg);color:var(--red);}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem 1rem;padding:1.1rem 1.25rem 1.25rem;}
+    .f label{display:block;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.15rem;}
+    .f span{font-size:.88rem;color:var(--ink);}
+    .full{grid-column:1/-1;}
+    .mono{font-family:'DM Mono',monospace;}
+    .pill{display:inline-block;font-size:.72rem;font-weight:700;padding:.2rem .65rem;border-radius:20px;}
+    .note{font-size:.72rem;color:var(--muted);text-align:center;margin-top:1rem;line-height:1.5;}
+    .spinner{padding:2.5rem;text-align:center;color:var(--muted);font-size:.85rem;}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="badge">HCE</div>
+    <div><div class="tb-title">Tránsito y Movilidad Municipal</div><div class="tb-sub">Verificación de documentos</div></div>
+  </div>
+  <main>
+    <div class="card" id="card"><div class="spinner">Verificando…</div></div>
+    <p class="note">Esta página confirma que una boleta o recibo fue emitido por la Dirección de Tránsito y muestra su estado actual. Para pagar o consultar otras infracciones visite <a href="/consulta">/consulta</a>.</p>
+  </main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="supabase.js"></script>
+<script>
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+const ICON_OK  = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>';
+const ICON_BAD = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+const ESTADOS = {
+  pendiente: ['Pendiente de pago', 'var(--amber)', 'var(--amber-bg)'],
+  vencida:   ['Vencida', 'var(--red)', 'var(--red-bg)'],
+  pagada:    ['Pagada', 'var(--green)', 'var(--green-bg)'],
+  pagado:    ['Pagado', 'var(--green)', 'var(--green-bg)'],
+  impugnada: ['En impugnación', 'var(--blue)', 'var(--blue-bg)'],
+  cancelada: ['Cancelada', 'var(--muted)', 'var(--stone)']
+};
+const fmt = n => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0 }).format(n || 0);
+const fecha = d => d ? new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+function noValido(msg) {
+  document.getElementById('card').innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>Documento no válido</h1><p>${esc(msg)}</p></div></div>`;
+}
+
+async function verificar() {
+  const token = new URLSearchParams(location.search).get('t') || '';
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return noValido('El código no corresponde a ningún documento emitido por Tránsito.');
+  let data = null, error = null;
+  try { ({ data, error } = await _sb.rpc('verificar_documento', { p_token: token })); } catch (e) { error = e; }
+  if (error) {
+    document.getElementById('card').innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>No se pudo verificar</h1><p>El servicio no está disponible en este momento. Intente de nuevo en unos minutos.</p></div></div>`;
+    return;
+  }
+  if (!data) return noValido('El código no corresponde a ningún documento emitido por Tránsito. Podría ser falso o haber sido alterado.');
+
+  const esPago = data.tipo === 'pago';
+  const [estLabel, estColor, estBg] = ESTADOS[data.estado] || [data.estado, 'var(--muted)', 'var(--stone)'];
+  document.getElementById('card').innerHTML = `
+    <div class="status ok">${ICON_OK}<div>
+      <h1>${esPago ? 'Recibo de pago auténtico' : 'Boleta de infracción auténtica'}</h1>
+      <p>Emitido por la Dirección de Tránsito${data.municipio ? ' de ' + esc(data.municipio) : ''}</p>
+    </div></div>
+    <div class="grid">
+      <div class="f"><label>${esPago ? 'Recibo' : 'Folio'}</label><span class="mono">${esc(data.folio || '—')}</span></div>
+      <div class="f"><label>Estado</label><span class="pill" style="color:${estColor};background:${estBg}">${esc(estLabel)}</span></div>
+      <div class="f"><label>Fecha</label><span>${esc(fecha(data.fecha))}</span></div>
+      <div class="f"><label>Placa</label><span class="mono">${esc(data.placa || '—')}</span></div>
+      ${esPago && data.folio_infraccion ? `<div class="f"><label>Infracción</label><span class="mono">${esc(data.folio_infraccion)}</span></div>` : ''}
+      <div class="f"><label>${esPago ? 'Total pagado' : 'Monto'}</label><span style="font-weight:700">${esc(fmt(data.monto))}</span></div>
+      <div class="f full"><label>Concepto</label><span>${esc(data.concepto || '—')}</span></div>
+      ${data.infractor ? `<div class="f full"><label>A nombre de</label><span>${esc(data.infractor)}</span></div>` : ''}
+    </div>`;
+}
+verificar();
+</script>
+</body>
+</html>

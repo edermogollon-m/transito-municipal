@@ -17,7 +17,7 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const PORT = 8765;
 const BASE = `http://localhost:${PORT}`;
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','bitacora','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
 
 // ── Servidor estático con cleanUrls (igual que vercel.json) ──
 const TYPES = { '.html':'text/html', '.js':'application/javascript', '.json':'application/json', '.css':'text/css' };
@@ -50,13 +50,20 @@ const SESSION = {
   user: { id: ADMIN.auth_id, aud: 'authenticated', role: 'authenticated', email: 'admin@transito.local' }
 };
 const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
+const TOKEN = '11111111-2222-4333-8444-555555555555';
+const storageUploads = [];
 const norm = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TABLES = {
-  infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
+  infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000', token_verificacion: TOKEN, fotos: '["infracciones/2026/prueba.jpg"]' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
   actividad: withIds(seeds.SEED_ACTIVIDAD || []), vehiculos: withIds(seeds.SEED_VEHICULOS || []),
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
-  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}) }], usuarios: [ADMIN], pagos: [], turnos: []
+  configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}) }], usuarios: [ADMIN], pagos: [], turnos: [],
+  auditoria: [
+    { id: 1, ts: '2026-06-03T10:05:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'cambio', usuario_nombre: XSS, resumen: XSS, cambios: { monto: { antes: 800, despues: XSS } } },
+    { id: 2, ts: '2026-06-03T10:00:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'alta', usuario_nombre: 'Admin Prueba', resumen: 'INF-2026-0001', cambios: { tipo: XSS, placa: 'XSS-001' } }
+  ]
 };
+TABLES.auditoria.forEach(a => { a.registro_id = String(TABLES.infracciones.find(r => r.placa === 'XSS-001').id); });
 
 const LIBS_DIR = process.env.LIBS_DIR;
 const LOCAL_LIBS = LIBS_DIR && {
@@ -84,7 +91,21 @@ async function newPage(browser, { dbDown = false } = {}) {
     const json = { 'Content-Type': 'application/json' };
     if (u.pathname.startsWith('/auth/v1/token')) return r.fulfill({ status: 200, headers: json, body: JSON.stringify(SESSION) });
     if (u.pathname.startsWith('/auth/v1/')) return r.fulfill({ status: 204, body: '' });
+    // Storage: subida de fotos y enlaces firmados
+    if (u.pathname.startsWith('/storage/v1/object/sign/')) {
+      const paths = JSON.parse(req.postData() || '{}').paths || [];
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(paths.map(p => ({ path: p, signedURL: '/object/sign/evidencias/' + p + '?token=x', error: null }))) });
+    }
+    if (u.pathname.startsWith('/storage/v1/object/')) {
+      storageUploads.push(u.pathname);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ Key: u.pathname.replace('/storage/v1/object/', '') }) });
+    }
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
+    if (table === 'rpc/verificar_documento') {
+      const t = JSON.parse(req.postData() || '{}').p_token;
+      const i = TABLES.infracciones.find(x => x.token_verificacion === t);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(i ? { tipo: 'infraccion', folio: i.folio, fecha: i.fecha, placa: i.placa, concepto: i.tipo, monto: i.monto, estado: i.estado, infractor: i.infractor, municipio: XSS } : null) });
+    }
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
@@ -140,6 +161,41 @@ function check(name, errors, extra) {
       for (const p of popups.splice(0)) { xss = xss || await p.evaluate(() => window.__xss).catch(() => false); await p.close().catch(() => {}); }
       check(fn + ' escapa los textos', errors, xss ? 'se ejecutó HTML inyectado' : null);
     }
+    // Fotos: el detalle pide el enlace firmado y lo pone en la imagen; subirFotos sube a Storage
+    await page.evaluate(id => viewDetail('infracciones', id), xssId);
+    await page.waitForTimeout(800);
+    const src = await page.evaluate(() => document.querySelector('#modal-detail img[data-foto]')?.src || '');
+    check('fotos con enlace firmado de Storage', errors, src.includes('/object/sign/evidencias/infracciones/2026/prueba.jpg') ? null : 'src de la foto: ' + src);
+    const rutas = await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = c.height = 20;
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      return subirFotos({ files: [new File([blob], 'x.png', { type: 'image/png' })] }, 'infracciones');
+    });
+    check('subida de fotos a Storage', errors,
+      rutas.length === 1 && /^infracciones\/\d{4}\/[0-9a-f-]{36}\.jpg$/.test(rutas[0]) && storageUploads.some(p => p.includes('/evidencias/infracciones/'))
+        ? null : 'rutas: ' + JSON.stringify(rutas));
+
+    // Bitácora: historial dentro del detalle (solo mandos)
+    const hist = await page.evaluate(() => document.getElementById('detail-historial')?.textContent || '');
+    check('historial en el detalle', errors, /Cambio/.test(hist) ? null : 'no mostró el historial');
+    check('historial escapa los textos', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+
+    // QR de la boleta: apunta a /verificar?t=<token>
+    const qrUrl = await page.evaluate(id => urlVerificacion(id), TOKEN);
+    check('QR de verificación', errors, qrUrl === BASE + '/verificar?t=' + TOKEN ? null : qrUrl);
+    await page.close();
+
+    // 3b. Verificación pública del QR
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/verificar?t=' + TOKEN);
+    await page.waitForTimeout(1200);
+    let txt = await page.textContent('#card');
+    check('verificar: boleta auténtica', errors, /auténtica/.test(txt) && txt.includes('XSS-001') ? null : 'texto: ' + txt.slice(0, 120));
+    check('verificar escapa los textos', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    await page.goto(BASE + '/verificar?t=00000000-0000-4000-8000-000000000000');
+    await page.waitForTimeout(1200);
+    txt = await page.textContent('#card');
+    check('verificar: token inexistente', errors, /no válido/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
     await page.close();
 
     // 3. Portal ciudadano: búsqueda por placa

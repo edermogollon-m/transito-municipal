@@ -9,4 +9,5 @@ $P -f schema.sql
 $P -f test/db/datos_previos.sql
 $P -f security_auth.sql
 $P -f security_auth.sql
+for f in auditoria.sql evidencias_storage.sql verificacion.sql; do $P -f $f; $P -f $f; done
 $P -f test/db/pruebas.sql
