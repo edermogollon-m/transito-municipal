@@ -218,6 +218,7 @@ function navigate(view, btn) {
   if (view==='bitacora')      renderBitacora();
   if (view==='vehiculos')     renderVehiculos();
   if (view==='grua')          renderGrua();
+  if (view==='reportes')      initReporteMensual();
   if (view==='mapa')          renderMapa();
   if (view==='rendimiento')   renderRendimiento();
   if (view==='accidentes')    renderAccidentes();
@@ -624,13 +625,23 @@ async function submitInfraccion(e) {
 
   const id = $('inf-id').value;
 
+  // Sin señal (solo boletas nuevas): se guarda en el dispositivo y se sube sola
+  // al volver internet. Las fotos se guardan comprimidas para subirlas después.
+  let sinSenal = !id && !navigator.onLine;
+
   // Fotos: se comprimen y se suben a Storage; en la base solo van las rutas
-  let fotosArr = [];
-  try { fotosArr = await subirFotos(document.getElementById('inf-fotos'), 'infracciones'); }
-  catch (err) {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
-    alert('No se pudieron subir las fotos: ' + err.message); return;
+  let fotosArr = [], fotosPendientes = [];
+  if (!sinSenal) {
+    try { fotosArr = await subirFotos(document.getElementById('inf-fotos'), 'infracciones'); }
+    catch (err) {
+      if (!id && esErrorDeRed(err)) sinSenal = true;
+      else {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+        alert('No se pudieron subir las fotos: ' + err.message); return;
+      }
+    }
   }
+  if (sinSenal) fotosPendientes = await fotosComoDataURL(document.getElementById('inf-fotos'));
 
   const payload = {
     fecha:          $('inf-fecha').value ? new Date($('inf-fecha').value).toISOString() : new Date().toISOString(),
@@ -663,6 +674,14 @@ async function submitInfraccion(e) {
   }
   if (!payload.catalogo_numero) delete payload.catalogo_numero;
   if (cat && payload.tipo === 'Otro') payload.tipo = cat.descripcion;
+
+  if (sinSenal) {
+    await encolarBoleta(payload, fotosPendientes);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+    closeModal('modal-infraccion');
+    showToast('Sin señal: la boleta quedó guardada en este dispositivo y se subirá sola');
+    return;
+  }
 
   // ── Verificar adeudos antes de registrar infracción nueva ──
   if (!id) {
@@ -706,8 +725,16 @@ async function submitInfraccion(e) {
     await logActivity('infraccion', `Infracción actualizada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
   } else {
+    payload.token_verificacion = crypto.randomUUID();
     const { data, error } = await _sb.from('infracciones').insert(payload).select().single();
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+    if (error && esErrorDeRed(error)) {
+      // Se cayó la señal justo al guardar: a la cola, con las fotos ya subidas
+      await encolarBoleta(payload, []);
+      closeModal('modal-infraccion');
+      showToast('Se perdió la señal: la boleta quedó guardada y se subirá sola');
+      return;
+    }
     if (error) { alert('Error: '+error.message); return; }
     await logActivity('infraccion', `Infracción ${data.folio} registrada — ${payload.tipo} (${payload.placa})`);
     closeModal('modal-infraccion');
@@ -719,14 +746,156 @@ async function submitInfraccion(e) {
   renderDashboard();
 }
 
+// ── Boletas sin señal ─────────────────────────────────────
+// Si el oficial no tiene internet, la boleta se guarda en IndexedDB (con sus
+// fotos comprimidas) y se sube sola cuando vuelve la señal. Cada boleta lleva
+// su token_verificacion desde el dispositivo: si la subida se corta a medias y
+// se reintenta, el índice único de ese token evita que quede duplicada.
+const esErrorDeRed = err => /failed to fetch|networkerror|network request failed|load failed/i.test(String(err?.message || err || ''));
+
+function _colaDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('transito', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('boletas', { keyPath: 'token' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function _colaTx(modo, fn) {
+  const db = await _colaDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('boletas', modo);
+    const out = fn(tx.objectStore('boletas'));
+    tx.oncomplete = () => resolve(out && 'result' in out ? out.result : undefined);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+const colaListar = () => _colaTx('readonly', st => st.getAll()).then(r => r || []);
+const colaGuardar = item => _colaTx('readwrite', st => st.put(item));
+const colaQuitar = token => _colaTx('readwrite', st => st.delete(token));
+
+async function fotosComoDataURL(fileInput) {
+  const out = [];
+  if (!fileInput || !fileInput.files.length) return out;
+  for (let i = 0; i < Math.min(fileInput.files.length, 3); i++) out.push(await compressPhoto(fileInput.files[i]));
+  return out;
+}
+
+async function encolarBoleta(payload, fotos) {
+  const token = payload.token_verificacion || crypto.randomUUID();
+  await colaGuardar({ token, payload: { ...payload, token_verificacion: token }, fotos: fotos || [], guardada: new Date().toISOString(), error: '' });
+  await actualizarIndicadorCola();
+}
+
+let _sincronizando = false;
+async function sincronizarCola() {
+  if (_sincronizando || !navigator.onLine) return;
+  _sincronizando = true;
+  const subidas = [];
+  try {
+    for (const item of await colaListar()) {
+      try {
+        const p = { ...item.payload };
+        if (item.fotos.length) {
+          const rutas = [];
+          for (const f of item.fotos) {
+            const blob = await (await fetch(f)).blob();
+            const ruta = `infracciones/${new Date(p.fecha).getFullYear()}/${crypto.randomUUID()}.jpg`;
+            const { error } = await _sb.storage.from('evidencias').upload(ruta, blob, { contentType: 'image/jpeg' });
+            if (error) throw error;
+            rutas.push(ruta);
+          }
+          p.fotos = JSON.stringify(rutas);
+          // Si algo falla más adelante, no volver a subir las mismas fotos
+          await colaGuardar({ ...item, payload: p, fotos: [] });
+        }
+        const nota = `Capturada sin señal el ${new Date(item.guardada).toLocaleString('es-MX')}`;
+        p.obs = p.obs ? `${p.obs} | ${nota}` : nota;
+        let { data, error } = await _sb.from('infracciones').insert(p).select('id,folio,placa,tipo').single();
+        if (error && error.code === '23505') {
+          // Ya se había subido (se cortó la respuesta): tomar la existente
+          ({ data, error } = await _sb.from('infracciones').select('id,folio,placa,tipo').eq('token_verificacion', item.token).single());
+        }
+        if (error) throw error;
+        await colaQuitar(item.token);
+        subidas.push(data);
+        logActivity('infraccion', `Infracción ${data.folio} registrada sin señal — ${data.tipo} (${data.placa})`).catch(() => {});
+      } catch (err) {
+        if (esErrorDeRed(err)) break;          // sigue sin señal: reintentar después
+        await colaGuardar({ ...(await colaListar()).find(i => i.token === item.token) || item, error: err.message || String(err) });
+      }
+    }
+  } finally {
+    _sincronizando = false;
+    await actualizarIndicadorCola();
+  }
+  if (subidas.length) {
+    showToast(subidas.length === 1 ? `Se subió la boleta ${subidas[0].folio} levantada sin señal`
+                                   : `Se subieron ${subidas.length} boletas levantadas sin señal`);
+    if ($('view-infracciones')?.classList.contains('active')) renderInfracciones();
+    if ($('view-dashboard')?.classList.contains('active')) renderDashboard();
+  }
+  return subidas;
+}
+
+async function actualizarIndicadorCola() {
+  let items = [];
+  try { items = await colaListar(); } catch (_) {}
+  let el = $('cola-boletas');
+  if (!items.length) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('button');
+    el.id = 'cola-boletas';
+    el.type = 'button';
+    el.className = 'cola-chip';
+    el.onclick = () => verColaBoletas();
+    const right = document.querySelector('.topbar-right');
+    if (right) right.prepend(el); else document.body.appendChild(el);
+  }
+  const conError = items.filter(i => i.error).length;
+  el.classList.toggle('cola-error', !!conError);
+  el.textContent = `${items.length} ${items.length === 1 ? 'boleta' : 'boletas'} por subir`;
+  el.title = conError ? 'Hay boletas que no se pudieron subir: toca para ver' : 'Se subirán solas al volver la señal';
+}
+
+async function verColaBoletas() {
+  const items = await colaListar();
+  if (navigator.onLine) await sincronizarCola();
+  const quedan = await colaListar();
+  if (!quedan.length) return;
+  const lineas = quedan.map(i => `• ${i.payload.placa} · ${i.payload.tipo} · ${new Date(i.guardada).toLocaleString('es-MX')}` + (i.error ? `\n   No se pudo subir: ${i.error}` : ''));
+  alert(`${quedan.length} ${quedan.length === 1 ? 'boleta guardada' : 'boletas guardadas'} en este dispositivo:\n\n${lineas.join('\n')}\n\n` +
+        (navigator.onLine ? 'Se reintentará en unos minutos.' : 'Se subirán solas cuando vuelva la señal.'));
+}
+
+window.addEventListener('online', () => { checkConexion().then(ok => { if (ok) sincronizarCola(); }); });
+window.addEventListener('offline', () => checkConexion());
+
+function _leerLocal(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (_) { return null; } }
+function _guardarLocal(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+
 // ── Catálogo del reglamento (fundamento legal) ───────────
 // Tabulador de infracciones del Reglamento de Tránsito (ver articulos.sql).
 let _catalogo = null;
 async function cargarCatalogo() {
   if (_catalogo) return _catalogo;
   const { data, error } = await _sb.from('catalogo_infracciones').select('*').eq('activo', true).order('numero');
-  if (error) { console.error('catálogo:', error); return []; }
+  if (error) {
+    // Sin señal: se usa la copia guardada para poder levantar boletas
+    const local = _leerLocal('tm_catalogo');
+    if (local?.length) return (_catalogo = local);
+    console.error('catálogo:', error); return [];
+  }
+  _guardarLocal('tm_catalogo', data || []);
   return (_catalogo = data || []);
+}
+// Deja en el dispositivo el catálogo y la configuración (UMA, descuentos) para
+// que el oficial pueda levantar boletas aunque se quede sin señal.
+async function precargarSinSenal() {
+  const { data } = await _sb.from('configuracion').select('*').eq('id', 1).single();
+  if (data) { _cachedConfig = { ...(_cachedConfig||{}), ...data }; _guardarLocal('tm_config', data); }
+  else if (!_cachedConfig) _cachedConfig = _leerLocal('tm_config');
+  await cargarCatalogo();
 }
 function catalogoPorNumero(n) { return (_catalogo||[]).find(c => c.numero === Number(n)) || null; }
 function citaCorta(c) {
@@ -817,6 +986,7 @@ async function openNewInfraccion() {
   if (prev) prev.innerHTML = '';
   const plHist = document.getElementById('placa-history');
   if (plHist) plHist.innerHTML = '';
+  if ($('placa-ocr-status')) $('placa-ocr-status').textContent = '';
   // Pre-fill official with logged-in user if they are an oficial/supervisor
   if ($('inf-oficial')) {
     $('inf-oficial').dataset.preload = _session?.name || '';
@@ -1329,6 +1499,7 @@ async function loadConfig() {
   if($('cfg-estado'))    $('cfg-estado').value    = data.estado||'';
   if($('cfg-director'))  $('cfg-director').value  = data.director||'';
   if($('cfg-correo'))    $('cfg-correo').value     = data.correo||'';
+  if($('cfg-correo-reporte')) $('cfg-correo-reporte').value = data.correo_reporte||'';
   const m = data.montos || {};
   ['velocidad','estacionamiento','alto','sinlicencia','celular','contrario','uprohibido','documentos'].forEach(k=>{
     if($('cfg-m-'+k)) $('cfg-m-'+k).value = m[k]||'';
@@ -1367,9 +1538,10 @@ async function saveConfig() {
     fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
     tipos_extra:    tiposExtra
   };
+  if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
   const { error } = await _sb.from('configuracion').upsert(payload, { onConflict:'id' });
   if (error) { alert('Error guardando configuración: '+error.message); return; }
-  _cachedConfig = payload;
+  _cachedConfig = { ...(_cachedConfig||{}), ...payload };
   await logActivity('config', `Configuración del sistema actualizada por ${_session.name}`);
   showToast('Configuración guardada correctamente');
 }
@@ -1910,6 +2082,92 @@ async function printPermiso(id) {
 async function checkAndUpdateVencidos() {
   // También corre a diario en el servidor (pg_cron); aquí solo se adelanta.
   await _sb.rpc('marcar_infracciones_vencidas');
+}
+
+// ── Leer la placa con la cámara (OCR en el navegador con Tesseract.js) ──
+// La librería (~3 MB con el modelo) se descarga solo la primera vez que se usa.
+// El resultado siempre queda en el campo para que el oficial lo confirme.
+const TESSERACT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let _ocrWorker = null;
+
+function cargarScript(src) {
+  return new Promise((resolve, reject) => {
+    if ([...document.scripts].some(s => s.src === src)) return resolve();
+    const el = document.createElement('script');
+    el.src = src; el.onload = resolve; el.onerror = () => reject(new Error('No se pudo descargar el lector de placas'));
+    document.head.appendChild(el);
+  });
+}
+
+// Busca en el texto leído algo con forma de placa: 5 a 8 letras y números
+// mezclados (ABC-123-D, ABC-12-34, 123-ABC…), ignorando "MÉXICO", el estado, etc.
+function extraerPlaca(texto) {
+  const candidatos = [];
+  String(texto || '').toUpperCase().split(/\n+/).forEach(linea => {
+    const tokens = linea.replace(/[^A-Z0-9\-\s]/g, ' ').split(/[\s\-]+/).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      for (let n = 1; n <= 3 && i + n <= tokens.length; n++) {
+        const partes = tokens.slice(i, i + n);
+        if (n > 1 && partes.some(p => p.length > 4)) continue;   // "MEXICO", "LEON"… no son parte de la placa
+        const plano = partes.join('');
+        if (plano.length >= 5 && plano.length <= 8 && /[A-Z]/.test(plano) && /\d/.test(plano)) candidatos.push({ partes, plano });
+      }
+    }
+  });
+  if (!candidatos.length) return '';
+  const forma = p => /^[A-Z]{3}\d{3}[A-Z]$/.test(p) || /^[A-Z]{3}\d{4}$/.test(p) || /^\d{3}[A-Z]{3}$/.test(p) || /^[A-Z]\d{2}[A-Z]{3}$/.test(p);
+  const puntos = c => (forma(c.plano) ? 4 : 0) + (c.plano.length === 7 ? 2 : c.plano.length === 6 ? 1 : 0) + (c.partes.length > 1 ? 1 : 0);
+  const mejor = candidatos.sort((a, b) => puntos(b) - puntos(a))[0];
+  if (mejor.partes.length > 1) return mejor.partes.join('-');
+  // Sin separadores: formato más común de placa mexicana
+  const m = mejor.plano.match(/^([A-Z]{3})(\d{3})([A-Z])$/) || mejor.plano.match(/^([A-Z]{3})(\d{3,4})$/) || mejor.plano.match(/^(\d{3})([A-Z]{3})$/);
+  return m ? m.slice(1).join('-') : mejor.plano;
+}
+
+// Escala de grises y más contraste: Tesseract lee mucho mejor así
+async function prepararImagenPlaca(file) {
+  const url = await compressPhoto(file, 1400);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < d.data.length; i += 4) {
+    const g = 0.299 * d.data[i] + 0.587 * d.data[i + 1] + 0.114 * d.data[i + 2];
+    const v = Math.max(0, Math.min(255, (g - 128) * 1.6 + 128));
+    d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+  }
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
+async function leerPlacaDesdeArchivo(file) {
+  if (!file) return;
+  const st = $('placa-ocr-status'), btn = $('btn-placa-camara');
+  const msg = (t, color) => { if (st) { st.textContent = t; st.style.color = color || 'var(--muted)'; } };
+  if (btn) btn.disabled = true;
+  try {
+    msg(_ocrWorker ? 'Leyendo la placa…' : 'Preparando el lector (solo la primera vez tarda un poco)…');
+    await cargarScript(TESSERACT_URL);
+    if (!_ocrWorker) {
+      _ocrWorker = await Tesseract.createWorker('eng');
+      await _ocrWorker.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ' });
+    }
+    msg('Leyendo la placa…');
+    const { data } = await _ocrWorker.recognize(await prepararImagenPlaca(file));
+    const placa = extraerPlaca(data?.text);
+    if (!placa) { msg('No se encontró la placa en la foto. Acércate más o escríbela a mano.', 'var(--amber)'); return; }
+    $('inf-placa').value = placa;
+    msg(`Leída: ${placa}. Revisa que coincida con la placa del vehículo.`, 'var(--green)');
+    await checkPlacaHistory();
+    updateInfSummary();
+  } catch (err) {
+    msg(navigator.onLine ? 'No se pudo leer la placa. Escríbela a mano.' : 'Sin señal: la primera lectura necesita internet. Escribe la placa a mano.', 'var(--red)');
+    console.warn('OCR placa:', err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ── Historial por placa + auto-fill desde padrón vehicular ──
@@ -2821,6 +3079,99 @@ async function printTicket80(id) {
 }
 
 // ── Reportes ──────────────────────────────────────────────
+// ── Reporte mensual (reporte_mensual.sql + función reporte-mensual) ──
+function initReporteMensual(mesSel) {
+  const sel = $('rep-mes'); if (!sel) return;
+  if (!sel.options.length) {
+    const hoy = new Date();
+    for (let i = 1; i <= 12; i++) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      sel.add(new Option(d.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }), v));
+    }
+    // El mes en curso al final, por si se quiere ver cómo va
+    const v = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+    sel.add(new Option(hoy.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) + ' (en curso)', v));
+  }
+  if (mesSel && [...sel.options].some(o => o.value === mesSel)) sel.value = mesSel;
+  const enviar = $('rep-enviar'); if (enviar) enviar.style.display = _rol === 'admin' ? '' : 'none';
+}
+
+async function printReporteMensual() {
+  const mes = ($('rep-mes')||{}).value;
+  const win = window.open('', '_blank', 'width=900,height=800');
+  const { data: r, error } = await _sb.rpc('reporte_mensual', { p_mes: mes ? mes + '-01' : null });
+  if (error || !r) { if (win) win.close(); alert('No se pudo generar el reporte: ' + (error?.message || 'sin datos')); return; }
+  const [y, m] = r.mes.split('-').map(Number);
+  const nombre = new Date(y, m - 1, 15).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+  const varia = (a, b) => { if (!b) return ''; const p = Math.round((a - b) / b * 100); return p === 0 ? 'igual que el mes anterior' : `${p > 0 ? '+' : ''}${p}% vs. mes anterior`; };
+  const tabla = (titulo, cab, filas) => filas.length ? `<h3>${titulo}</h3><table><thead><tr>${cab.map((c, i) => `<th${i ? ' class="n"' : ''}>${c}</th>`).join('')}</tr></thead>
+    <tbody>${filas.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="n"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+  const estados = Object.entries(r.por_estado || {}).map(([k, v]) => `${esc(k)}: ${v}`).join(' · ') || '—';
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte de Tránsito · ${esc(nombre)}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:2rem auto;max-width:780px;padding:0 1rem}
+    .k{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#4B5563}
+    h1{font-size:1.5rem;margin:.3rem 0 .2rem}
+    .sub{color:#4B5563;font-size:.85rem;margin-bottom:1.3rem}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid #111827;border-bottom:1px solid #111827;margin-bottom:1.2rem}
+    .grid div{padding:.7rem .8rem .7rem 0;border-right:1px solid #E5E7EB}
+    .grid div:last-child{border-right:0}
+    .grid b{display:block;font-size:1.35rem;margin-top:.15rem}
+    .grid small{color:#4B5563;font-size:.72rem}
+    h3{font-size:.95rem;margin:1.4rem 0 .4rem}
+    table{width:100%;border-collapse:collapse;font-size:.82rem}
+    th{text-align:left;border-bottom:1px solid #111827;padding:.35rem 0}
+    td{border-bottom:1px solid #E5E7EB;padding:.35rem 0}
+    .n{text-align:right}
+    .firma{margin-top:3.5rem;display:flex;justify-content:flex-end}
+    .firma div{border-top:1px solid #111827;padding-top:.3rem;width:260px;text-align:center;font-size:.8rem}
+    .pie{margin-top:2rem;font-size:.7rem;color:#6B7280}
+    button{margin-bottom:1rem;padding:.45rem 1rem;background:#1A7A82;color:#fff;border:0;border-radius:6px;cursor:pointer;font:inherit}
+    @media print{button{display:none}body{margin:0 auto}}
+  </style></head><body>
+  <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div class="k">Dirección de Tránsito y Movilidad · ${esc(r.municipio || '')}${r.estado_mun ? ', ' + esc(r.estado_mun) : ''}</div>
+  <h1>Reporte mensual · ${esc(nombre)}</h1>
+  <div class="sub">Generado el ${new Date().toLocaleString('es-MX')}</div>
+  <div class="grid">
+    <div><small>Infracciones levantadas</small><b>${r.infracciones}</b><small>${esc(varia(r.infracciones, r.infracciones_prev))}</small></div>
+    <div><small>Recaudación</small><b>${fmt(r.recaudacion)}</b><small>${esc(varia(Number(r.recaudacion), Number(r.recaudacion_prev)))}</small></div>
+    <div><small>Pendientes de cobro (acumulado)</small><b>${fmt(r.pendientes_monto)}</b><small>${r.pendientes_total} boletas</small></div>
+  </div>
+  <table><tbody>
+    <tr><td>Monto de las infracciones del mes</td><td class="n">${fmt(r.infracciones_monto)}</td></tr>
+    <tr><td>Estado de las boletas del mes</td><td class="n">${estados}</td></tr>
+    <tr><td>Pagos registrados</td><td class="n">${r.pagos}</td></tr>
+    <tr><td>Descuentos por pronto pago otorgados</td><td class="n">${fmt(r.descuentos)}</td></tr>
+    <tr><td>Vehículos ingresados al corralón / liberados</td><td class="n">${r.grua_ingresos} / ${r.grua_liberados}</td></tr>
+    <tr><td>Accidentes registrados (lesionados / fallecidos)</td><td class="n">${r.accidentes} (${r.lesionados} / ${r.fallecidos})</td></tr>
+  </tbody></table>
+  ${tabla('Motivos más frecuentes', ['Motivo', 'Boletas', 'Monto'], (r.por_tipo || []).map(t => [esc(t.tipo), t.n, fmt(t.monto)]))}
+  ${tabla('Boletas por oficial', ['Oficial', 'Boletas', 'Monto'], (r.por_oficial || []).map(o => [esc(o.oficial), o.n, fmt(o.monto)]))}
+  ${tabla('Recaudación por forma de pago', ['Forma de pago', 'Pagos', 'Total'], (r.por_metodo || []).map(p => [esc(p.metodo), p.pagos, fmt(p.total)]))}
+  <div class="firma"><div>${esc(r.director || 'Director de Tránsito')}<br>Director de Tránsito y Movilidad</div></div>
+  <div class="pie">Sistema de Tránsito y Movilidad Municipal</div>
+  </body></html>`;
+  if (!win) { alert('Permite las ventanas emergentes para ver el reporte'); return; }
+  win.document.write(html); win.document.close();
+}
+
+async function enviarReporteMensual() {
+  const mes = ($('rep-mes')||{}).value, st = $('rep-estado'), btn = $('rep-enviar');
+  if (btn) btn.disabled = true;
+  if (st) { st.textContent = 'Enviando…'; st.style.color = 'var(--muted)'; }
+  try {
+    const { data, error } = await _sb.functions.invoke('reporte-mensual', { body: { mes } });
+    let msg = error?.message;
+    if (error?.context?.json) { try { msg = (await error.context.json()).error || msg; } catch (_) {} }
+    if (error) throw new Error(msg);
+    if (st) { st.textContent = `Enviado a ${data.enviado_a.join(', ')}`; st.style.color = 'var(--green)'; }
+  } catch (err) {
+    if (st) { st.textContent = 'No se pudo enviar: ' + err.message; st.style.color = 'var(--red)'; }
+  } finally { if (btn) btn.disabled = false; }
+}
+
 async function generateReport(tipo) {
   const { data: cfg } = await _sb.from('configuracion').select('*').eq('id',1).single();
   const mun = esc(cfg ? cfg.municipio : 'Municipio');
@@ -3086,7 +3437,8 @@ let _oficiales = null;
 async function loadOficiales(selectIds) {
   if (!_oficiales) {
     const { data } = await _sb.from('usuarios').select('nombre').eq('activo', true).order('nombre');
-    _oficiales = (data||[]).map(u => u.nombre);
+    if (data) { _oficiales = data.map(u => u.nombre); _guardarLocal('tm_oficiales', _oficiales); }
+    else _oficiales = _leerLocal('tm_oficiales') || (_session?.name ? [_session.name] : []);
   }
   selectIds.forEach(id => {
     const el = $(id);
@@ -3153,7 +3505,7 @@ function _waFromBtn(btn) {
 // ══════════════════════════════════════════════════════════
 const BIT_MODULOS = { infracciones:'Infracciones', pagos:'Pagos', permisos:'Permisos', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', usuarios:'Usuarios', configuracion:'Configuración', turnos:'Turnos' };
 const BIT_ACCIONES = { alta:['Alta','badge-green'], cambio:['Cambio','badge-blue'], baja:['Baja','badge-red'] };
-const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas' };
+const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte' };
 let _bitDesde = 0;
 
 function _bitValor(v) {
@@ -4410,14 +4762,24 @@ async function checkConexion() {
   } catch (err) { console.error('conexión:', err.message); }
   let bar = document.getElementById('conn-banner');
   if (ok) { if (bar) bar.remove(); return true; }
+  if (bar && bar.dataset.offline !== String(!navigator.onLine)) { bar.remove(); bar = null; }
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'conn-banner';
     bar.setAttribute('role', 'alert');
     bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#DC2626;color:#fff;font:600 .8rem DM Sans,sans-serif;padding:.55rem 1rem;text-align:center;display:flex;gap:.75rem;justify-content:center;align-items:center;flex-wrap:wrap';
-    bar.innerHTML = '<span>No hay conexión con la base de datos. Los datos no se pueden cargar ni guardar.</span>'
-      + '<button type="button" style="background:#fff;color:#DC2626;border:none;border-radius:6px;padding:.25rem .7rem;font:inherit;cursor:pointer">Reintentar</button>';
-    bar.querySelector('button').onclick = async () => { if (await checkConexion()) location.reload(); };
+    bar.dataset.offline = String(!navigator.onLine);
+    if (!navigator.onLine) {
+      // Sin internet en el dispositivo: se puede seguir levantando boletas
+      bar.style.background = '#92400E';
+      bar.innerHTML = '<span>Sin internet. Puedes seguir levantando boletas: se guardan en este dispositivo y se suben solas al volver la señal.</span>'
+        + '<button type="button" style="background:#fff;color:#92400E;border:none;border-radius:6px;padding:.25rem .7rem;font:inherit;cursor:pointer">Nueva infracción</button>';
+      bar.querySelector('button').onclick = () => openNewInfraccion();
+    } else {
+      bar.innerHTML = '<span>No hay conexión con la base de datos. Los datos no se pueden cargar ni guardar.</span>'
+        + '<button type="button" style="background:#fff;color:#DC2626;border:none;border-radius:6px;padding:.25rem .7rem;font:inherit;cursor:pointer">Reintentar</button>';
+      bar.querySelector('button').onclick = async () => { if (await checkConexion()) location.reload(); };
+    }
     document.body.appendChild(bar);
   }
   return false;
@@ -4429,12 +4791,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
   }
   initUI();
-  if (!(await checkConexion())) { navigate('dashboard'); return; }
+  actualizarIndicadorCola();
+  if (!(await checkConexion())) {
+    navigate('dashboard');
+    // Sin internet con sesión ya iniciada: queda listo para levantar boletas
+    if (!navigator.onLine && _session) precargarSinSenal();
+    return;
+  }
   if (!(await verificarSesion())) return;
+  precargarSinSenal();
+  sincronizarCola();
+  setInterval(sincronizarCola, 120000);
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
   try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
   setupPushNotifications().catch(()=>{});
-  navigate('dashboard');
+  const repMes = new URLSearchParams(location.search).get('reporte');
+  if (repMes && /^\d{4}-\d{2}$/.test(repMes)) {
+    // Enlace del correo mensual: abre Reportes con ese mes elegido
+    navigate('reportes'); initReporteMensual(repMes);
+    history.replaceState(null, '', location.pathname);
+  } else navigate('dashboard');
 });

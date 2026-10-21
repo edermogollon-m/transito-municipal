@@ -56,7 +56,8 @@ begin
     v_uid,
     coalesce(v_nombre, case when auth.uid() is null then 'Sistema' else 'Desconocido' end),
     coalesce(v_row ->> 'folio', v_row ->> 'num', v_row ->> 'folio_inf', v_row ->> 'placa',
-             v_row ->> 'usuario', v_row ->> 'titular', v_row ->> 'oficial_nombre', v_row ->> 'municipio'),
+             v_row ->> 'usuario', v_row ->> 'titular', v_row ->> 'oficial_nombre', v_row ->> 'municipio',
+             v_row ->> 'descripcion'),
     v_cambios
   );
   return null;

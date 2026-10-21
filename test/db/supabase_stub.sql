@@ -23,6 +23,8 @@ create table if not exists auth.identities (
 );
 create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create or replace function auth.role() returns text language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.role', true), '') $$;
 
 -- Supabase Storage mínimo: tablas que usa evidencias_storage.sql.
 create schema if not exists storage;
