@@ -189,16 +189,16 @@
 <!-- Hero -->
 <div class="hero">
   <h1>Consulta tus infracciones</h1>
-  <p>Ingresa tu placa, folio de ticket o nombre para conocer tus multas y cómo regularizarlas.</p>
+  <p>Ingresa tu placa o el folio de tu ticket para conocer tus multas y cómo regularizarlas.</p>
 </div>
 
 <!-- Search -->
 <div class="search-wrap">
   <div class="search-box">
-    <label class="search-label" for="q">Placa, folio de ticket o nombre</label>
+    <label class="search-label" for="q">Placa o folio de ticket</label>
     <div class="search-row">
       <input id="q" class="search-input" type="text"
-        placeholder="Ej. ABC-123 · INF-2026-001 · Juan Pérez"
+        placeholder="Ej. ABC-123 · INF-2026-0001"
         autocomplete="off" onkeydown="if(event.key==='Enter')buscar()"/>
       <button class="search-btn" onclick="buscar()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -270,6 +270,10 @@ function toggleHistorial() {
   if (_lastQ.length >= 2) buscar();
 }
 
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 async function buscar() {
   const q = ($('q').value||'').trim();
   if (q.length < 2) { alert('Ingresa al menos 2 caracteres para buscar'); return; }
@@ -282,17 +286,8 @@ async function buscar() {
   result.innerHTML = '';
   if (pasos) pasos.style.display = 'none';
 
-  let query = _sb.from('infracciones')
-    .select('id,folio,fecha,placa,infractor,tipo,monto,estado,ubicacion,obs')
-    .or(`placa.ilike.%${q}%,folio.ilike.%${q}%,infractor.ilike.%${q}%`)
-    .order('fecha', { ascending: false });
-
-  if (!_mostrarHistorial) {
-    query = query.in('estado', ['pendiente','impugnada','vencida']);
-  }
-  query = query.limit(25);
-
-  const { data, error } = await query;
+  // Búsqueda exacta por placa o folio (la BD no expone la tabla al público)
+  const { data, error } = await _sb.rpc('consulta_publica', { p_q: q, p_historial: _mostrarHistorial });
   spinner.style.display = 'none';
 
   if (error || !data || !data.length) {
@@ -302,8 +297,8 @@ async function buscar() {
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <h3>${sinActivas ? 'Sin infracciones activas' : 'Sin resultados'}</h3>
       <p>${sinActivas
-        ? `No se encontraron infracciones pendientes de pago para <strong>"${q}"</strong>.`
-        : `No se encontraron infracciones para <strong>"${q}"</strong>.`}
+        ? `No se encontraron infracciones pendientes de pago para <strong>"${escHtml(q)}"</strong>.`
+        : `No se encontraron infracciones para <strong>"${escHtml(q)}"</strong>.`}
       ${sinActivas ? `<br><br><button onclick="toggleHistorial()" style="background:var(--ac);color:#fff;border:none;padding:.4rem 1rem;border-radius:8px;cursor:pointer;font-size:.8rem;font-family:inherit;font-weight:600">Ver historial completo</button>` : ''}
       </p>
     </div>`;
