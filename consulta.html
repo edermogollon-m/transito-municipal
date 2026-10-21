@@ -282,9 +282,11 @@ async function buscar() {
   result.innerHTML = '';
   if (pasos) pasos.style.display = 'none';
 
+  // Comas, paréntesis y comillas rompen la sintaxis del filtro .or() de PostgREST.
+  const qf = q.replace(/[,()"'\\%*]/g, ' ').trim();
   let query = _sb.from('infracciones')
     .select('id,folio,fecha,placa,infractor,tipo,monto,estado,ubicacion,obs')
-    .or(`placa.ilike.%${q}%,folio.ilike.%${q}%,infractor.ilike.%${q}%`)
+    .or(`placa.ilike.%${qf}%,folio.ilike.%${qf}%,infractor.ilike.%${qf}%`)
     .order('fecha', { ascending: false });
 
   if (!_mostrarHistorial) {
@@ -292,10 +294,21 @@ async function buscar() {
   }
   query = query.limit(25);
 
-  const { data, error } = await query;
+  let data = null, error = null;
+  try { ({ data, error } = await query); } catch (err) { error = err; }
   spinner.style.display = 'none';
 
-  if (error || !data || !data.length) {
+  // Si el servidor falla no se puede decir "sin adeudos": sería información falsa.
+  if (error) {
+    console.error('consulta:', error);
+    result.innerHTML = `<div class="not-found">
+      <h3>No se pudo realizar la consulta</h3>
+      <p>El servicio no está disponible en este momento. Intenta de nuevo en unos minutos.</p>
+    </div>`;
+    return;
+  }
+
+  if (!data || !data.length) {
     if (pasos) pasos.style.display = '';
     const sinActivas = !_mostrarHistorial;
     result.innerHTML = `<div class="not-found">

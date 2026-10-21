@@ -4276,12 +4276,38 @@ async function initData() {
   }
 }
 
+// ── Conexión con la base de datos ─────────────────────────
+// Si Supabase no responde (sin internet, o el proyecto está pausado), cada
+// módulo se vería vacío sin explicación. Avisarlo con una franja visible.
+async function checkConexion() {
+  let ok = false;
+  try {
+    const { error } = await _sb.from('configuracion').select('id', { head: true, count: 'exact' });
+    ok = !error;
+    if (error) console.error('conexión:', error);
+  } catch (err) { console.error('conexión:', err.message); }
+  let bar = document.getElementById('conn-banner');
+  if (ok) { if (bar) bar.remove(); return true; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'conn-banner';
+    bar.setAttribute('role', 'alert');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#DC2626;color:#fff;font:600 .8rem DM Sans,sans-serif;padding:.55rem 1rem;text-align:center;display:flex;gap:.75rem;justify-content:center;align-items:center;flex-wrap:wrap';
+    bar.innerHTML = '<span>No hay conexión con la base de datos. Los datos no se pueden cargar ni guardar.</span>'
+      + '<button type="button" style="background:#fff;color:#DC2626;border:none;border-radius:6px;padding:.25rem .7rem;font:inherit;cursor:pointer">Reintentar</button>';
+    bar.querySelector('button').onclick = async () => { if (await checkConexion()) location.reload(); };
+    document.body.appendChild(bar);
+  }
+  return false;
+}
+
 // ── Boot ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
   }
   initUI();
+  if (!(await checkConexion())) { navigate('dashboard'); return; }
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }

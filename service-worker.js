@@ -1,4 +1,4 @@
-const CACHE = 'transito-v1';
+const CACHE = 'transito-v2';
 const PRECACHE = [
   '/',
   '/login',
@@ -9,9 +9,12 @@ const PRECACHE = [
   '/manifest.json'
 ];
 
+// Página que se muestra si se abre la app sin internet.
+const OFFLINE_URL = '/offline';
+
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(c => c.addAll([...PRECACHE, OFFLINE_URL])).then(() => self.skipWaiting())
   );
 });
 
@@ -23,22 +26,31 @@ self.addEventListener('activate', e => {
   );
 });
 
+// Estrategia "primero la red": con conexión siempre se usa la versión recién
+// publicada (antes se servía la copia en caché y un deploy nuevo podía mezclar
+// HTML nuevo con app.js viejo). La caché solo se usa sin conexión. Nunca se
+// interceptan llamadas a Supabase ni a otros dominios: los datos son siempre en vivo.
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  // Only cache same-origin GET requests; skip Supabase API calls
-  if (e.request.method !== 'GET' || url.hostname.includes('supabase.co')) return;
+  const req = e.request;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin) return;
+
+  if (req.mode === 'navigate') {
+    e.respondWith(fetch(req).catch(() =>
+      caches.match(req, { ignoreSearch: true }).then(r => r || caches.match(OFFLINE_URL))));
+    return;
+  }
 
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const networkFetch = fetch(e.request).then(res => {
-        if (res && res.status === 200 && res.type === 'basic') {
+    fetch(req)
+      .then(res => {
+        // Una respuesta redirigida no se puede reutilizar desde caché (Safari la rechaza).
+        if (res && res.ok && !res.redirected) {
           const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          caches.open(CACHE).then(c => c.put(req, clone));
         }
         return res;
-      });
-      // Stale-while-revalidate: serve cached immediately, update in background
-      return cached || networkFetch;
-    })
+      })
+      .catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || Response.error()))
   );
 });
