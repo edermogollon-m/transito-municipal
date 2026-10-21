@@ -10,10 +10,13 @@ Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
 - `index.html` + `app.js` — panel: dashboard, infracciones, permisos de
   circulación, pagos/caja (corte de caja), padrón vehicular, grúa/corralón,
   accidentes viales, calendario, mapa de infracciones, rendimiento de
-  oficiales, reportes (Excel), oficiales/bitácora de turno, configuración y
-  usuarios. Búsqueda global con ⌘K y avisos en tiempo real.
+  oficiales, reportes (Excel), oficiales/bitácora de turno, bitácora de
+  auditoría, configuración y usuarios. Búsqueda global con ⌘K y avisos en
+  tiempo real.
 - `consulta.html` — portal ciudadano: consulta de infracciones por placa o
   folio exactos, sin iniciar sesión.
+- `verificar.html` — página pública a la que apunta el QR de boletas, tickets
+  y recibos: confirma que el documento es auténtico y muestra su estado actual.
 - `offline.html` — se muestra si la app se abre sin internet (PWA).
 
 ## Configuración
@@ -35,6 +38,19 @@ proyectos activos a la vez).
   su misma contraseña, elimina las contraseñas en texto plano y reemplaza las
   políticas abiertas. Correr **después** de `schema.sql`. Es idempotente.
   Ya está aplicado en el proyecto `transito-municipal`.
+- `auditoria.sql` — bitácora: triggers que registran cada alta, cambio o baja
+  (quién, cuándo, campo por campo) en `auditoria`. Solo admin y supervisor la
+  leen; nadie puede editarla desde la app. Pantalla **Bitácora** y sección
+  "Historial" en el detalle de cada infracción.
+- `evidencias_storage.sql` — bucket privado `evidencias` en Supabase Storage.
+  Las fotos ya no se guardan dentro de la base: la columna `fotos` guarda las
+  rutas y la app muestra enlaces firmados de 1 hora.
+- `verificacion.sql` — token aleatorio por infracción y por pago, y la función
+  pública `verificar_documento(token)` que usa `verificar.html`.
+
+Orden para una base nueva: `schema.sql` → `security_auth.sql` →
+`auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql`. Todos son
+idempotentes y ya están aplicados en `transito-municipal`.
 
 ## Seguridad
 
@@ -65,6 +81,6 @@ npm test
 con un Supabase simulado: inicia sesión, abre cada módulo del panel, busca en
 el portal ciudadano y comprueba los avisos cuando no hay servidor. Falla ante
 cualquier error de JavaScript. `test/db/run.sh` aplica `schema.sql` y
-`security_auth.sql` en un Postgres limpio y prueba folios, migración de
-contraseñas y permisos por rol.
+los demás archivos SQL en un Postgres limpio y prueba folios, migración de
+contraseñas, permisos por rol, bitácora, Storage y verificación.
 Ambos corren en cada PR (`.github/workflows/ci.yml`).

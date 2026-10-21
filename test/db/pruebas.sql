@@ -76,4 +76,82 @@ do $$ begin
   assert (select count(*) from infracciones) = 0, 'usuario inactivo lee infracciones';
 end $$;
 reset role;
+
+-- ── Bitácora (auditoria.sql) ─────────────────────────────────────────
+-- El oficial cambia una infracción: queda quién, qué campo, antes y después
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+do $$ declare v bigint; begin
+  insert into infracciones (placa, infractor, tipo, monto) values ('AUD-001', 'Auditado', 'Exceso de velocidad', 800) returning id into v;
+  update infracciones set monto = 500, fotos = '["x.jpg"]' where id = v;
+  update infracciones set monto = 500 where id = v;           -- sin cambios reales: no registra
+  assert (select count(*) from auditoria) = 0, 'oficial pudo leer la bitácora';
+  begin
+    delete from auditoria;
+    update auditoria set usuario_nombre = 'x';
+    insert into auditoria (tabla, accion) values ('x', 'alta');
+    raise exception 'oficial pudo escribir en la bitácora';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+do $$ declare v text := (select id::text from infracciones where placa = 'AUD-001'); begin
+  assert (select count(*) from auditoria where tabla = 'infracciones' and registro_id = v) = 2, 'alta + 1 cambio';
+  assert (select usuario_nombre from auditoria where registro_id = v and accion = 'alta') = 'Oficial', 'autor del alta';
+  assert (select resumen from auditoria where registro_id = v and accion = 'alta') like 'INF-%', 'resumen con folio';
+  assert (select cambios from auditoria where registro_id = v and accion = 'cambio')
+         = '{"monto": {"antes": 800, "despues": 500}}'::jsonb, 'detalle del cambio (sin fotos)';
+end $$;
+-- El admin sí la lee
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);
+set role authenticated;
+do $$ begin
+  assert (select count(*) from auditoria where tabla = 'infracciones') >= 2, 'admin lee la bitácora';
+end $$;
+reset role;
+
+-- ── Fotos en Storage (evidencias_storage.sql) ────────────────────────
+do $$ begin
+  assert (select not public from storage.buckets where id = 'evidencias'), 'bucket privado';
+end $$;
+set role anon;
+do $$ begin
+  begin
+    insert into storage.objects (bucket_id, name) values ('evidencias', 'infracciones/x.jpg');
+    raise exception 'anon pudo subir fotos';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+insert into storage.objects (bucket_id, name) values ('evidencias', 'infracciones/2026/prueba.jpg');
+do $$ begin
+  assert (select count(*) from storage.objects where bucket_id = 'evidencias') = 1, 'oficial ve sus fotos';
+  delete from storage.objects where bucket_id = 'evidencias';
+  assert (select count(*) from storage.objects where bucket_id = 'evidencias') = 1, 'oficial pudo borrar fotos';
+end $$;
+reset role;
+
+-- ── Verificación pública (verificacion.sql) ──────────────────────────
+insert into pagos (infraccion_id, folio_inf, monto_original, descuento_pct, monto_final)
+  select id, folio, 800, 20, 640 from infracciones where placa = 'AUD-001';
+set role anon;
+do $$ declare t_inf uuid; t_pag uuid; j jsonb; begin
+  reset role;
+  t_inf := (select token_verificacion from infracciones where placa = 'AUD-001');
+  t_pag := (select token_verificacion from pagos order by id desc limit 1);
+  set role anon;
+  j := verificar_documento(t_inf);
+  assert j ->> 'tipo' = 'infraccion' and j ->> 'placa' = 'AUD-001', 'verifica boleta';
+  assert j ->> 'infractor' = 'Auditado', 'nombre abreviado (una palabra)';
+  j := verificar_documento(t_pag);
+  assert j ->> 'tipo' = 'pago' and (j ->> 'monto')::numeric = 640 and j ->> 'folio' like 'REC-%', 'verifica recibo';
+  assert verificar_documento(gen_random_uuid()) is null, 'token inexistente';
+end $$;
+reset role;
+do $$ begin
+  assert nombre_abreviado('Roberto  Gómez López') = 'Roberto G. L.', 'abreviatura';
+  assert (select count(distinct token_verificacion) = count(*) from infracciones), 'tokens únicos';
+end $$;
 \echo 'OK   pruebas de base de datos'
