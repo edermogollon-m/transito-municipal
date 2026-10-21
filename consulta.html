@@ -333,7 +333,7 @@ async function buscar() {
     html += `<div class="adeudos-banner">
       <div class="adeudos-banner-top">
         <div>
-          <div class="adeudos-num">${pendientes.length} infracción${pendientes.length>1?'es':''} sin pagar</div>
+          <div class="adeudos-num">${pendientes.length} ${pendientes.length>1?'infracciones':'infracción'} sin pagar</div>
           <div class="adeudos-sub">${foliosStr}</div>
         </div>
         <div class="adeudos-monto">
@@ -350,8 +350,8 @@ async function buscar() {
 
   // Contador de resultados
   const resLabel = _mostrarHistorial
-    ? `${data.length} infracción${data.length!==1?'es':''} encontrada${data.length!==1?'s':''} · ${pendientes.length} pendiente${pendientes.length!==1?'s':''} · ${pagadas.length} pagada${pagadas.length!==1?'s':''}`
-    : `${data.length} infracción${data.length!==1?'es':''} activa${data.length!==1?'s':''}`;
+    ? `${data.length} ${data.length!==1?'infracciones':'infracción'} encontrada${data.length!==1?'s':''} · ${pendientes.length} pendiente${pendientes.length!==1?'s':''} · ${pagadas.length} pagada${pagadas.length!==1?'s':''}`
+    : `${data.length} ${data.length!==1?'infracciones':'infracción'} activa${data.length!==1?'s':''}`;
   html += `<div class="results-count">${resLabel}</div>`;
 
   // Banner historial

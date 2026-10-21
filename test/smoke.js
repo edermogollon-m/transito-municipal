@@ -53,6 +53,11 @@ const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').mat
 const TOKEN = '11111111-2222-4333-8444-555555555555';
 const storageUploads = [];
 const rpcCalls = [];
+const inserts = [];   // filas que la app insertó en infracciones
+// Tesseract.js simulado: "lee" una placa con texto alrededor
+const TESSERACT_STUB = `window.Tesseract = { createWorker: async () => ({
+  setParameters: async () => {}, terminate: async () => {},
+  recognize: async () => ({ data: { text: 'NUEVO LEON\\nABC 123 D\\nMEXICO' } }) }) };`;
 const norm = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TABLES = {
   infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000', token_verificacion: TOKEN, fotos: '["infracciones/2026/prueba.jpg"]' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
@@ -60,7 +65,7 @@ const TABLES = {
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
   // Descuento distinto de 20% para comprobar que las boletas usan la configuración
   configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45, valor_uma: 117.31,
-    reglamento: 'Reglamento de Movilidad, Tránsito y Seguridad Vial de San Pedro Garza García, Nuevo León', fundamento_general: 'Artículos 16 y 21 de la Constitución' }],
+    reglamento: 'Reglamento de Movilidad, Tránsito y Seguridad Vial de San Pedro Garza García, Nuevo León', fundamento_general: 'Artículos 16 y 21 de la Constitución', correo_reporte: 'director@municipio.gob.mx' }],
   // Extracto del catálogo del Reglamento de la Ley 561 de Veracruz (veracruz.sql)
   catalogo_infracciones: [
     { numero: 1091, descripcion: 'Exceder los límites de velocidad establecidos.', texto: 'Exceder los límites de velocidad establecidos.', articulo: '75, 153 F. IV', fraccion: '', inciso: '', cuotas_min: 5, cuotas_max: 15, grave: false, tipo_rapido: 'Exceso de velocidad', clasificacion: 'Leve', categoria: 'Circulación de vehículos', nota: '', articulos_ref: ['75', '153'], activo: true },
@@ -87,7 +92,8 @@ const LOCAL_LIBS = LIBS_DIR && {
 };
 
 async function newPage(browser, { dbDown = false } = {}) {
-  const page = await browser.newPage();
+  // Sin service worker: sus peticiones no pasarían por los page.route de abajo
+  const page = await browser.newPage({ serviceWorkers: 'block' });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message + '\n    ' + (e.stack || '').split('\n')[1]));
   page.on('dialog', d => d.dismiss());
@@ -97,6 +103,7 @@ async function newPage(browser, { dbDown = false } = {}) {
       return rel ? r.fulfill({ path: path.join(LIBS_DIR, rel) }) : r.abort();
     });
   }
+  await page.route(/tesseract\.js@/, r => r.fulfill({ status: 200, headers: { 'Content-Type': 'application/javascript' }, body: TESSERACT_STUB }));
   // Fuentes, mapas y geocoding no hacen falta para la prueba.
   await page.route(/^https:\/\/(fonts\.|nominatim\.|[a-z]\.tile\.|.*basemaps)/, r => r.abort());
   await page.route(/supabase\.co/, r => {
@@ -114,7 +121,15 @@ async function newPage(browser, { dbDown = false } = {}) {
       storageUploads.push(u.pathname);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ Key: u.pathname.replace('/storage/v1/object/', '') }) });
     }
+    if (u.pathname.startsWith('/functions/v1/reporte-mensual'))
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ ok: true, mes: '2026-09', enviado_a: ['director@municipio.gob.mx'] }) });
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
+    if (table === 'rpc/reporte_mensual')
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ mes: '2026-09', municipio: XSS, estado_mun: 'NL', director: XSS,
+        infracciones: 12, infracciones_monto: 9600, infracciones_prev: 10, por_estado: { pendiente: 7, [XSS]: 5 }, recaudacion: 4000, recaudacion_prev: 5000,
+        pagos: 6, descuentos: 400, por_metodo: [{ metodo: XSS, pagos: 6, total: 4000 }], por_tipo: [{ tipo: XSS, n: 12, monto: 9600 }],
+        por_oficial: [{ oficial: XSS, n: 12, monto: 9600 }], pendientes_total: 41, pendientes_monto: 31200, grua_ingresos: 2, grua_liberados: 1,
+        accidentes: 1, lesionados: 0, fallecidos: 0 }) });
     if (table === 'rpc/verificar_documento') {
       const t = JSON.parse(req.postData() || '{}').p_token;
       const i = TABLES.infracciones.find(x => x.token_verificacion === t);
@@ -143,7 +158,11 @@ async function newPage(browser, { dbDown = false } = {}) {
       const q = norm(JSON.parse(req.postData() || '{}').p_q);
       rows = TABLES.infracciones.filter(i => norm(i.placa) === q || norm(i.folio) === q);
     } else if (table.startsWith('rpc/')) rows = [];
-    if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) { let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {} rows = withIds(body); }
+    if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) {
+      let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {}
+      if (table === 'infracciones' && req.method() === 'POST') inserts.push(body);
+      rows = withIds(body);
+    }
     if ((req.headers()['accept'] || '').includes('vnd.pgrst.object')) {
       if (!rows.length) return r.fulfill({ status: 406, headers: json, body: JSON.stringify({ code: 'PGRST116', message: 'no rows' }) });
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(rows[0]) });
@@ -180,6 +199,52 @@ function check(name, errors, extra) {
       await page.waitForTimeout(500);
       check('módulo ' + v, errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
     }
+    // Boleta nueva con su artículo del reglamento (se reusa abajo para la prueba sin señal)
+    await page.evaluate(() => openNewInfraccion());
+    await page.waitForTimeout(600);
+    await page.evaluate(async () => { $('inf-tipo').value = 'Exceso de velocidad'; await autoFillMonto(); });
+
+    // Leer la placa con la cámara (Tesseract simulado)
+    const placaLeida = await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 120; c.height = 40;
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      await leerPlacaDesdeArchivo(new File([blob], 'placa.png', { type: 'image/png' }));
+      return { placa: $('inf-placa').value, estado: $('placa-ocr-status').textContent };
+    });
+    check('lectura de placa con cámara', errors, placaLeida.placa === 'ABC-123-D' ? null : JSON.stringify(placaLeida));
+    const formatos = await page.evaluate(() => ['ABC1234', 'JALISCO\n123-ABC', 'texto sin placa', 'PBA123C'].map(extraerPlaca));
+    check('formatos de placa', errors, JSON.stringify(formatos) === JSON.stringify(['ABC-1234', '123-ABC', '', 'PBA-123-C']) ? null : JSON.stringify(formatos));
+
+    // Boleta sin señal: se guarda en el dispositivo y se sube sola al volver internet
+    await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; });
+    await page.context().setOffline(true);
+    await page.evaluate(() => submitInfraccion({ preventDefault() {} }));
+    await page.waitForTimeout(500);
+    const enCola = await page.evaluate(async () => ({ n: (await colaListar()).length, chip: $('cola-boletas')?.textContent || '' }));
+    check('boleta sin señal queda en el dispositivo', errors, enCola.n === 1 && /1 boleta por subir/.test(enCola.chip) ? null : JSON.stringify(enCola));
+    const antes = inserts.length;
+    await page.context().setOffline(false);
+    await page.waitForFunction(() => !document.getElementById('cola-boletas'), null, { timeout: 15000 }).catch(() => {});
+    const subida = inserts.slice(antes).find(b => b.infractor === 'Sin Señal');
+    check('boleta sin señal se sube al volver la señal', errors,
+      subida && /Capturada sin señal/.test(subida.obs) && /^[0-9a-f-]{36}$/.test(subida.token_verificacion) && subida.catalogo_numero === 1091
+        ? null : 'insert: ' + JSON.stringify(subida || inserts.slice(antes)));
+    await page.evaluate(() => closeModal('modal-infraccion'));
+
+    // Reporte mensual: PDF imprimible y envío por correo
+    await page.evaluate(() => navigate('reportes'));
+    await page.waitForTimeout(500);
+    const [popRep] = await Promise.all([page.context().waitForEvent('page'), page.evaluate(() => printReporteMensual())]);
+    await popRep.waitForLoadState().catch(() => {});
+    const repTxt = await popRep.evaluate(() => document.body.innerText).catch(() => '');
+    const repXss = await popRep.evaluate(() => window.__xss).catch(() => false);
+    await popRep.close().catch(() => {});
+    check('reporte mensual en PDF', errors, /Reporte mensual/.test(repTxt) && /31,200/.test(repTxt) ? null : 'texto: ' + repTxt.slice(0, 150));
+    check('reporte mensual escapa los textos', errors, repXss ? 'se ejecutó HTML inyectado' : null);
+    await page.evaluate(() => enviarReporteMensual());
+    await page.waitForTimeout(500);
+    const envio = await page.textContent('#rep-estado');
+    check('enviar reporte por correo', errors, /Enviado a director@municipio\.gob\.mx/.test(envio) ? null : envio);
     // Detalle, edición e impresiones de la fila con HTML malicioso
     const xssId = TABLES.infracciones.find(r => r.placa === 'XSS-001').id;
     const popups = [];

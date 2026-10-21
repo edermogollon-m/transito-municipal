@@ -1,4 +1,4 @@
-const CACHE = 'transito-v4';
+const CACHE = 'transito-v5';
 const PRECACHE = [
   '/',
   '/login',
@@ -27,14 +27,19 @@ self.addEventListener('activate', e => {
   );
 });
 
+// Librerías y tipografías de CDN: se guardan para que la app abra sin internet
+// (el oficial puede levantar boletas sin señal y se suben después).
+const CDN = ['cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+
 // Estrategia "primero la red": con conexión siempre se usa la versión recién
 // publicada (antes se servía la copia en caché y un deploy nuevo podía mezclar
 // HTML nuevo con app.js viejo). La caché solo se usa sin conexión. Nunca se
-// interceptan llamadas a Supabase ni a otros dominios: los datos son siempre en vivo.
+// interceptan llamadas a Supabase: los datos son siempre en vivo.
 self.addEventListener('fetch', e => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== location.origin) return;
+  if (req.method !== 'GET') return;
+  if (url.origin !== location.origin && !CDN.includes(url.hostname)) return;
 
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).catch(() =>
@@ -46,7 +51,8 @@ self.addEventListener('fetch', e => {
     fetch(req)
       .then(res => {
         // Una respuesta redirigida no se puede reutilizar desde caché (Safari la rechaza).
-        if (res && res.ok && !res.redirected) {
+        // Los scripts de CDN llegan "opacos" (status 0) y también se guardan
+        if (res && (res.ok || res.type === 'opaque') && !res.redirected) {
           const clone = res.clone();
           caches.open(CACHE).then(c => c.put(req, clone));
         }

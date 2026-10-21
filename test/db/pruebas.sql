@@ -306,4 +306,33 @@ do $$ begin
   assert (select count(*) from reglamento_articulos) = 0, 'anon no lee el reglamento interno';
 end $$;
 reset role;
+
+-- ── Reporte mensual (reporte_mensual.sql) ────────────────────────────
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+do $$ begin
+  perform reporte_mensual(null);
+  raise exception 'oficial pudo ver el reporte mensual';
+exception when raise_exception then
+  if sqlerrm not like 'Sin permiso%' then raise; end if;
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'admin'), false);
+set role authenticated;
+do $$ declare j jsonb; begin
+  j := reporte_mensual(date_trunc('month', now() at time zone 'America/Mexico_City')::date);
+  assert (j ->> 'infracciones')::int >= 1, 'reporte cuenta las infracciones del mes';
+  assert (j ->> 'recaudacion')::numeric = (select sum(monto_final) from pagos) and (j ->> 'recaudacion')::numeric > 0,
+         'reporte suma la recaudación del mes';
+  assert jsonb_array_length(j -> 'por_tipo') >= 1 and jsonb_typeof(j -> 'por_oficial') = 'array', 'reporte con desglose';
+  assert reporte_mensual(null) ->> 'mes' = to_char((now() at time zone 'America/Mexico_City') - interval '1 month', 'YYYY-MM'), 'por omisión, el mes anterior';
+end $$;
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+do $$ begin
+  assert reporte_mensual(null) is not null, 'envío automático con la llave de servicio';
+end $$;
+select set_config('request.jwt.claim.role', '', false);
+
 \echo 'OK   pruebas de base de datos'

@@ -83,6 +83,38 @@
     .stat-delta { font-size:.7rem; font-weight:600; display:inline-flex; align-items:center; gap:.25rem; }
     .stat-delta.up { color:var(--green); } .stat-delta.down { color:var(--red); } .stat-delta.neutral { color:var(--muted); }
 
+    /* ── PANEL: cifras y pendientes ───────────────────────── */
+    .dash-refresh { margin-left:auto; }
+    .dash-kpis { display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:.875rem; margin-bottom:1.3rem; }
+    .kpi { background:var(--white); border:1px solid var(--border); border-radius:10px; padding:1rem 1.15rem; display:flex; flex-direction:column; gap:.35rem; text-align:left; font:inherit; color:inherit; }
+    .kpi-link { cursor:pointer; }
+    .kpi-link:hover { border-color:var(--subtle); }
+    .kpi-label { font-size:.75rem; color:var(--muted); font-weight:500; }
+    .kpi-num { font-size:1.75rem; font-weight:700; line-height:1.1; letter-spacing:-.03em; color:var(--ink); font-variant-numeric:tabular-nums; }
+    .kpi-sub { font-size:.72rem; color:var(--muted); }
+    .kpi-sub .delta-up, .kpi-sub .delta-dn { font-weight:600; }
+    .kpi-hero { border-top:3px solid var(--ac); }
+    .kpi-hero .kpi-num { font-size:2.3rem; }
+    .kpi-split { margin-top:auto; padding-top:.6rem; border-top:1px solid var(--border-lt); font-size:.78rem; color:var(--text); }
+    .kpi-split strong { color:var(--ink); margin:0 .25rem; }
+    .kpi-split span { color:var(--muted); }
+    .pend-list { list-style:none; margin:0 -.5rem; padding:0; display:flex; flex-direction:column; }
+    .pend-row { width:100%; display:flex; align-items:flex-start; gap:.7rem; padding:.6rem .5rem; border:0; border-radius:8px; background:none; font:inherit; color:inherit; text-align:left; cursor:pointer; min-height:44px; }
+    .pend-row:hover { background:var(--stone); }
+    .pend-list li + li .pend-row { border-top:1px solid var(--border-lt); border-radius:0; }
+    .pend-dot { width:8px; height:8px; border-radius:50%; margin-top:.4rem; flex-shrink:0; }
+    .pend-txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:.1rem; }
+    .pend-txt strong { font-size:.82rem; font-weight:600; color:var(--ink); }
+    .pend-txt small { font-size:.72rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pend-go { font-size:.72rem; font-weight:600; color:var(--ac); margin-top:.15rem; white-space:nowrap; }
+    @media (max-width:1100px) { .dash-kpis { grid-template-columns:repeat(3,1fr); } .kpi-hero { grid-column:1 / -1; } }
+    @media (max-width:600px) { .dash-kpis { grid-template-columns:1fr 1fr; gap:.6rem; } .dash-kpis > :last-child { grid-column:1 / -1; } }
+
+    /* ── BOLETAS SIN SEÑAL ────────────────────────────────── */
+    .cola-chip { min-height:32px; padding:0 .75rem; border-radius:16px; border:1px solid #FCD34D; background:var(--amber-bg); color:#92400E; font:inherit; font-size:.73rem; font-weight:700; cursor:pointer; white-space:nowrap; }
+    .cola-chip.cola-error { border-color:#FCA5A5; background:var(--red-bg); color:#991B1B; }
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
     /* ── CARDS ─────────────────────────────────────────────── */
     .card { background:var(--white); border-radius:12px; padding:1.2rem 1.3rem; margin-bottom:1.1rem; box-shadow:var(--shadow-sm); border:1px solid rgba(229,231,235,.6); }
     .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; }
@@ -157,8 +189,8 @@
     .dash-grid { display:grid; grid-template-columns:1fr 320px; gap:1.1rem; }
     .activity-list { display:flex; flex-direction:column; }
     .donut-wrap { display:flex; align-items:center; gap:1.1rem; }
-    .donut { width:86px; height:86px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 18px var(--white); }
-    .donut-center { font-size:.68rem; font-weight:700; color:var(--ink); text-align:center; line-height:1.3; }
+    .donut { width:86px; height:86px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .donut-center { width:54px; height:54px; border-radius:50%; background:var(--white); display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:.68rem; font-weight:700; color:var(--ink); text-align:center; line-height:1.2; }
     .donut-legend { display:flex; flex-direction:column; gap:.45rem; }
     .legend-row { display:flex; align-items:center; gap:.5rem; font-size:.74rem; color:var(--text); }
     .legend-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -526,18 +558,6 @@
       <!-- DASHBOARD -->
       <div class="view active" id="view-dashboard">
 
-        <!-- Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;flex-wrap:wrap;gap:.75rem">
-          <div>
-            <h2 style="font-size:1.2rem;font-weight:700;color:var(--ink);margin:0">Panel general</h2>
-            <div style="font-size:.75rem;color:var(--muted);margin-top:.15rem" id="dash-fecha-hoy"></div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="renderDashboard()" title="Actualizar datos">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            Actualizar
-          </button>
-        </div>
-
         <!-- Quick actions -->
         <div class="quick-actions">
           <button class="btn btn-primary" onclick="openNewInfraccion()">
@@ -556,74 +576,36 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             Corte de caja
           </button>
+          <button class="btn btn-ghost btn-sm dash-refresh" onclick="renderDashboard()" title="Actualizar datos">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            Actualizar
+          </button>
         </div>
 
-        <!-- 6 stat cards -->
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-inf">—</div>
-                <div class="stat-label" id="s-inf-label">Infracciones este mes</div>
-              </div>
-              <div class="stat-icon" style="background:#FEF2F2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
-            </div>
-            <div class="stat-delta" id="s-inf-delta"></div>
+        <!-- Cifras del día -->
+        <div class="dash-kpis">
+          <div class="kpi kpi-hero">
+            <div class="kpi-label" id="s-rec-label">Recaudación del mes</div>
+            <div class="kpi-num" id="s-rec">—</div>
+            <div class="kpi-sub" id="s-rec-delta"></div>
+            <div class="kpi-split">Cobrado hoy <strong id="s-hoy">—</strong> <span id="s-hoy-count"></span></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-rec">—</div>
-                <div class="stat-label" id="s-rec-label">Recaudación este mes</div>
-              </div>
-              <div class="stat-icon" style="background:rgba(26,122,130,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
-            </div>
-            <div class="stat-delta up" id="s-rec-delta"></div>
+          <div class="kpi">
+            <div class="kpi-label" id="s-inf-label">Infracciones del mes</div>
+            <div class="kpi-num" id="s-inf">—</div>
+            <div class="kpi-sub" id="s-inf-delta"></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-hoy">—</div>
-                <div class="stat-label">Cobrado hoy</div>
-              </div>
-              <div class="stat-icon" style="background:var(--green-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
-            </div>
-            <div class="stat-delta" id="s-hoy-count" style="color:var(--muted)"></div>
+          <div class="kpi">
+            <div class="kpi-label">Pendientes de cobro</div>
+            <div class="kpi-num" id="s-pend">—</div>
+            <div class="kpi-sub" id="s-pend-delta"></div>
           </div>
-          <div class="stat-card">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-pend">—</div>
-                <div class="stat-label" id="s-pend-label">Pendientes · acumulado</div>
-              </div>
-              <div class="stat-icon" style="background:#FFFBEB"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-            </div>
-            <div class="stat-delta" id="s-pend-delta"></div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-per">—</div>
-                <div class="stat-label" id="s-per-label">Permisos vigentes</div>
-              </div>
-              <div class="stat-icon" style="background:rgba(26,122,130,.1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1A7A82" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
-            </div>
-            <div class="stat-delta neutral" id="s-per-delta"></div>
-          </div>
-          <div class="stat-card" style="cursor:pointer" onclick="navigate('grua')" title="Ver corralón">
-            <div class="stat-top">
-              <div>
-                <div class="stat-num" id="s-grua">—</div>
-                <div class="stat-label">En corralón</div>
-              </div>
-              <div class="stat-icon" style="background:#FEF2F2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></div>
-            </div>
-            <div class="stat-delta" style="color:var(--muted);font-size:.7rem" id="s-grua-sub"></div>
-          </div>
+          <button type="button" class="kpi kpi-link" onclick="navigate('grua')" title="Ver corralón">
+            <span class="kpi-label">En corralón</span>
+            <span class="kpi-num" id="s-grua">—</span>
+            <span class="kpi-sub" id="s-grua-sub"></span>
+          </button>
         </div>
-
-        <div id="alertas-panel" class="alertas-grid" style="display:none"></div>
-        <div id="dash-alerts"></div>
 
         <div class="dash-grid">
           <!-- Infracciones recientes -->
@@ -645,6 +627,10 @@
 
           <!-- Columna derecha -->
           <div>
+            <div class="card pend-card" id="alertas-panel" style="display:none">
+              <div class="card-header"><div class="card-title">Pendientes de hoy</div></div>
+              <ul class="pend-list" id="alertas-list"></ul>
+            </div>
             <div class="card" style="margin-bottom:1rem">
               <div class="card-header"><div class="card-title">Por estado</div></div>
               <div class="donut-wrap">
@@ -824,6 +810,17 @@
           <h2>Reportes</h2>
           <p>Generación de informes para cabildo, auditoría o ciudadanos</p>
         </div>
+        <div class="card" id="reporte-mensual-card">
+          <div class="card-title" style="margin-bottom:.3rem">Reporte mensual</div>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.85rem">Infracciones, recaudación, motivos más frecuentes, rendimiento por oficial, corralón y accidentes del mes. Se envía solo por correo el día 1 de cada mes a los correos de Configuración.</p>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <label for="rep-mes" class="sr-only">Mes</label>
+            <select id="rep-mes" class="filter-select" style="min-width:180px"></select>
+            <button type="button" class="btn btn-primary" onclick="printReporteMensual()">Ver y descargar PDF</button>
+            <button type="button" class="btn btn-ghost" id="rep-enviar" onclick="enviarReporteMensual()">Enviar por correo ahora</button>
+          </div>
+          <div id="rep-estado" role="status" style="font-size:.75rem;color:var(--muted);margin-top:.5rem;min-height:1rem"></div>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1rem">
           <div class="card" style="cursor:pointer" onclick="generateReport('infracciones')">
             <div style="width:42px;height:42px;border-radius:9px;background:#FEF2F2;display:flex;align-items:center;justify-content:center;margin-bottom:.9rem"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
@@ -867,6 +864,10 @@
           <div class="form-row">
             <div class="form-field"><label>Director de Tránsito</label><input class="form-input" id="cfg-director" type="text"/></div>
             <div class="form-field"><label>Correo de contacto</label><input class="form-input" id="cfg-correo" type="email"/></div>
+          </div>
+          <div class="form-field">
+            <label for="cfg-correo-reporte">Correos que reciben el reporte mensual <span style="font-weight:400;color:var(--muted)">(separados por coma)</span></label>
+            <input class="form-input" id="cfg-correo-reporte" type="text" placeholder="director@municipio.gob.mx, presidencia@municipio.gob.mx"/>
           </div>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
         </div>
@@ -1376,8 +1377,16 @@
       <div class="form-row">
         <div class="form-field">
           <label>Placa *</label>
-          <input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required
-            oninput="this.value=this.value.toUpperCase()" onblur="checkPlacaHistory()" style="font-family:monospace;font-weight:700;letter-spacing:.05em;font-size:.9rem"/>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required
+              oninput="this.value=this.value.toUpperCase()" onblur="checkPlacaHistory()" style="flex:1;font-family:monospace;font-weight:700;letter-spacing:.05em;font-size:.9rem"/>
+            <button type="button" id="btn-placa-camara" class="btn btn-ghost btn-sm" onclick="$('inf-placa-foto').click()" title="Tomar foto de la placa para leerla" style="white-space:nowrap;flex-shrink:0;min-height:38px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              Leer placa
+            </button>
+            <input type="file" id="inf-placa-foto" accept="image/*" capture="environment" hidden onchange="leerPlacaDesdeArchivo(this.files[0]); this.value=''"/>
+          </div>
+          <div id="placa-ocr-status" role="status" style="font-size:.72rem;color:var(--muted);margin-top:.3rem;min-height:.9rem"></div>
         </div>
         <div class="form-field"><label>Color del vehículo</label>
           <select id="inf-color" class="form-select">
