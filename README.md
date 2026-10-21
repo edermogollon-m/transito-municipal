@@ -80,9 +80,16 @@ proyectos activos a la vez).
 - `limpieza.sql` — opcional, a mano: borra permisos y funciones que quedaron
   sin uso.
 
+- `roles.sql` — roles y separación de funciones: Director (todo), Supervisor
+  (operación, estados, cancelaciones, impugnaciones, permisos, bitácora; no
+  cobra), Policía vial (levanta infracciones, grúa, accidentes y padrón; no
+  cobra ni cambia estados) y Caja · Tesorería (cobra, corte de caja y
+  liberación del corralón; no levanta infracciones). Quien levanta la multa
+  no la cobra. Siempre queda al menos un administrador activo.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
-`cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql`. Todos son idempotentes y ya están aplicados en
+`cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql` → `inmutable.sql` → `roles.sql`. Todos son idempotentes y ya están aplicados en
 `transito-municipal`.
 
 ## Seguridad

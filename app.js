@@ -11,6 +11,70 @@ if (!_session || !_sbToken) { localStorage.removeItem('tm_session'); window.loca
 const USR_COLS = 'id,nombre,usuario,rol,iniciales,activo,created_at,numero_placa,adscripcion';
 const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'admin' : 'oficial');
 
+// ── Permisos por rol ──────────────────────────────────────
+// La base de datos aplica los permisos (RLS y funciones, ver roles.sql); esto
+// solo decide qué se muestra a cada rol para no ofrecer acciones que fallarían.
+const ROLES = {
+  admin: {
+    nombre: 'Director de Tránsito', vistas: '*', acciones: '*',
+    resumen: 'Acceso total: usuarios, configuración, cobro, cancelaciones, impugnaciones y bitácora.'
+  },
+  supervisor: {
+    nombre: 'Supervisor de Tránsito',
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','borrar','reportes','caja_ver'],
+    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, resuelve impugnaciones, emite permisos, libera el corralón y revisa la bitácora. No cobra ni administra usuarios o configuración.'
+  },
+  oficial: {
+    nombre: 'Policía vial',
+    vistas: ['dashboard','infracciones','permisos','oficiales','vehiculos','grua','accidentes','calendario'],
+    acciones: ['infraccion','grua','accidentes','padron'],
+    resumen: 'Levanta infracciones, envía vehículos al corralón, registra accidentes y actualiza el padrón. Consulta permisos e infracciones. No cobra, no cambia estados ni libera vehículos.'
+  },
+  cajero: {
+    nombre: 'Caja · Tesorería',
+    vistas: ['dashboard','infracciones','caja','grua','calendario'],
+    acciones: ['cobrar','liberar','caja_ver'],
+    resumen: 'Cobra multas (con el descuento que corresponda), emite recibos, hace el corte de caja y libera vehículos del corralón. No levanta infracciones.'
+  }
+};
+const _permisosRol = ROLES[_rol] || ROLES.oficial;
+function puede(accion) { return _permisosRol.acciones === '*' || _permisosRol.acciones.includes(accion); }
+function vistaPermitida(v) { return _permisosRol.vistas === '*' || _permisosRol.vistas.includes(v); }
+
+// Botones que llevan a una acción restringida (se reconocen por su onclick)
+const ACCION_DE_BOTON = [
+  [/\bopenNewInfraccion\(/, 'infraccion'],
+  [/\bopenRegistrarPago\(/, 'cobrar'],
+  [/\bsaveDetailEstado\('infracciones'/, 'estado', true],
+  [/\b(impugnarInfraccion|resolverImpugnacion)\(/, 'impugnar'],
+  [/\bsaveDetailEstado\('permisos'/, 'permisos', true],
+  [/\b(openNewPermiso|editPermiso|renovarPermiso)\(/, 'permisos'],
+  [/\b(deleteDetail|delete[A-Z]\w*)\(/, 'borrar'],
+  [/\bopenNewGrua\(/, 'grua'],
+  [/\b(editGrua|liberarVehiculo)\(/, 'liberar'],
+  [/\b(openNewAccidente|editAccidente)\(/, 'accidentes'],
+  [/\b(openNewVehiculo|editVehiculo)\(/, 'padron'],
+  [/\b(printCorteCaja\(|exportExcel\('pagos')/, 'caja_ver'],
+  [/\bexportExcel\('infracciones'/, 'reportes']
+];
+function aplicarPermisosUI(raiz) {
+  if (_permisosRol.acciones === '*') return;
+  (raiz || document).querySelectorAll('[onclick], [data-permiso]').forEach(el => {
+    if (el.dataset.permiso) { if (!puede(el.dataset.permiso)) el.style.display = 'none'; return; }
+    const oc = el.getAttribute('onclick') || '';
+    for (const [re, accion, contenedor] of ACCION_DE_BOTON) {
+      if (re.test(oc) && !puede(accion)) { (contenedor ? el.parentElement : el).style.display = 'none'; break; }
+    }
+  });
+}
+// Las vistas se pintan con HTML dinámico: revisar lo que se agregue
+if (typeof MutationObserver !== 'undefined') {
+  new MutationObserver(muts => {
+    for (const m of muts) m.addedNodes.forEach(n => { if (n.nodeType === 1) aplicarPermisosUI(n.parentElement || n); });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+}
+
 // ── Config cache (populated on first autoFillMonto call) ──
 let _cachedConfig = null;
 
@@ -193,6 +257,7 @@ function closeSidebar() {
 }
 
 function navigate(view, btn) {
+  if (!vistaPermitida(view)) { view = 'dashboard'; btn = null; }
   VIEWS.forEach(v => {
     const el = $('view-'+v);
     if (el) el.style.display = v===view ? 'block' : 'none';
@@ -3075,7 +3140,7 @@ async function renderUsuarios() {
   tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
   const { data, error } = await _sb.from('usuarios').select(USR_COLS).order('id');
   if (error) { tbody.innerHTML=`<tr><td colspan="5" style="color:red">${esc(error.message)}</td></tr>`; return; }
-  const labels = { admin:'Administrador', supervisor:'Supervisor', oficial:'Oficial' };
+  const labels = Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.nombre]));
   tbody.innerHTML = (data||[]).map(u=>`
     <tr>
       <td style="font-weight:600">${esc(u.nombre)}</td>
@@ -3090,11 +3155,17 @@ async function renderUsuarios() {
     </tr>`).join('');
 }
 
+function describirRol() {
+  const d = $('usr-rol-desc'), r = ROLES[$('usr-rol')?.value];
+  if (d) d.textContent = r ? r.resumen : '';
+}
+
 function openNewUsuario() {
   $('modal-usr-title').textContent = 'Nuevo usuario';
   ['usr-id','usr-nombre','usr-usuario','usr-pass','usr-iniciales','usr-placa','usr-adscripcion'].forEach(id=>{ if($(id)) $(id).value=''; });
   if ($('usr-rol')) $('usr-rol').value = 'oficial';
   if ($('usr-pass')) $('usr-pass').placeholder = 'Contraseña requerida';
+  describirRol();
   openModal('modal-usuario');
 }
 
@@ -3110,6 +3181,7 @@ async function editUsuario(id) {
   $('usr-rol').value       = data.rol;
   if ($('usr-placa')) $('usr-placa').value = data.numero_placa||'';
   if ($('usr-adscripcion')) $('usr-adscripcion').value = data.adscripcion||'';
+  describirRol();
   if ($('usr-pass')) $('usr-pass').placeholder = 'Dejar vacío para no cambiar';
   openModal('modal-usuario');
 }
@@ -3800,30 +3872,16 @@ function initUI() {
     m.addEventListener('click', e=>{ if(e.target===m) closeModal(m.id); });
   });
 
-  // ── Permisos granulares por rol ──────────────────────────
-  if (_rol === 'oficial') {
-    // Ocultar sección Análisis y Sistema (excepto Reportes no aplica)
-    document.querySelectorAll('.nav-item').forEach(btn => {
-      const view = (btn.getAttribute('onclick')||'').match(/'(\w+)'/)?.[1];
-      if (['mapa','rendimiento','configuracion','usuarios','bitacora'].includes(view)) {
-        btn.style.display = 'none';
-      }
-    });
-    // Ocultar labels de sección si todos sus items están ocultos
-    document.querySelectorAll('.sidebar-section').forEach(sec => {
-      const visible = [...sec.querySelectorAll('.nav-item')].some(b=>b.style.display!=='none');
-      if (!visible) sec.style.display = 'none';
-    });
-  } else if (_rol === 'supervisor') {
-    document.querySelectorAll('.nav-item').forEach(btn => {
-      const view = (btn.getAttribute('onclick')||'').match(/'(\w+)'/)?.[1];
-      if (['usuarios'].includes(view)) btn.style.display = 'none';
-    });
-  }
-  // Ocultar nav Usuarios del DOM si no es admin (evita acceso directo)
-  if (_rol !== 'admin') {
-    const navUsr = $('nav-usuarios'); if(navUsr) navUsr.style.display = 'none';
-  }
+  // ── Menú según el rol (ver ROLES) ────────────────────────
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    const view = btn.dataset.view || (btn.getAttribute('onclick')||'').match(/navigate\('(\w+)'/)?.[1];
+    if (view && !vistaPermitida(view)) btn.style.display = 'none';
+  });
+  document.querySelectorAll('.sidebar-section').forEach(sec => {
+    const visible = [...sec.querySelectorAll('.nav-item')].some(b => b.style.display !== 'none');
+    if (!visible) sec.style.display = 'none';
+  });
+  aplicarPermisosUI();
 
   // ── Realtime: refrescar dashboard al recibir cambios ─────
   _sb.channel('rt-infracciones')
@@ -4899,7 +4957,7 @@ async function setupPushNotifications() {
 async function printCredencial(userId) {
   const {data,error}=await _sb.from('usuarios').select(USR_COLS).eq('id',userId).single();
   if(error||!data){alert('No se pudo cargar el usuario.');return;}
-  const rolLabel={admin:'Director de Tránsito',supervisor:'Supervisor de Tránsito',oficial:'Oficial de Tránsito'};
+  const rolLabel=Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.nombre]));
   const iniciales=(data.iniciales||data.nombre.split(' ').map(n=>n[0]).join('').slice(0,2)).toUpperCase();
   const qrVal=`OFICIAL:${data.usuario}|ID:${data.id}|ROL:${data.rol}`;
   let qrDataUrl='';
@@ -5015,4 +5073,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigate('reportes'); initReporteMensual(repMes);
     history.replaceState(null, '', location.pathname);
   } else navigate('dashboard');
+});
+
+// ── Guardas de permisos ───────────────────────────────────
+// Si una acción restringida se llama sin pasar por un botón (atajo, consola),
+// se avisa en lugar de dejar que la base de datos la rechace con un error.
+[['openNewInfraccion','infraccion'], ['openRegistrarPago','cobrar'], ['submitPago','cobrar'],
+ ['impugnarInfraccion','impugnar'], ['resolverImpugnacion','impugnar'],
+ ['openNewPermiso','permisos'], ['editPermiso','permisos'], ['renovarPermiso','permisos'],
+ ['deleteDetail','borrar'], ['openNewGrua','grua'], ['editGrua','liberar'], ['liberarVehiculo','liberar'],
+ ['openNewAccidente','accidentes'], ['editAccidente','accidentes'], ['openNewVehiculo','padron'], ['editVehiculo','padron'],
+ ['printCorteCaja','caja_ver']
+].forEach(([fn, accion]) => {
+  const orig = window[fn];
+  if (typeof orig !== 'function' || puede(accion)) return;
+  window[fn] = function () { showToast(`Tu rol (${_permisosRol.nombre}) no tiene permiso para esta acción`); };
 });
