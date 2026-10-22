@@ -203,7 +203,7 @@ async function newPage(browser, { dbDown = false } = {}) {
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(placasPush) });
     }
     if (table === 'rpc/portal_info')
-      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' }) });
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba', domicilio_transito: XSS, ut_domicilio: 'Palacio Municipal, planta baja', ut_telefono: '235 000 0000', ut_correo: 'transparencia@prueba.gob.mx', privacidad_actualizado: '2026-10-01' }) });
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
@@ -687,10 +687,10 @@ function check(name, errors, extra) {
       r._lista = [r]; r.token_verificacion = '11111111-1111-4111-8111-111111111111'; r.licencia = 'LICENCIA-MUY-LARGA-123456789'; r.licencia_tipo = 'Transporte público';
       const b = escposTicket(r, _cachedConfig || {}, 32);
       const txt = String.fromCharCode(...b);
-      return { inicio: [b[0], b[1]], corte: [...b.slice(-4)], qr: txt.includes('\x1d(k'), folio: txt.includes(r.folio), retenido: txt.includes('DOCUMENTO RETENIDO'),
+      return { inicio: [b[0], b[1]], corte: [...b.slice(-4)], qr: txt.includes('\x1d(k'), folio: txt.includes(r.folio), retenido: txt.includes('DOCUMENTO RETENIDO'), privacidad: /Avisodeprivacidad:http\S*\/privacidad/.test(txt.replace(/\s/g, '')),
                ascii: [...b].every(x => x < 128), anchoOk: txt.split('\n').filter(l => !/[\x00-\x1f]/.test(l)).every(l => l.length <= 32) };
     })(), ret.id);
-    check('ticket ESC/POS', errors, esc.inicio.join() === '27,64' && esc.corte.join() === '29,86,66,0' && esc.qr && esc.folio && esc.retenido && esc.ascii && esc.anchoOk ? null : JSON.stringify(esc));
+    check('ticket ESC/POS', errors, esc.inicio.join() === '27,64' && esc.corte.join() === '29,86,66,0' && esc.qr && esc.folio && esc.retenido && esc.privacidad && esc.ascii && esc.anchoOk ? null : JSON.stringify(esc));
     await page.evaluate(() => { guardarPrefImpresora({ modo: 'rawbt', ancho: 48 }); window.__rawbt = null; window.enviarRawBT = b => { window.__rawbt = b.length; }; });
     await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(700);
     const rawbt = await page.evaluate(() => window.__rawbt);
@@ -701,6 +701,12 @@ function check(name, errors, extra) {
     const respaldo = popups2.length; for (const p of popups2.splice(0)) await p.close().catch(() => {});
     check('Bluetooth sin impresora usa el navegador', errors, respaldo ? null : 'no abrió la impresión del navegador');
     await page.evaluate(() => guardarPrefImpresora({ modo: 'navegador', ancho: 48 }));
+    // Aviso de privacidad simplificado en la boleta carta y en el ticket del navegador
+    await page.evaluate(id => printInfraccion(id), ret.id); await page.waitForTimeout(900);
+    await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(900);
+    const conAviso = [];
+    for (const p of popups2.splice(0)) { conAviso.push(/Ley 316[\s\S]*Aviso de privacidad: http:\/\/localhost:\d+\/privacidad/.test(await p.content().catch(() => ''))); await p.close().catch(() => {}); }
+    check('aviso de privacidad en boleta y ticket', errors, conAviso.length === 2 && conAviso.every(Boolean) ? null : JSON.stringify(conAviso));
 
     // Devolución del documento
     await page.evaluate(id => abrirDevolucion(id), ret.id); await page.waitForTimeout(500);
@@ -821,6 +827,15 @@ function check(name, errors, extra) {
     await page.goto(BASE + '/consulta?q=' + encodeURIComponent(XSS));
     await page.waitForTimeout(1500);
     check('consulta ciudadana escapa la búsqueda', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    // Aviso de privacidad: enlazado desde el portal y con los datos de Configuración
+    const enlacePortal = await page.evaluate(() => !!document.querySelector('footer a[href="/privacidad"]')) && /Aviso de privacidad/.test(app.antes);
+    await page.close();
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/privacidad'); await page.waitForTimeout(1200);
+    const priv = await page.evaluate(() => ({ t: document.body.textContent.replace(/\s+/g, ' '), mail: document.querySelector('#ut-datos a')?.getAttribute('href'), xss: !!window.__xss }));
+    check('aviso de privacidad', errors, enlacePortal && /Ayuntamiento de Prueba/.test(priv.t) && /Ley 316/.test(priv.t) && /Derechos ARCO/.test(priv.t)
+      && priv.t.includes('Palacio Municipal, planta baja') && priv.mail === 'mailto:transparencia@prueba.gob.mx' && /1 de octubre de 2026/.test(priv.t)
+      && priv.t.includes('<img src=x') && !priv.xss ? null : JSON.stringify({ enlacePortal, ...priv, t: priv.t.slice(0, 200) }));
     await page.close();
     // Pago en línea (Mercado Pago) desde el portal
     TABLES.configuracion[0].pago_en_linea = true;

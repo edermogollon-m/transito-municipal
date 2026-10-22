@@ -135,7 +135,8 @@ async function pintarAvisosCelular(placaSugerida) {
       <div class="ap-form">
         <input id="ap-placa" class="ap-campo" type="text" autocapitalize="characters" maxlength="12" placeholder="Tu placa" value="${esc(placa.toUpperCase())}" aria-label="Placa para recibir avisos"/>
         <button type="button" class="ap-btn" onclick="activarAvisos($('ap-placa').value)">Activar avisos</button>
-      </div>`;
+      </div>
+      <p class="ap-privacidad">Al activarlos autorizas que usemos tu placa para enviarte estos avisos. Puedes desactivarlos cuando quieras. <a href="/privacidad#finalidades">Aviso de privacidad</a></p>`;
   }
   caja.innerHTML = `<div class="ap-tit">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>

@@ -75,6 +75,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
     ${r.firma_infractor ? imgFirma(r.firma_infractor, 12) : (r.firma_negada ? '<div class="t-small">Se negó a firmar</div>' : '<div class="t-sig"></div>')}
     <div class="t-div"></div>
     <div class="t-small" style="text-align:justify">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
+    <div class="t-small" style="text-align:justify;margin-top:1mm">${esc(leyendaPrivacidad())}</div>
     <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
   </div>`;
 }
@@ -160,6 +161,7 @@ function escposTicket(r, cfg, ancho = 48) {
   parrafo('Firma del oficial: ' + (r.firma_oficial ? 'capturada en el dispositivo' : '______________________'));
   parrafo('Firma del infractor: ' + (r.firma_infractor ? 'capturada en el dispositivo' : r.firma_negada ? 'se nego a firmar' : '____________________'));
   raya(); parrafo(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocacion.');
+  parrafo(leyendaPrivacidad());
   const url = asciiTicket(urlVerificacion(r.token_verificacion));
   if (url) { centro(); ln('Verifique su boleta:'); escposQR(cmd, url, ancho >= 48 ? 6 : 5); ln(); izq(); }
   cmd(0x1B, 0x64, 3, 0x1D, 0x56, 0x42, 0);                       // avanzar y cortar

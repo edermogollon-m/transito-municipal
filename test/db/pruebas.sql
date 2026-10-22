@@ -997,4 +997,12 @@ reset role;
 do $$ begin
   assert not exists (select 1 from auditoria where tabla = 'configuracion' and cambios ? 'escudo'), 'la bitácora copia el escudo';
 end $$;
+-- Aviso de privacidad (privacidad.sql): datos de la Unidad de Transparencia, públicos sin sesión
+update configuracion set ut_correo = 'transparencia@misantla.gob.mx', domicilio_transito = 'Palacio Municipal s/n' where id = 1;
+set role anon;
+do $$ begin
+  assert portal_info() ->> 'ut_correo' = 'transparencia@misantla.gob.mx' and portal_info() ->> 'domicilio_transito' = 'Palacio Municipal s/n', 'aviso de privacidad en el portal';
+  assert portal_info() ? 'privacidad_actualizado', 'fecha del aviso de privacidad';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'

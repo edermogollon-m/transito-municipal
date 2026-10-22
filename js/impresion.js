@@ -3,6 +3,11 @@
 // Apunta a /verificar?t=<token aleatorio>: cualquiera puede comprobar que el
 // documento es auténtico y su estado actual, sin iniciar sesión. El escáner de
 // Caja también lo reconoce para cobrar.
+// Aviso de privacidad simplificado que se imprime en boletas y tickets (privacidad.html)
+function urlPrivacidad() { return `${window.location.origin}/privacidad`; }
+function leyendaPrivacidad() {
+  return 'Sus datos personales se tratan para levantar, cobrar y notificar esta infracción conforme a la Ley 316 de Protección de Datos Personales del Estado de Veracruz. Aviso de privacidad: ' + urlPrivacidad();
+}
 function urlVerificacion(token) { return token ? `${window.location.origin}/verificar?t=${token}` : ''; }
 function qrVerificacion(token, size = 220) {
   if (!token) return '';
@@ -179,6 +184,7 @@ async function printInfraccion(id) {
         La presente boleta se expide con fundamento en ${esc(cfg?.fundamento_general || 'la legislación de tránsito vigente')}${r.fundamento ? '; y en el ' + esc(r.fundamento.replace(/^Artículo/, 'artículo')) : ''}.
         El no pago dentro del plazo establecido generará la actualización y los accesorios que determinen las disposiciones fiscales.
         ${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación en los términos de la legislación aplicable.')}
+        ${esc(leyendaPrivacidad())}
       </div>
     </div>
   </div>`;
