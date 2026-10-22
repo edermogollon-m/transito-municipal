@@ -933,6 +933,10 @@
             <label for="cfg-correo-reporte">Correos que reciben el reporte mensual <span style="font-weight:400;color:var(--muted)">(separados por coma)</span></label>
             <input class="form-input" id="cfg-correo-reporte" type="text" placeholder="director@municipio.gob.mx, presidencia@municipio.gob.mx"/>
           </div>
+          <div class="form-field">
+            <label for="cfg-repuve-url">Página de consulta del REPUVE <span style="font-weight:400;color:var(--muted)">(la abre el botón "Consultar en REPUVE" de la boleta)</span></label>
+            <input class="form-input" id="cfg-repuve-url" type="url" placeholder="https://www2.repuve.gob.mx:8443/ciudadania/"/>
+          </div>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
         </div>
         <div class="card" id="marca-card">
@@ -1561,6 +1565,18 @@
             <input type="file" id="inf-placa-foto" accept="image/*" capture="environment" hidden onchange="leerPlacaDesdeArchivo(this.files[0]); this.value=''"/>
           </div>
           <div id="placa-ocr-status" role="status" style="font-size:.72rem;color:var(--muted);margin-top:.3rem;min-height:.9rem"></div>
+          <button type="button" id="btn-repuve" class="btn btn-ghost btn-sm" onclick="consultarRepuve()" title="Copia la placa y abre la consulta pública del REPUVE" style="margin-top:.2rem;min-height:34px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Consultar en REPUVE
+          </button>
+          <div id="repuve-panel" hidden style="margin-top:.5rem;border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;background:var(--surface,transparent)">
+            <div id="repuve-msg" style="font-size:.78rem;line-height:1.45;margin-bottom:.55rem"></div>
+            <div style="font-size:.78rem;font-weight:700;margin-bottom:.45rem">¿Qué dijo el REPUVE?</div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="repuveSinReporte()">Sin reporte</button>
+              <button type="button" id="btn-repuve-robo" class="btn btn-sm" onclick="marcarRoboRepuve()" style="background:#B91C1C;color:#fff">Tiene reporte de robo</button>
+            </div>
+          </div>
         </div>
         <div class="form-field"><label>Color del vehículo</label>
           <select id="inf-color" class="form-select">

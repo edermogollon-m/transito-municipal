@@ -106,6 +106,14 @@ proyectos activos a la vez).
   nombre y color del Ayuntamiento en documentos impresos y en el portal).
   Correr después de `mejoras2.sql`.
 
+- `repuve.sql` — botón "Consultar en REPUVE" en la boleta: copia la placa y
+  abre la consulta pública (`configuracion.repuve_url`, editable en
+  Configuración). Si sale con reporte de robo, el oficial la registra con un
+  toque (`reportar_robo_repuve`) y queda como placa reportada para todos,
+  con su alerta y aviso a los mandos. No hay conexión automática: REPUVE no
+  tiene servicio público y su consulta pide captcha. Correr después de
+  `institucional.sql`.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
 `cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql` → `inmutable.sql` → `roles.sql`. Todos son idempotentes y ya están aplicados en

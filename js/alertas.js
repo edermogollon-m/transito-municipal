@@ -101,6 +101,59 @@ function mostrarAlertaPlaca({ tipo, placa, rep, adeudos, vencidas }) {
   sonarAlerta();
 }
 
+// ── Consulta REPUVE (repuve.sql) ──
+// REPUVE no tiene servicio público y su consulta pide captcha: el botón copia
+// la placa y abre la página oficial; el oficial dice qué salió. Si tiene
+// reporte de robo, queda como placa reportada para todos y se avisa a mandos.
+const REPUVE_URL = 'https://www2.repuve.gob.mx:8443/ciudadania/';
+let _repuvePlaca = '';
+
+function repuveUrl() {
+  const u = (_cachedConfig || {}).repuve_url || '';
+  return /^https:\/\/[^\s"'<>]+$/.test(u) ? u : REPUVE_URL;
+}
+
+async function consultarRepuve() {
+  const input = $('inf-placa');
+  const placa = (input?.value || '').trim().toUpperCase();
+  const panel = $('repuve-panel'), msg = $('repuve-msg');
+  if (normPlaca(placa).length < 3) { showToast('Escribe la placa primero'); input?.focus(); return; }
+  if (!navigator.onLine) { showToast('Sin señal: no se puede consultar el REPUVE'); return; }
+  // Se abre dentro del clic para que el navegador no la bloquee
+  window.open(repuveUrl(), '_blank', 'noopener');
+  let copiada = false;
+  try { await navigator.clipboard.writeText(placa); copiada = true; } catch (_) {}
+  _repuvePlaca = placa;
+  if (!input.dataset.repuve) {
+    input.dataset.repuve = '1';
+    input.addEventListener('input', () => { if (normPlaca(input.value) !== normPlaca(_repuvePlaca)) panel.hidden = true; });
+  }
+  msg.innerHTML = `Se abrió la consulta del REPUVE. ${copiada ? `La placa <strong>${esc(placa)}</strong> ya está copiada: pégala` : `Escribe la placa <strong>${esc(placa)}</strong>`}, resuelve el código de verificación y regresa aquí.`;
+  panel.hidden = false;
+}
+
+function repuveSinReporte() {
+  $('repuve-panel').hidden = true;
+  showToast(`REPUVE: ${_repuvePlaca} sin reporte de robo`);
+}
+
+async function marcarRoboRepuve() {
+  const placa = _repuvePlaca, btn = $('btn-repuve-robo');
+  if (!placa) return;
+  btn.disabled = true;
+  try {
+    const { data, error } = await _sb.rpc('reportar_robo_repuve', { p_placa: placa });
+    if (error) throw error;
+    await cargarReportados();
+    if (data && !reportadoDe(placa)) { _reportados = [data, ...(_reportados || [])]; _guardarLocal('tm_reportados', _reportados); }
+    $('repuve-panel').hidden = true;
+    _alertaMostrada = '';
+    revisarAlertaPlaca(placa, []);
+  } catch (e) {
+    showToast('No se pudo registrar el reporte: ' + (e.message || e));
+  } finally { btn.disabled = false; }
+}
+
 // ── Mandos: aviso en tiempo real cuando un oficial encuentra una placa reportada ──
 function escucharAlertasPlaca() {
   if (!['admin', 'supervisor'].includes(_rol)) return;
