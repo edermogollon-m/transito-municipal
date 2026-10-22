@@ -71,7 +71,7 @@ function filtroMios() { return `oficial.eq.${JSON.stringify(_session?.name || ''
 const ACCION_DE_BOTON = [
   [/\bopenNewInfraccion\(/, 'infraccion'],
   [/\bopenRegistrarPago\(/, 'cobrar'],
-  [/\bsaveDetailEstado\('infracciones'/, 'estado', true],
+  [/\bcancelarInfraccion\(/, 'estado'],
   [/\bimpugnarInfraccion\(/, 'impugnar'],
   [/\bresolverImpugnacion\(/, 'resolver'],
   [/\babrirResolucion\(/, 'resolver'],
