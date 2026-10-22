@@ -22,7 +22,7 @@ const ROLES = {
   supervisor: {
     nombre: 'Supervisor de Tránsito',
     vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
-    acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','reportes','caja_ver','turnos'],
+    acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','reportes','caja_ver','turnos','devolver'],
     resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón, cierra turnos olvidados y revisa la bitácora. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
   },
   oficial: {
@@ -34,7 +34,7 @@ const ROLES = {
   cajero: {
     nombre: 'Caja · Tesorería',
     vistas: ['dashboard','infracciones','caja','grua','calendario'],
-    acciones: ['cobrar','liberar','caja_ver'],
+    acciones: ['cobrar','liberar','caja_ver','devolver'],
     resumen: 'Cobra multas (con el descuento que corresponda), emite y reimprime recibos, cierra su corte de caja con el efectivo contado y libera vehículos del corralón. No levanta infracciones.'
   },
   juridico: {
@@ -74,6 +74,8 @@ const ACCION_DE_BOTON = [
   [/\bsaveDetailEstado\('infracciones'/, 'estado', true],
   [/\bimpugnarInfraccion\(/, 'impugnar'],
   [/\bresolverImpugnacion\(/, 'resolver'],
+  [/\babrirResolucion\(/, 'resolver'],
+  [/\babrirDevolucion\(/, 'devolver'],
   [/\bsaveDetailEstado\('permisos'/, 'permisos', true],
   [/\b(openNewPermiso|editPermiso|renovarPermiso|cancelarPermiso)\(/, 'permisos'],
   [/\banularPago\(/, 'anular'],
@@ -767,6 +769,11 @@ async function submitInfraccion(e) {
     infractor_ausente:   !!($('inf-ausente')||{}).checked,
     licencia_tipo:       ($('inf-licencia-tipo')||{}).value?.trim() || '',
     circunstancias:      circunstanciasSeleccionadas(),
+    documento_retenido:  ($('inf-doc-retenido')||{}).value || '',
+    documento_numero:    ($('inf-doc-numero')||{}).value?.trim() || '',
+    firma_infractor:     firmaDataURL('firma-infractor'),
+    firma_oficial:       firmaDataURL('firma-oficial'),
+    firma_negada:        !!($('inf-firma-negada')||{}).checked,
     lat:            window._infLat || null,
     lng:            window._infLng || null,
     fotos:          fotosArr.length ? JSON.stringify(fotosArr) : (id ? undefined : '[]')
@@ -794,9 +801,16 @@ async function submitInfraccion(e) {
     payload.infractor_ausente = true;
     if ($('inf-ausente')) $('inf-ausente').checked = true;
   }
+  if (!id && !payload.firma_infractor && !payload.firma_negada) {
+    if (!confirm('El infractor no ha firmado.\n\n¿Hacer constar que se negó a firmar?')) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+      return;
+    }
+    payload.firma_negada = true;
+  }
   if (!id) payload.boleta = _boletaGrupo || (_boletaGrupo = crypto.randomUUID());
-  if (!id) payload.firma = payload.infractor_ausente ? '' : firmaCapturada();
-  const continuar = { datos: datosBoletaActual(), circunstancias: [], lat: window._infLat, lng: window._infLng, firma: payload.firma || '' };
+  const continuar = { datos: datosBoletaActual(), circunstancias: [], lat: window._infLat, lng: window._infLng,
+    firmas: { infractor: payload.firma_infractor, oficial: payload.firma_oficial }, firmaNegada: payload.firma_negada };
 
   if (sinSenal) {
     await encolarBoleta(payload, fotosPendientes);
@@ -1199,6 +1213,58 @@ function tarjetaFundamento(c, cfg) {
   </div>`;
 }
 
+// ── Firmas en el teléfono ─────────────────────────────────
+// Se guardan como PNG (data URL) en la boleta; funcionan sin señal.
+const _firmas = {};
+function iniciarFirma(id, previa) {
+  const c = $(id); if (!c) return;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111827';
+  const f = _firmas[id] = { vacio: true };
+  if (previa) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height); img.src = previa; f.vacio = false; }
+  if (c.dataset.listo) return;
+  c.dataset.listo = '1';
+  let trazando = false;
+  const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  c.addEventListener('pointerdown', e => { trazando = true; c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); });
+  c.addEventListener('pointermove', e => { if (!trazando) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); _firmas[id].vacio = false; });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => c.addEventListener(ev, () => { trazando = false; }));
+}
+function limpiarFirma(id) { iniciarFirma(id); }
+function firmaDataURL(id) { const c = $(id); return c && _firmas[id] && !_firmas[id].vacio ? c.toDataURL('image/png') : ''; }
+const imgFirma = (src, alto = 34) => src && /^data:image\/png;base64,/.test(src) ? `<img src="${src}" alt="Firma" style="height:${alto}mm;max-width:100%;object-fit:contain;display:block;margin:0 auto"/>` : '';
+const DOC_RETENIDO = { licencia: 'Licencia o permiso de conducir', tarjeta_circulacion: 'Tarjeta de circulación' };
+
+// ── Historial del conductor (por número de licencia) ──────
+// La reincidencia (art. 331 fr. II inc. g) es del conductor, no del vehículo.
+window._conductorPrevias = [];
+async function checkConductorHistory() {
+  const lic = ($('inf-licencia')?.value || '').trim();
+  const box = $('conductor-history');
+  if (lic.length < 4) { window._conductorPrevias = []; if (box) box.innerHTML = ''; sugerirAgravanteAdeudos(); return; }
+  let data = [];
+  try {
+    ({ data } = await _sb.rpc('historial_conductor', { p_licencia: lic }));
+  } catch (_) { data = []; }
+  const previas = (data || []).filter(r => !(_boletaGrupo && r.boleta === _boletaGrupo));
+  window._conductorPrevias = previas;
+  if (box) box.innerHTML = previas.length ? `<div style="font-size:.78rem;background:var(--amber-bg,#FFFBEB);border:1px solid #FDE68A;border-radius:8px;padding:.5rem .7rem;margin:-.2rem 0 .6rem">
+    <strong>Conductor con ${previas.length} infracción(es) previa(s)</strong> (licencia ${esc(lic)}):
+    ${previas.slice(0, 4).map(r => `${esc(r.folio||'—')} · ${esc(r.tipo)} · ${esc(r.placa)} · ${estadoBadge(r.estado)}`).join('<br>')}</div>` : '';
+  sugerirAgravanteAdeudos();
+  sugerirReincidencia();
+}
+function sugerirReincidencia() {
+  if ($('inf-id')?.value) return;
+  const cat = parseInt(($('inf-catalogo')||{}).value) || null;
+  const misma = cat && (window._conductorPrevias || []).some(r => r.catalogo_numero === cat);
+  const cb = document.querySelector('.inf-circ[value="agr_g"]');
+  const nota = document.querySelector('.circ-nota[data-c="agr_g"]');
+  if (nota) nota.textContent = misma ? ' — sugerida: el conductor ya cometió esta infracción' : '';
+  if (cb && !cb.dataset.tocado) { cb.checked = !!misma; recalcularMonto(); }
+}
+
 // ── Circunstancias agravantes y atenuantes (art. 331) ──────
 // La lista es la del Reglamento (también en la tabla circunstancias_331, que
 // valida el servidor). Con al menos una agravante se cobra la UMA "con
@@ -1253,7 +1319,9 @@ function sugerirAgravanteAdeudos() {
   if ($('inf-id')?.value) return;
   const cb = document.querySelector('.inf-circ[value="agr_e"]');
   const nota = document.querySelector('.circ-nota[data-c="agr_e"]');
-  const n = (window._placaAdeudos || []).length;
+  const ids = new Set((window._placaAdeudos || []).map(r => r.folio));
+  (window._conductorPrevias || []).filter(r => r.estado === 'pendiente' || r.estado === 'vencida').forEach(r => ids.add(r.folio));
+  const n = ids.size;
   if (nota) nota.textContent = n ? ` — sugerida: ${n} infracción(es) sin pagar` : '';
   if (cb && !cb.dataset.tocado) { cb.checked = n > 0; recalcularMonto(); }
 }
@@ -1272,6 +1340,7 @@ function seleccionarCatalogo(numero, fijarMonto) {
   const box = $('inf-fundamento');
   if (box) box.innerHTML = c ? tarjetaFundamento(c, _cachedConfig) : '<div style="font-size:.75rem;color:var(--muted);margin-top:.3rem">Busca la infracción en el reglamento para citar el artículo.</div>';
   const r = c && rangoMonto(c, _cachedConfig);
+  if (c && fijarMonto) sugerirReincidencia();
   if (c && fijarMonto && r && $('inf-monto')) $('inf-monto').value = r.sinMulta ? 0 : (circunstanciasSeleccionadas().some(x => x.startsWith('agr_')) ? r.max : r.min);
   if ($('inf-monto')) {
     $('inf-monto').min = r ? r.min : 1; $('inf-monto').max = r && !r.sinMulta ? r.max : '';
@@ -1338,7 +1407,6 @@ async function openNewInfraccion(continuar) {
   const plHist = document.getElementById('placa-history');
   if (plHist) plHist.innerHTML = '';
   if ($('placa-ocr-status')) $('placa-ocr-status').textContent = '';
-  if ($('licencia-history')) $('licencia-history').innerHTML = '';
   // Pre-fill official with logged-in user if they are an oficial/supervisor
   if ($('inf-oficial')) {
     $('inf-oficial').dataset.preload = _session?.name || '';
@@ -1353,100 +1421,18 @@ async function openNewInfraccion(continuar) {
   openModal('modal-infraccion');
   if ($('inf-catalogo')) $('inf-catalogo').value = '';
   renderCircunstancias(previos ? continuar.circunstancias : []);
+  window._conductorPrevias = [];
+  if ($('conductor-history')) $('conductor-history').innerHTML = '';
+  if ($('inf-doc-retenido')) $('inf-doc-retenido').value = '';
+  if ($('inf-doc-numero')) $('inf-doc-numero').value = '';
+  if ($('inf-firma-negada')) $('inf-firma-negada').checked = !!continuar?.firmaNegada;
+  iniciarFirma('firma-infractor', continuar?.firmas?.infractor);
+  iniciarFirma('firma-oficial', continuar?.firmas?.oficial);
   await loadTiposInfraccion();
   await prepararCatalogoForm();
   autoFillMonto();
   if (previos?.["inf-placa"]) checkPlacaHistory();
-  if (previos?.["inf-licencia"]) checkLicenciaHistory();
-  iniciarFirma(previos ? continuar.firma : '');
-}
-
-// ── Firma del infractor en pantalla (firma.sql: infracciones.firma) ──
-let _firmaTrazos = 0;
-function iniciarFirma(previa) {
-  const c = $('inf-firma'); if (!c) return;
-  const ratio = Math.max(1, window.devicePixelRatio || 1);
-  const w = c.clientWidth || 480, h = c.clientHeight || 150;
-  c.width = w * ratio; c.height = h * ratio;
-  const ctx = c.getContext('2d');
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111827';
-  ctx.clearRect(0, 0, w, h);
-  _firmaTrazos = 0;
-  if (previa) {
-    const img = new Image();
-    img.onload = () => { ctx.drawImage(img, 0, 0, w, h); _firmaTrazos = 1; marcarFirma(); };
-    img.src = previa;
-  }
-  marcarFirma();
-  if (c.dataset.listo) return;
-  c.dataset.listo = '1';
-  let dibujando = false;
-  const punto = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  c.addEventListener('pointerdown', e => {
-    dibujando = true; c.setPointerCapture(e.pointerId);
-    const g = c.getContext('2d'), [x, y] = punto(e);
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + .1, y + .1); g.stroke();
-  });
-  c.addEventListener('pointermove', e => {
-    if (!dibujando) return;
-    const g = c.getContext('2d'), [x, y] = punto(e);
-    g.lineTo(x, y); g.stroke();
-  });
-  const fin = () => { if (dibujando) { dibujando = false; _firmaTrazos++; marcarFirma(); } };
-  c.addEventListener('pointerup', fin); c.addEventListener('pointercancel', fin); c.addEventListener('pointerleave', fin);
-}
-function marcarFirma() {
-  const el = $('inf-firma-estado'); if (!el) return;
-  el.textContent = _firmaTrazos ? '✓ Firma capturada: se imprime en la boleta.' : 'Pide al infractor que firme aquí. Si se niega, déjalo en blanco.';
-  el.style.color = _firmaTrazos ? 'var(--green)' : 'var(--muted)';
-}
-function limpiarFirma() { iniciarFirma(''); }
-// PNG reducido (≈ 10–25 KB) o '' si no firmó
-function firmaCapturada() {
-  const c = $('inf-firma'); if (!c || !_firmaTrazos) return '';
-  const out = document.createElement('canvas'); out.width = 480; out.height = 150;
-  const g = out.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 480, 150);
-  g.drawImage(c, 0, 0, 480, 150);
-  return out.toDataURL('image/png');
-}
-function imgFirma(r, alto) {
-  return r?.firma && /^data:image\/png;base64,/.test(r.firma) ? `<img src="${r.firma}" alt="Firma" style="height:${alto};max-width:100%;display:block;margin:0 auto">` : '';
-}
-
-// ── Reincidencia por licencia (cualquier placa) ──
-async function checkLicenciaHistory() {
-  const panel = $('licencia-history'); if (!panel) return;
-  const lic = ($('inf-licencia')||{}).value?.trim().toUpperCase().replace(/\s+/g, '');
-  if (!lic || lic.length < 4) { panel.innerHTML = ''; return; }
-  const haceUnAnio = new Date(Date.now() - 365 * 86400000).toISOString();
-  const { data } = await _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,placa,boleta,catalogo_numero')
-    .ilike('licencia', lic).gte('fecha', haceUnAnio).order('fecha', { ascending: false }).limit(50);
-  if (lic !== ($('inf-licencia')||{}).value?.trim().toUpperCase().replace(/\s+/g, '')) return;
-  await cargarCatalogo();
-  const prevId = $('inf-id')?.value;
-  const prev = (data || []).filter(r => String(r.id) !== String(prevId) && !(_boletaGrupo && r.boleta === _boletaGrupo) && r.estado !== 'cancelada');
-  if (!prev.length) {
-    panel.innerHTML = `<div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.5rem .9rem;margin:.35rem 0;font-size:.75rem;color:#065F46">✓ Licencia sin infracciones en los últimos 12 meses.</div>`;
-    return;
-  }
-  const adeudos = prev.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
-  const graves = prev.filter(r => catalogoPorNumero(r.catalogo_numero)?.grave);
-  const placas = [...new Set(prev.map(r => r.placa))];
-  panel.innerHTML = `<div style="background:#FFF7ED;border:1.5px solid #F59E0B;border-radius:8px;padding:.65rem .95rem;margin:.35rem 0">
-    <div style="font-size:.78rem;font-weight:800;color:#92400E;margin-bottom:.35rem">⚠ Licencia reincidente: ${prev.length} ${prev.length > 1 ? 'infracciones' : 'infracción'} en 12 meses${placas.length > 1 ? ` con ${placas.length} placas distintas` : ''}</div>
-    <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.4rem">
-      ${adeudos.length ? `<span class="badge-red">${adeudos.length} sin pagar · ${fmt(adeudos.reduce((a, r) => a + Number(r.monto), 0))}</span>` : ''}
-      ${graves.length ? `<span class="badge-red">${graves.length} grave${graves.length > 1 ? 's' : ''}</span>` : ''}
-    </div>
-    ${prev.slice(0, 3).map(r => `<div style="font-size:.71rem;color:#78350F;display:flex;gap:.5rem;margin-bottom:.15rem;flex-wrap:wrap;align-items:center">
-      <span style="font-family:monospace;font-weight:700">${esc(r.folio || '—')}</span>
-      <span>${fmtDateShort(r.fecha)}</span>
-      <span style="font-family:monospace">${esc(r.placa)}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</span>
-      ${estadoBadge(r.estado)}
-    </div>`).join('')}
-  </div>`;
+  if (previos?.["inf-licencia"]) checkConductorHistory();
 }
 
 const CAMPOS_BOLETA = ['inf-fecha','inf-placa','inf-vehiculo','inf-color','inf-infractor','inf-licencia','inf-licencia-tipo','inf-correo','inf-domicilio','inf-ausente','inf-telefono','inf-ubicacion','inf-oficial'];
@@ -1808,6 +1794,12 @@ async function viewDetail(tabla, id) {
     ${fundamentoDetalle(r)}
     ${(r.circunstancias||[]).length ? `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Circunstancias (art. 331)</div>
       <ul style="margin:0;padding-left:1.1rem;font-size:.8rem">${r.circunstancias.map(c => `<li>${esc(textoCircunstancia(c))}</li>`).join('')}</ul></div>` : ''}
+    ${r.documento_retenido ? `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Documento retenido (arts. 343-344)</div>
+      <div style="font-size:.82rem">${esc(DOC_RETENIDO[r.documento_retenido] || r.documento_retenido)}${r.documento_numero ? ' · ' + esc(r.documento_numero) : ''} — <span id="detail-devolucion">consultando…</span></div></div>` : ''}
+    ${(r.firma_infractor || r.firma_oficial || r.firma_negada) ? `<div style="display:flex;gap:1rem;margin-top:.6rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:140px;text-align:center;font-size:.72rem;color:var(--muted)">${r.firma_infractor ? imgFirma(r.firma_infractor, 14) : (r.firma_negada ? '<em>Se negó a firmar</em>' : '—')}<div>Firma del infractor</div></div>
+      <div style="flex:1;min-width:140px;text-align:center;font-size:.72rem;color:var(--muted)">${imgFirma(r.firma_oficial, 14) || '—'}<div>Firma del policía vial</div></div></div>` : ''}
+    <div id="detail-recurso"></div>
     <div id="detail-boleta"></div>
     <div id="detail-historial"></div>
 
@@ -1817,7 +1809,7 @@ async function viewDetail(tabla, id) {
       <select id="detail-estado" class="form-select" style="width:auto;min-width:130px;flex-shrink:0">
         <option value="pendiente"  ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
         <option value="pagada"     ${r.estado==='pagada'?'selected':''}>Pagada</option>
-        <option value="impugnada"  ${r.estado==='impugnada'?'selected':''}>Impugnada</option>
+        ${r.estado==='impugnada'?'<option value="impugnada" selected>Impugnada (recurso en trámite)</option>':''}
         <option value="cancelada"  ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
         <option value="vencida"    ${r.estado==='vencida'?'selected':''}>Vencida</option>
       </select>
@@ -1830,11 +1822,8 @@ async function viewDetail(tabla, id) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
         Cobrar
       </button>`:''}
-      ${(r.estado==='pendiente'||r.estado==='impugnada')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Impugnar</button>`:''}
-      ${r.estado==='impugnada'?`
-        <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="resolverImpugnacion('${r.id}','cancelada')">✓ Procede</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="resolverImpugnacion('${r.id}','pendiente')">✕ No procede</button>
-      `:''}
+      ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Recurso de revocación</button>`:''}
+      ${r.estado==='impugnada'?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="resolverImpugnacion('${r.id}')">Resolver impugnación</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket 80mm</button>
       <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta carta</button>
       ${r.telefono?`<button class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0" onclick="notificarWhatsApp({telefono:${jsArg(r.telefono)},infractor:${jsArg(r.infractor)},folio:${jsArg(r.folio||'')},placa:${jsArg(r.placa)},tipo:${jsArg(r.tipo)},monto:${Number(r.monto)||0},ubicacion:${jsArg(r.ubicacion||'')},fecha:${jsArg(r.fecha||'')}})" >
@@ -1928,6 +1917,8 @@ async function viewDetail(tabla, id) {
   openModal('modal-detail');
   hidratarFotos($('modal-detail'));
   if (isInf) cargarHistorial('infracciones', r.id, $('detail-historial'));
+  if (isInf && r.documento_retenido) mostrarDevolucion(r);
+  if (isInf) mostrarRecurso(r);
   if (isInf && r.boleta) infraccionesDeBoleta(r).then(lista => {
     const box = $('detail-boleta'); if (!box || lista.length < 2) return;
     box.innerHTML = `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Infracciones de esta boleta (art. 327)</div>
@@ -1990,6 +1981,10 @@ async function loadConfig() {
   if($('cfg-pago-banco'))     $('cfg-pago-banco').value     = data.pago_banco || '';
   if($('cfg-pago-clabe'))     $('cfg-pago-clabe').value     = data.pago_clabe || '';
   if($('cfg-pago-beneficiario')) $('cfg-pago-beneficiario').value = data.pago_beneficiario || '';
+  if($('cfg-resguardo'))      $('cfg-resguardo').value      = data.resguardo_lugar || '';
+  if($('cfg-avisos-correo'))  $('cfg-avisos-correo').checked   = !!data.avisos_correo;
+  if($('cfg-avisos-whatsapp'))$('cfg-avisos-whatsapp').checked = !!data.avisos_whatsapp;
+  if($('cfg-pago-linea'))     $('cfg-pago-linea').checked      = !!data.pago_en_linea;
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
@@ -2015,6 +2010,10 @@ async function saveConfig() {
     reglamento:     ($('cfg-reglamento')||{}).value?.trim() || null,
     fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
     leyenda_recurso:    ($('cfg-recurso')||{}).value?.trim() || null,
+    resguardo_lugar:    ($('cfg-resguardo')||{}).value?.trim() || null,
+    avisos_correo:      !!($('cfg-avisos-correo')||{}).checked,
+    avisos_whatsapp:    !!($('cfg-avisos-whatsapp')||{}).checked,
+    pago_en_linea:      !!($('cfg-pago-linea')||{}).checked,
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
@@ -2188,6 +2187,10 @@ async function printInfraccion(id) {
         </div>
       </div>
 
+      ${r.documento_retenido ? `<div class="section">
+        <div class="sec-title">Documento retenido en garantía (arts. 343 y 344)</div>
+        <div class="pay-info">${esc(DOC_RETENIDO[r.documento_retenido] || '')}${r.documento_numero ? ' núm. ' + esc(r.documento_numero) : ''}. Se devolverá en ${esc(cfg?.resguardo_lugar || 'la Delegación de Tránsito')} al acreditar el pago o la cancelación de la multa, presentando esta boleta e identificación oficial.</div>
+      </div>` : ''}
       <div class="section">
         <div class="sec-title">Motivación — circunstancias (art. 331)</div>
         <div class="pay-info">${htmlCircunstancias(r)}</div>
@@ -2229,11 +2232,13 @@ async function printInfraccion(id) {
 
       <div class="signatures">
         <div class="sig-box">
+          ${imgFirma(r.firma_oficial, 14)}
           <div class="sig-line"></div>
           <div class="sig-label">Policía vial: ${esc(r.oficial||'—')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}${r.oficial_adscripcion ? ' · ' + esc(r.oficial_adscripcion) : ''}</div>
         </div>
         <div class="sig-box">
-          ${imgFirma(r, '16mm') || '<div class="sig-line"></div>'}
+          ${r.firma_infractor ? imgFirma(r.firma_infractor, 14) : (r.firma_negada ? '<div style="font-size:8pt;text-align:center;color:#555">Se negó a firmar</div>' : '')}
+          <div class="sig-line"></div>
           <div class="sig-label">Firma o huella del infractor</div>
         </div>
       </div>
@@ -2823,7 +2828,7 @@ const PEND_PAGE_SIZE = 15;
 
 function switchCajaTab(tab) {
   _cajaTab = tab;
-  ['pendientes','pagos','cortes'].forEach(t => {
+  ['pendientes','pagos','cortes','resguardo'].forEach(t => {
     const btn = $('tab-'+t), sec = $('caja-section-'+t);
     if (btn) btn.classList.toggle('active', t===tab);
     if (sec) sec.style.display = t===tab ? 'block' : 'none';
@@ -2832,6 +2837,7 @@ function switchCajaTab(tab) {
     if (!_cajaFecha) _cajaFecha = new Date().toISOString().slice(0,10);
     renderCajaTable();
   }
+  if (tab==='resguardo') renderResguardo();
   if (tab==='cortes') renderCortes();
 }
 
@@ -3799,13 +3805,16 @@ function buildTicket80(r, cfg, qrDataUrl) {
     <div class="t-barref">${ref}</div>
     ${qrDataUrl?`<div style="text-align:center;margin:2mm 0 1mm"><img src="${qrDataUrl}" style="width:130px;height:130px;display:block;margin:0 auto"/><div style="font-size:6.5pt;margin-top:.5mm;color:#444">Escanea para verificar o pagar</div></div>`:''}
     <div class="t-div"></div>
+    ${r.documento_retenido ? `<div class="t-bold" style="font-size:7pt">DOCUMENTO RETENIDO (ARTS. 343-344):</div>
+    <div class="t-small">${esc(DOC_RETENIDO[r.documento_retenido] || '')}${r.documento_numero ? ' ' + esc(r.documento_numero) : ''}. Se devuelve en ${esc(cfg?.resguardo_lugar || 'la Delegación')} al pagar.</div>
+    <div class="t-div"></div>` : ''}
     <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
-    <div class="t-sig"></div>
+    ${r.firma_oficial ? imgFirma(r.firma_oficial, 12) : '<div class="t-sig"></div>'}
     <div class="t-small">${esc(r.oficial||'Agente de Tránsito')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}</div>
     ${r.oficial_adscripcion ? `<div class="t-small">${esc(r.oficial_adscripcion)}</div>` : ''}
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
-    ${imgFirma(r, '14mm') || '<div class="t-sig"></div>'}
+    ${r.firma_infractor ? imgFirma(r.firma_infractor, 12) : (r.firma_negada ? '<div class="t-small">Se negó a firmar</div>' : '<div class="t-sig"></div>')}
     <div class="t-div"></div>
     <div class="t-small" style="text-align:justify">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
     <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
@@ -4128,48 +4137,213 @@ async function generateReport(tipo) {
 }
 
 // ── Impugnaciones ─────────────────────────────────────────
-function impugnarInfraccion(id, estado) {
+// ── Recurso de revocación (art. 383 del Reglamento; arts. 43, 260-262 CPA) ──
+const hoyISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+function sumarDiasHabiles(fechaISO, n) {   // igual que sumar_dias_habiles() en la base: sin sábados ni domingos
+  const d = new Date(fechaISO + 'T12:00:00'); let k = 0;
+  while (k < n) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) k++; }
+  return d.toISOString().slice(0, 10);
+}
+const fechaLarga = iso => iso ? new Date(iso.slice(0, 10) + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+
+async function impugnarInfraccion(id) {
+  const { data: r } = await _sb.from('infracciones').select('id,folio,fecha,placa,infractor,tipo,fundamento,infractor_domicilio').eq('id', id).single();
+  if (!r) return;
   $('imp-inf-id').value = id;
+  $('imp-inf-id').dataset.fecha = r.fecha;
+  $('imp-info').innerHTML = `<strong>${esc(r.folio||'—')}</strong> · ${esc(r.tipo)} · Placa ${esc(r.placa)}<br>${esc(r.fundamento||'')}`;
+  $('imp-fecha').value = hoyISO();
+  $('imp-promovente').value = r.infractor || '';
+  $('imp-domicilio').value = r.infractor_domicilio || '';
   $('imp-motivo').value = '';
-  const title = $('modal-imp-title');
-  if (title) title.textContent = estado === 'impugnada' ? 'Actualizar motivo de impugnación' : 'Registrar impugnación';
-  const btn = $('imp-submit-btn');
-  if (btn) btn.textContent = estado === 'impugnada' ? 'Actualizar' : 'Registrar impugnación';
+  if ($('imp-pruebas')) $('imp-pruebas').value = '';
+  calcularPlazoRecurso();
   closeModal('modal-detail');
   openModal('modal-impugnacion');
 }
-
+function calcularPlazoRecurso() {
+  const f = $('imp-inf-id')?.dataset.fecha; if (!f) return;
+  const vence = sumarDiasHabiles(new Date(f).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }), 15);
+  const pres = $('imp-fecha').value;
+  const fuera = pres && pres > vence;
+  $('imp-plazo').innerHTML = `Plazo para interponerlo: hasta el <strong>${fechaLarga(vence)}</strong> (15 días hábiles, arts. 43 y 261 del Código de Procedimientos Administrativos).` +
+    (fuera ? ' <span style="color:var(--red);font-weight:700">Se presenta fuera de plazo (extemporáneo).</span>' : '');
+}
 async function submitImpugnacion() {
-  const id = $('imp-inf-id').value;
-  const motivo = ($('imp-motivo').value || '').trim();
-  if (!motivo) { alert('Ingresa el motivo de la impugnación.'); return; }
-  const btn = $('imp-submit-btn');
-  btn.disabled = true; btn.textContent = 'Guardando…';
-  const { error } = await _sb.from('infracciones')
-    .update({ estado: 'impugnada', impugnacion_motivo: motivo })
-    .eq('id', id);
-  btn.disabled = false; btn.textContent = 'Registrar impugnación';
+  const id = parseInt($('imp-inf-id').value);
+  const hechos = ($('imp-motivo').value || '').trim(), promovente = ($('imp-promovente').value || '').trim();
+  if (!promovente || !hechos) { alert('Indica quién promueve y los hechos o agravios.'); return; }
+  const btn = $('imp-submit-btn'); btn.disabled = true; btn.textContent = 'Guardando…';
+  let pruebas = [];
+  try { pruebas = await subirFotos($('imp-pruebas'), 'impugnaciones'); }
+  catch (err) { btn.disabled = false; btn.textContent = 'Registrar recurso'; alert('No se pudieron subir las pruebas: ' + err.message); return; }
+  const { data, error } = await _sb.rpc('presentar_impugnacion', {
+    p_infraccion_id: id, p_presentada_el: $('imp-fecha').value, p_promovente: promovente,
+    p_domicilio: ($('imp-domicilio').value || '').trim(), p_hechos: hechos, p_pruebas: pruebas
+  });
+  btn.disabled = false; btn.textContent = 'Registrar recurso';
   if (error) { alert('Error: ' + error.message); return; }
   closeModal('modal-impugnacion');
-  logActivity('infraccion', `Impugnación registrada para infracción ID ${id}`);
+  logActivity('infraccion', `Recurso de revocación ${data.folio} registrado`);
   renderInfracciones();
-  showToast('Impugnación registrada');
+  showToast(`Recurso ${data.folio} registrado${data.extemporanea ? ' (extemporáneo)' : ''}`);
+  printAcuseRecurso(data.id);
 }
 
-async function resolverImpugnacion(id, resolucion) {
-  const label = resolucion === 'cancelada' ? 'cancelar (procede)' : 'reactivar como pendiente (no procede)';
-  if (!confirm(`¿Confirmas ${label} esta infracción?`)) return;
-  const cambios = { estado: resolucion };
-  if (resolucion === 'cancelada') cambios.cancelacion_motivo = 'Impugnación procedente';
-  const { error } = await _sb.from('infracciones')
-    .update(cambios)
-    .eq('id', id);
+async function mostrarRecurso(r) {
+  const box = $('detail-recurso'); if (!box) return;
+  const { data: v } = await _sb.from('impugnaciones').select('*').eq('infraccion_id', r.id).maybeSingle();
+  if (!v) { box.innerHTML = ''; return; }
+  const color = { en_tramite: 'badge-yellow', procedente: 'badge-green', improcedente: 'badge-red', desechada: 'badge-muted' }[v.estado];
+  const nombre = { en_tramite: 'En trámite', procedente: 'Procedente', improcedente: 'Improcedente', desechada: 'Desechado' }[v.estado];
+  box.innerHTML = `<div style="margin-top:.6rem"><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.2rem">Recurso de revocación</div>
+    <div style="font-size:.82rem"><strong>${esc(v.folio)}</strong> <span class="${color}">${nombre}</span> · presentado el ${fechaLarga(v.presentada_el)} por ${esc(v.promovente)}
+    · plazo hasta ${fechaLarga(v.plazo_vence)}${v.extemporanea ? ' <span class="badge-red">Extemporáneo</span>' : ''}</div>
+    <div style="font-size:.78rem;color:var(--text);margin-top:.2rem">${esc(v.hechos)}</div>
+    ${(v.pruebas||[]).length ? `<div style="display:flex;gap:.4rem;margin-top:.35rem;flex-wrap:wrap">${v.pruebas.map(f => `<img data-foto="${esc(f)}" alt="Prueba" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"/>`).join('')}</div>` : ''}
+    ${v.resolucion ? `<div style="font-size:.78rem;margin-top:.3rem"><strong>Resolución</strong> (${esc(v.resuelto_por)}, ${fechaLarga(v.resuelto_el)}): ${esc(v.resolucion.slice(0, 240))}${v.resolucion.length > 240 ? '…' : ''}</div>` : ''}
+    <div style="display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap">
+      ${v.estado === 'en_tramite' ? `<button class="btn btn-sm btn-primary" onclick="abrirResolucion(${v.id})">Resolver recurso</button>` : `<button class="btn btn-ghost btn-sm" onclick="printResolucion(${v.id})">Imprimir resolución</button>`}
+      <button class="btn btn-ghost btn-sm" onclick="printAcuseRecurso(${v.id})">Acuse de recibo</button>
+    </div></div>`;
+  hidratarFotos(box);
+}
+
+let _recursoActual = null;
+async function abrirResolucion(impId) {
+  const { data: v } = await _sb.from('impugnaciones').select('*, infracciones(folio,fecha,placa,infractor,tipo,fundamento,oficial)').eq('id', impId).single();
+  if (!v) return;
+  _recursoActual = v;
+  $('res-imp-id').value = impId;
+  $('res-info').innerHTML = `<strong>${esc(v.folio)}</strong> · Infracción ${esc(v.infracciones?.folio||'')} · ${esc(v.promovente)}<br>Presentado el ${fechaLarga(v.presentada_el)}; plazo hasta ${fechaLarga(v.plazo_vence)}${v.extemporanea ? ' — <strong style="color:var(--red)">extemporáneo</strong>' : ''}`;
+  $('res-resultado').value = v.extemporanea ? 'desechada' : 'improcedente';
+  plantillaResolucion();
+  closeModal('modal-detail');
+  openModal('modal-resolucion');
+}
+function plantillaResolucion() {
+  const v = _recursoActual; if (!v) return;
+  const inf = v.infracciones || {};
+  const resultado = $('res-resultado').value;
+  const sentido = {
+    improcedente: `PRIMERO. Es IMPROCEDENTE el recurso de revocación ${v.folio} y se CONFIRMA la boleta de infracción ${inf.folio}, al no desvirtuarse los hechos que la motivan.`,
+    procedente:   `PRIMERO. Es PROCEDENTE el recurso de revocación ${v.folio}; se REVOCA y deja sin efectos la boleta de infracción ${inf.folio}.`,
+    desechada:    `PRIMERO. Se DESECHA el recurso de revocación ${v.folio} por haberse presentado fuera del plazo de quince días hábiles que establece el artículo 261 del Código de Procedimientos Administrativos para el Estado de Veracruz de Ignacio de la Llave.`
+  }[resultado];
+  $('res-texto').value =
+`VISTO el recurso de revocación ${v.folio}, interpuesto por ${v.promovente} el ${fechaLarga(v.presentada_el)}, en contra de la boleta de infracción ${inf.folio} (${inf.tipo}, placa ${inf.placa}), con fundamento en el artículo 383 del Reglamento de la Ley Número 561 de Tránsito y Seguridad Vial para el Estado de Veracruz de Ignacio de la Llave y en los artículos 260 a 262 del Código de Procedimientos Administrativos para el Estado de Veracruz de Ignacio de la Llave, se resuelve:
+
+CONSIDERANDO
+I. Que el recurso se presentó ${v.extemporanea ? 'fuera del plazo' : 'dentro del plazo'} de quince días hábiles (vencía el ${fechaLarga(v.plazo_vence)}).
+II. Que el promovente expone: ${v.hechos}
+III. Que, analizadas las constancias y pruebas, [exponer aquí la valoración de los argumentos y pruebas, y el fundamento de la infracción: ${inf.fundamento || ''}].
+
+RESUELVE
+${sentido}
+SEGUNDO. Notifíquese personalmente al promovente en el domicilio señalado${v.domicilio ? ' (' + v.domicilio + ')' : ''}.`;
+}
+async function submitResolucion() {
+  const id = parseInt($('res-imp-id').value);
+  const texto = ($('res-texto').value || '').trim();
+  if (/\[exponer aquí/.test(texto) && !confirm('La resolución todavía tiene el texto de ejemplo entre corchetes. ¿Emitirla así?')) return;
+  const btn = $('res-submit-btn'); btn.disabled = true;
+  const { data, error } = await _sb.rpc('resolver_impugnacion', { p_id: id, p_resultado: $('res-resultado').value, p_resolucion: texto });
+  btn.disabled = false;
+  if (error) { alert('Error: ' + error.message); return; }
+  closeModal('modal-resolucion');
+  logActivity('infraccion', `Recurso ${data.folio} resuelto: ${data.estado}`);
+  renderInfracciones(); renderDashboard();
+  showToast(`Recurso ${data.folio}: ${data.estado}`);
+  printResolucion(data.id);
+}
+// Resolver: con expediente abre la resolución escrita; las impugnaciones
+// registradas antes del expediente se resuelven como antes (procede / no procede)
+async function resolverImpugnacion(infId) {
+  const { data: v } = await _sb.from('impugnaciones').select('id').eq('infraccion_id', infId).maybeSingle();
+  if (v) return abrirResolucion(v.id);
+  const { data: r } = await _sb.from('infracciones').select('id,folio,estado,impugnacion_motivo').eq('id', infId).single();
+  if (!r || r.estado !== 'impugnada') return impugnarInfraccion(infId);
+  const procede = confirm(`Impugnación de ${r.folio} registrada antes del expediente:\n"${r.impugnacion_motivo || ''}"\n\n¿PROCEDE? (Aceptar = se cancela la infracción · Cancelar = elegir "no procede")`);
+  if (!procede && !confirm(`¿Confirmas que la impugnación de ${r.folio} NO procede y la infracción vuelve a quedar por cobrar?`)) return;
+  const cambios = procede ? { estado: 'cancelada', cancelacion_motivo: 'Impugnación procedente' } : { estado: 'pendiente' };
+  const { error } = await _sb.from('infracciones').update(cambios).eq('id', infId);
   if (error) { alert('Error: ' + error.message); return; }
   closeModal('modal-detail');
-  logActivity('infraccion', `Impugnación resuelta (${resolucion}) para infracción ID ${id}`);
-  renderInfracciones();
-  renderDashboard();
-  showToast(resolucion === 'cancelada' ? 'Infracción cancelada (impugnación procedente)' : 'Infracción reactivada como pendiente');
+  logActivity('infraccion', `Impugnación de ${r.folio} resuelta: ${procede ? 'procede' : 'no procede'}`);
+  renderInfracciones(); renderDashboard();
+  showToast(procede ? 'Infracción cancelada (impugnación procedente)' : 'Infracción reactivada como pendiente');
+}
+
+async function docRecurso(impId, cuerpo) {
+  const [{ data: v }, { data: cfg }] = await Promise.all([
+    _sb.from('impugnaciones').select('*, infracciones(folio,fecha,placa,infractor,tipo,fundamento)').eq('id', impId).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!v) return;
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>${esc(v.folio)}</title>
+  <style>body{font-family:Arial,sans-serif;font-size:11pt;color:#111;margin:22mm 20mm}h1{font-size:14pt;text-align:center;margin:0 0 4mm}h2{font-size:10pt;text-align:center;margin:0 0 8mm;color:#444;font-weight:normal}
+  p{line-height:1.5;text-align:justify;white-space:pre-wrap}.f{margin-top:22mm;text-align:center}.f div{border-top:1px solid #111;width:70mm;margin:0 auto;padding-top:2mm;font-size:9pt}</style></head><body>
+  <h1>${esc((cfg?.municipio||'Municipio').toUpperCase())} · DIRECCIÓN DE TRÁNSITO Y SEGURIDAD VIAL</h1>
+  ${cuerpo(v, cfg)}</body></html>`;
+  const w = window.open('', '_blank', 'width=800,height=900'); w.document.write(html); w.document.close(); w.onload = () => { w.focus(); w.print(); };
+}
+function printAcuseRecurso(impId) {
+  return docRecurso(impId, v => `<h2>ACUSE DE RECIBO DEL RECURSO DE REVOCACIÓN ${esc(v.folio)}</h2>
+  <p>Se recibió el recurso de revocación presentado por <strong>${esc(v.promovente)}</strong> el ${fechaLarga(v.presentada_el)}, en contra de la boleta de infracción <strong>${esc(v.infracciones?.folio||'')}</strong> (${esc(v.infracciones?.tipo||'')}, placa ${esc(v.infracciones?.placa||'')}).</p>
+  <p>Plazo legal para interponerlo: hasta el ${fechaLarga(v.plazo_vence)} (quince días hábiles, artículos 43 y 261 del Código de Procedimientos Administrativos para el Estado de Veracruz de Ignacio de la Llave)${v.extemporanea ? '. El recurso se presentó fuera de ese plazo.' : '.'}</p>
+  <p>Pruebas ofrecidas: ${(v.pruebas||[]).length} archivo(s). Domicilio para notificaciones: ${esc(v.domicilio||'no señalado')}.</p>
+  <div class="f"><div>${esc(v.registrado_por)}<br>Recibió</div></div>`);
+}
+function printResolucion(impId) {
+  return docRecurso(impId, v => `<h2>RESOLUCIÓN DEL RECURSO DE REVOCACIÓN ${esc(v.folio)}</h2>
+  <p>${esc(v.resolucion)}</p>
+  <p style="font-size:9pt;color:#555">Emitida el ${fechaLarga(v.resuelto_el)}.</p>
+  <div class="f"><div>${esc(v.resuelto_por)}<br>Superior jerárquico</div></div>`);
+}
+
+// ── Devolución de documentos retenidos (arts. 343-344) ────
+async function mostrarDevolucion(r) {
+  const el = $('detail-devolucion'); if (!el) return;
+  const { data: d } = await _sb.from('devoluciones').select('*').eq('infraccion_id', r.id).maybeSingle();
+  el.innerHTML = d
+    ? `<span class="badge-green">Devuelto</span> el ${fechaLarga(d.created_at)} a ${esc(d.entregado_a)} (entregó ${esc(d.devuelto_por)})`
+    : `<span class="badge-yellow">En resguardo</span> en ${esc(_cachedConfig?.resguardo_lugar || 'la Delegación')} <button class="btn btn-ghost btn-sm" onclick="abrirDevolucion(${r.id})">Devolver</button>`;
+  aplicarPermisosUI(el);
+}
+async function abrirDevolucion(infId) {
+  const { data: r } = await _sb.from('infracciones').select('id,folio,infractor,estado,documento_retenido,documento_numero').eq('id', infId).single();
+  if (!r) return;
+  $('dev-inf-id').value = infId;
+  const pagada = r.estado === 'pagada' || r.estado === 'cancelada';
+  $('dev-info').innerHTML = `<strong>${esc(r.folio)}</strong> · ${esc(DOC_RETENIDO[r.documento_retenido] || '')}${r.documento_numero ? ' ' + esc(r.documento_numero) : ''} · multa ${estadoBadge(r.estado)}` +
+    (pagada ? '' : '<br><span style="color:var(--red)">La multa no está pagada: solo un mando puede devolverlo, indicando el motivo.</span>');
+  $('dev-entregado').value = r.infractor || '';
+  $('dev-identificacion').value = ''; $('dev-notas').value = '';
+  $('dev-notas-req').textContent = pagada ? '' : '(obligatorio: motivo de la devolución anticipada)';
+  closeModal('modal-detail');
+  openModal('modal-devolucion');
+  iniciarFirma('firma-devolucion');
+}
+async function submitDevolucion() {
+  const { error } = await _sb.rpc('devolver_documento', {
+    p_infraccion_id: parseInt($('dev-inf-id').value), p_entregado_a: $('dev-entregado').value.trim(),
+    p_identificacion: $('dev-identificacion').value.trim(), p_firma: firmaDataURL('firma-devolucion'), p_notas: $('dev-notas').value.trim()
+  });
+  if (error) { alert('Error: ' + error.message); return; }
+  closeModal('modal-devolucion');
+  showToast('Documento devuelto');
+  if ($('caja-section-resguardo')?.style.display === 'block') renderResguardo();
+}
+async function renderResguardo() {
+  const tb = $('resguardo-table'); if (!tb) return;
+  tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  const { data, error } = await _sb.from('documentos_en_resguardo').select('*').order('fecha', { ascending: true });
+  if (error) { tb.innerHTML = `<tr><td colspan="7" style="color:var(--red)">${esc(error.message)}</td></tr>`; return; }
+  tb.innerHTML = (data || []).length ? data.map(r => `<tr>
+    <td class="mono" style="font-weight:700">${esc(r.folio||'—')}</td><td>${fmtDateShort(r.fecha)}</td><td class="mono">${esc(r.placa)}</td><td>${esc(r.infractor)}</td>
+    <td>${esc(DOC_RETENIDO[r.documento_retenido]||'')}${r.documento_numero ? ' · ' + esc(r.documento_numero) : ''}</td><td>${estadoBadge(r.estado)}</td>
+    <td style="text-align:right"><button class="btn btn-sm btn-primary" onclick="abrirDevolucion(${r.id})">Devolver</button></td></tr>`).join('')
+    : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem">No hay documentos en resguardo</td></tr>';
 }
 
 // ── Corte de caja ─────────────────────────────────────────
@@ -4421,7 +4595,7 @@ function _waFromBtn(btn) {
 // ══════════════════════════════════════════════════════════
 const BIT_MODULOS = { infracciones:'Infracciones', pagos:'Pagos', permisos:'Permisos', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', usuarios:'Usuarios', configuracion:'Configuración', turnos:'Turnos' };
 const BIT_ACCIONES = { alta:['Alta','badge-green'], cambio:['Cambio','badge-blue'], baja:['Baja','badge-red'] };
-const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte', infractor_domicilio:'Domicilio del infractor', infractor_correo:'Correo del infractor', infractor_ausente:'Infractor ausente', licencia_tipo:'Tipo de licencia', circunstancias:'Circunstancias (art. 331)', numero_placa:'Placa del policía vial', adscripcion:'Adscripción', leyenda_recurso:'Medio de defensa' };
+const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte', infractor_domicilio:'Domicilio del infractor', infractor_correo:'Correo del infractor', infractor_ausente:'Infractor ausente', licencia_tipo:'Tipo de licencia', circunstancias:'Circunstancias (art. 331)', numero_placa:'Placa del policía vial', adscripcion:'Adscripción', leyenda_recurso:'Medio de defensa', documento_retenido:'Documento retenido', documento_numero:'Número del documento', firma_negada:'Se negó a firmar', resguardo_lugar:'Lugar de resguardo', avisos_correo:'Avisos por correo', avisos_whatsapp:'Avisos por WhatsApp', pago_en_linea:'Pago en línea' };
 let _bitDesde = 0;
 
 function _bitValor(v) {
@@ -5919,7 +6093,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  ['anularPago','anular'], ['cerrarTurnoDe','turnos'], ['openCorteCaja','cobrar'], ['cerrarCorte','cobrar'],
  ['openNewGrua','grua'], ['editGrua','liberar'], ['liberarVehiculo','liberar'],
  ['openNewAccidente','accidentes'], ['editAccidente','accidentes'], ['openNewVehiculo','padron'], ['editVehiculo','padron'],
- ['printCorteCaja','caja_ver']
+ ['printCorteCaja','caja_ver'], ['abrirResolucion','impugnar'], ['abrirDevolucion','devolver']
 ].forEach(([fn, accion]) => {
   const orig = window[fn];
   if (typeof orig !== 'function' || puede(accion)) return;

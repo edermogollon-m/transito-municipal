@@ -1,8 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Firma del infractor, avisos de permisos, Caja sin conexión y constancia
+-- Avisos de permisos, Caja sin conexión y constancia
 -- de no adeudo
 --
---   * infracciones.firma: PNG (data URL) de la firma tomada en el celular.
 --   * permisos.correo + avisos_permisos: tareas-diarias avisa al titular
 --     15 días antes del vencimiento (una vez por vencimiento).
 --   * registrar_pago_diferido(): registra un cobro que Caja hizo sin
@@ -12,17 +11,8 @@
 --     constancia de no adeudo con QR verificable cuando la placa no tiene
 --     infracciones pendientes, vencidas ni en revisión.
 --
--- Correr después de folios.sql. Es idempotente.
+-- Correr después de tramites.sql (las firmas de la boleta están ahí). Es idempotente.
 -- ═══════════════════════════════════════════════════════════════════
-
--- ── Firma ─────────────────────────────────────────────────
-alter table public.infracciones add column if not exists firma text not null default '';
-do $$ begin
-  if not exists (select 1 from pg_constraint where conname = 'infracciones_firma_tamano') then
-    alter table public.infracciones add constraint infracciones_firma_tamano
-      check (firma = '' or (firma like 'data:image/png;base64,%' and length(firma) <= 200000));
-  end if;
-end $$;
 
 -- ── Avisos de vencimiento de permisos ─────────────────────
 alter table public.permisos add column if not exists correo text not null default '';
