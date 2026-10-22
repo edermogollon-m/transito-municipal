@@ -4,6 +4,8 @@
 //      "respaldos" (un archivo por día, se guardan los últimos 30).
 //   2. Recordatorios: correo a los infractores con correo registrado cuyo
 //      descuento por pronto pago vence en las próximas 36 horas.
+//   3. Permisos: correo al titular 15 días antes de que venza su permiso
+//      (mejoras2.sql: permisos.correo, avisos_permisos).
 //
 // La llama pg_cron cada día (encabezado x-cron-secret, validado contra Vault
 // con es_secreto_cron) o el Director desde Configuración con su sesión.
@@ -17,7 +19,7 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const TABLAS = [
   "configuracion", "usuarios", "infracciones", "pagos", "pagos_anulados", "cortes_caja",
   "permisos", "vehiculos", "grua", "accidentes", "turnos", "auditoria", "recordatorios_enviados",
-  "catalogo_infracciones", "reglamento_articulos",
+  "avisos_permisos", "constancias", "catalogo_infracciones", "reglamento_articulos",
 ];
 const DIAS_RESPALDO = 30;
 
@@ -135,6 +137,49 @@ async function recordar(db: Db) {
   return { enviados: n, errores };
 }
 
+async function avisarPermisos(db: Db) {
+  const key = Deno.env.get("RESEND_API_KEY");
+  if (!key) return { enviados: 0, aviso: "Falta RESEND_API_KEY" };
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const limite = new Date(Date.parse(hoy + "T12:00:00Z") + 15 * 86400000).toISOString().slice(0, 10);
+  const [{ data: cfg }, { data: permisos }, { data: avisos }] = await Promise.all([
+    db.from("configuracion").select("municipio,correo").eq("id", 1).single(),
+    db.from("permisos").select("id,num,titular,tipo,placa,vencimiento,correo,estado")
+      .neq("correo", "").gte("vencimiento", hoy).lte("vencimiento", limite).neq("estado", "suspendido").limit(200),
+    db.from("avisos_permisos").select("permiso_id,vencimiento").gte("vencimiento", hoy),
+  ]);
+  const ya = new Set((avisos || []).map((a: { permiso_id: number; vencimiento: string }) => `${a.permiso_id}:${a.vencimiento}`));
+  let n = 0;
+  const errores: string[] = [];
+  for (const p of permisos || []) {
+    if (n >= 50) break;
+    const correo = String(p.correo || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo) || ya.has(`${p.id}:${p.vencimiento}`)) continue;
+    const vence = new Date(p.vencimiento + "T12:00:00Z");
+    const html = `<!doctype html><html lang="es"><body style="margin:0;background:#F3F4F6;font-family:Arial,Helvetica,sans-serif;color:#111827">
+      <div style="max-width:560px;margin:0 auto;background:#fff;padding:26px">
+        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#4B5563">Tránsito Municipal · ${esc(cfg?.municipio || "")}</div>
+        <h1 style="font-size:20px;margin:6px 0 10px">Tu permiso vence ${esc(fechaMx(vence))}</h1>
+        <p style="font-size:14px">Hola ${esc(p.titular)}, tu permiso de circulación ${esc(p.num || "")} (${esc(p.tipo)}${p.placa ? `, placa ${esc(p.placa)}` : ""}) vence en pocos días.</p>
+        <p style="font-size:13px;color:#374151">Acude a la Dirección de Tránsito y Movilidad Municipal para renovarlo y evitar infracciones.</p>
+        <p style="font-size:11px;color:#6B7280;margin-top:22px">Correo automático. Si ya lo renovaste, ignora este mensaje.</p>
+      </div></body></html>`;
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: Deno.env.get("REPORTE_REMITENTE") || "Tránsito Municipal <onboarding@resend.dev>",
+        to: [correo], reply_to: cfg?.correo || undefined,
+        subject: `Tu permiso de circulación ${p.num || ""} vence pronto`.replace("  ", " "), html,
+      }),
+    });
+    if (!res.ok) { errores.push(`${p.num || p.id}: ${(await res.text()).slice(0, 160)}`); continue; }
+    await db.from("avisos_permisos").insert({ permiso_id: p.id, vencimiento: p.vencimiento, correo });
+    n++;
+  }
+  return { enviados: n, errores };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const db = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -149,9 +194,11 @@ Deno.serve(async (req) => {
   try { solo = (await req.json())?.solo || ""; } catch { /* sin cuerpo */ }
 
   const resultado: Record<string, unknown> = {};
-  try { if (solo !== "recordatorios") resultado.respaldo = await respaldar(db); }
+  try { if (!solo || solo === "respaldo") resultado.respaldo = await respaldar(db); }
   catch (e) { resultado.respaldo = { error: (e as Error).message }; }
-  try { if (solo !== "respaldo") resultado.recordatorios = await recordar(db); }
+  try { if (!solo || solo === "recordatorios") resultado.recordatorios = await recordar(db); }
   catch (e) { resultado.recordatorios = { error: (e as Error).message }; }
+  try { if (!solo || solo === "permisos") resultado.permisos = await avisarPermisos(db); }
+  catch (e) { resultado.permisos = { error: (e as Error).message }; }
   return json(resultado);
 });

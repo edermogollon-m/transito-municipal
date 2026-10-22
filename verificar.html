@@ -83,6 +83,22 @@ async function verificar() {
   }
   if (!data) return noValido('El código no corresponde a ningún documento emitido por Tránsito. Podría ser falso o haber sido alterado.');
 
+  if (data.tipo === 'constancia') {
+    const vigente = data.estado === 'vigente', limpio = Number(data.adeudos_actuales) === 0;
+    document.getElementById('card').innerHTML = `
+      <div class="status ok">${ICON_OK}<div>
+        <h1>Constancia de no adeudo auténtica</h1>
+        <p>Emitida por la Dirección de Tránsito${data.municipio ? ' de ' + esc(data.municipio) : ''}</p>
+      </div></div>
+      <div class="grid">
+        <div class="f"><label>Folio</label><span class="mono">${esc(data.folio)}</span></div>
+        <div class="f"><label>Placa</label><span class="mono">${esc(data.placa)}</span></div>
+        <div class="f"><label>Expedida</label><span>${esc(fecha(data.fecha))}</span></div>
+        <div class="f"><label>Vigencia</label><span class="pill" style="color:${vigente ? 'var(--green)' : 'var(--red)'};background:${vigente ? 'var(--green-bg)' : 'var(--red-bg)'}">${vigente ? 'Vigente hasta ' : 'Venció el '}${esc(fecha(data.vigente_hasta + 'T12:00:00'))}</span></div>
+        <div class="f full"><label>Situación actual de la placa</label><span class="pill" style="color:${limpio ? 'var(--green)' : 'var(--amber)'};background:${limpio ? 'var(--green-bg)' : 'var(--amber-bg)'}">${limpio ? 'Sigue sin adeudos' : `Hoy tiene ${esc(data.adeudos_actuales)} infracción(es) pendiente(s) registradas después de la constancia`}</span></div>
+      </div>`;
+    return;
+  }
   const esPago = data.tipo === 'pago';
   const [estLabel, estColor, estBg] = ESTADOS[data.estado] || [data.estado, 'var(--muted)', 'var(--stone)'];
   document.getElementById('card').innerHTML = `

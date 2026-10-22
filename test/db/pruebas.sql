@@ -656,4 +656,61 @@ do $$ begin
   assert (select folio from infracciones where placa = 'FOL-001') like 'MIS-%', 'el cliente no elige el folio';
   assert (select count(distinct public.nuevo_folio_inf()) from generate_series(1, 200)) = 200, 'folios distintos';
 end $$;
+
+-- Caja sin conexión: cobro diferido con la hora real y token idempotente
+insert into infracciones (placa, infractor, tipo, monto, fecha) values ('DIF-001', 'Prueba', 'Exceso de velocidad', 1000, now() - interval '1 day');
+insert into infracciones (placa, infractor, tipo, monto) values ('DEU-001', 'Prueba', 'Exceso de velocidad', 500);
+do $$ begin
+  begin
+    insert into infracciones (placa, infractor, tipo, firma) values ('FIR-001', 'Prueba', 'Exceso de velocidad', 'no es imagen');
+    raise exception 'firma inválida aceptada';
+  exception when check_violation then null;
+  end;
+end $$;
+set role authenticated;
+do $$ declare v bigint := (select id from infracciones where placa = 'DIF-001'); t uuid := gen_random_uuid(); p pagos; p2 pagos; begin
+  perform pg_temp.como('caja');
+  begin
+    perform registrar_pago_diferido(v, false, 'efectivo', '', now() - interval '30 days', gen_random_uuid());
+    raise exception 'cobro de hace 30 días aceptado';
+  exception when others then if sqlerrm = 'cobro de hace 30 días aceptado' then raise; end if;
+  end;
+  p := registrar_pago_diferido(v, true, 'efectivo', 'sin señal', now() - interval '1 hour', t);
+  assert p.descuento_pct > 0 and p.token_verificacion = t, 'cobro diferido con descuento';
+  p2 := registrar_pago_diferido(v, true, 'efectivo', 'sin señal', now() - interval '1 hour', t);
+  assert p2.id = p.id, 'el mismo cobro no se registra dos veces';
+  begin
+    perform registrar_pago_diferido(v, false, 'efectivo', '', now(), gen_random_uuid());
+    raise exception 'cobro doble diferido';
+  exception when others then if sqlerrm = 'cobro doble diferido' then raise; end if;
+  end;
+  perform pg_temp.como('ofi');
+  begin
+    perform registrar_pago_diferido(v, false, 'efectivo', '', now(), gen_random_uuid());
+    raise exception 'el oficial cobró sin conexión';
+  exception when others then if sqlerrm = 'el oficial cobró sin conexión' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- Constancia de no adeudo desde la consulta ciudadana
+set role anon;
+do $$ declare c jsonb; c2 jsonb; v jsonb; begin
+  c := emitir_constancia('dif 001');
+  assert c ->> 'folio' ~ '^CND-\d{2}-[2-9A-HJKMNP-Z]{6}$', 'folio de constancia';
+  c2 := emitir_constancia('DIF-001');
+  assert c2 ->> 'folio' = c ->> 'folio', 'una constancia por placa y día';
+  v := verificar_documento((c ->> 'token')::uuid);
+  assert v ->> 'tipo' = 'constancia' and v ->> 'estado' = 'vigente' and (v ->> 'adeudos_actuales')::int = 0, 'constancia verificable';
+  begin
+    perform emitir_constancia('DEU-001');
+    raise exception 'constancia con adeudo';
+  exception when others then if sqlerrm = 'constancia con adeudo' then raise; end if;
+  end;
+  begin
+    assert (select count(*) from constancias) = 0, 'anónimo lee constancias';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'

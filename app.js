@@ -795,7 +795,8 @@ async function submitInfraccion(e) {
     if ($('inf-ausente')) $('inf-ausente').checked = true;
   }
   if (!id) payload.boleta = _boletaGrupo || (_boletaGrupo = crypto.randomUUID());
-  const continuar = { datos: datosBoletaActual(), circunstancias: [], lat: window._infLat, lng: window._infLng };
+  if (!id) payload.firma = payload.infractor_ausente ? '' : firmaCapturada();
+  const continuar = { datos: datosBoletaActual(), circunstancias: [], lat: window._infLat, lng: window._infLng, firma: payload.firma || '' };
 
   if (sinSenal) {
     await encolarBoleta(payload, fotosPendientes);
@@ -899,17 +900,21 @@ const esErrorDeRed = err => /failed to fetch|networkerror|network request failed
 
 function _colaDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('transito', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('boletas', { keyPath: 'token' });
+    const req = indexedDB.open('transito', 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('boletas')) db.createObjectStore('boletas', { keyPath: 'token' });
+      if (!db.objectStoreNames.contains('cobros')) db.createObjectStore('cobros', { keyPath: 'token' });   // Caja sin conexión
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-async function _colaTx(modo, fn) {
+async function _colaTx(modo, fn, store = 'boletas') {
   const db = await _colaDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('boletas', modo);
-    const out = fn(tx.objectStore('boletas'));
+    const tx = db.transaction(store, modo);
+    const out = fn(tx.objectStore(store));
     tx.oncomplete = () => resolve(out && 'result' in out ? out.result : undefined);
     tx.onerror = () => reject(tx.error);
   });
@@ -917,6 +922,9 @@ async function _colaTx(modo, fn) {
 const colaListar = () => _colaTx('readonly', st => st.getAll()).then(r => r || []);
 const colaGuardar = item => _colaTx('readwrite', st => st.put(item));
 const colaQuitar = token => _colaTx('readwrite', st => st.delete(token));
+const cobrosListar = () => _colaTx('readonly', st => st.getAll(), 'cobros').then(r => r || []);
+const cobrosGuardar = item => _colaTx('readwrite', st => st.put(item), 'cobros');
+const cobrosQuitar = token => _colaTx('readwrite', st => st.delete(token), 'cobros');
 
 async function fotosComoDataURL(fileInput) {
   const out = [];
@@ -1012,7 +1020,112 @@ async function verColaBoletas() {
         (navigator.onLine ? 'Se reintentará en unos minutos.' : 'Se subirán solas cuando vuelva la señal.'));
 }
 
-window.addEventListener('online', () => { checkConexion().then(ok => { if (ok) sincronizarCola(); }); });
+// ── Caja sin conexión ─────────────────────────────────────
+// Caja guarda la última lista de pendientes. Sin internet, el cobro se anota
+// en IndexedDB con su token (el del recibo) y la hora real del cobro; al volver
+// la señal, registrar_pago_diferido lo registra con el descuento que tocaba a
+// esa hora. Si otra caja ya la cobró, queda marcado para revisarlo a mano.
+async function encolarCobro(r, aplicarDescuento, metodo, notas, montoFinal) {
+  const item = {
+    token: crypto.randomUUID(), infraccion_id: Number(r.id), folio: r.folio || '', placa: r.placa || '', infractor: r.infractor || '',
+    tipo: r.tipo || '', monto_original: Number(r.monto), monto_final: montoFinal, aplicar_descuento: aplicarDescuento,
+    metodo, notas, cajero: _session?.name || '', cobrado_at: new Date().toISOString(), error: '',
+  };
+  await cobrosGuardar(item);
+  const cache = _leerLocal('tm_pendientes');
+  if (cache?.rows) { cache.rows = cache.rows.filter(x => String(x.id) !== String(r.id)); _guardarLocal('tm_pendientes', cache); }
+  await actualizarIndicadorCobros();
+  return item;
+}
+
+let _sincCobros = false;
+async function sincronizarCobros() {
+  if (_sincCobros || !navigator.onLine) return;
+  _sincCobros = true;
+  let n = 0;
+  try {
+    for (const c of await cobrosListar()) {
+      if (c.error) continue;
+      const nota = `Cobrado sin conexión el ${new Date(c.cobrado_at).toLocaleString('es-MX')} por ${c.cajero}`;
+      const { data, error } = await _sb.rpc('registrar_pago_diferido', {
+        p_infraccion_id: c.infraccion_id, p_aplicar_descuento: c.aplicar_descuento, p_metodo: c.metodo,
+        p_notas: c.notas ? `${c.notas} | ${nota}` : nota, p_cobrado_at: c.cobrado_at, p_token: c.token,
+      });
+      if (error && esErrorDeRed(error)) break;
+      if (error) { await cobrosGuardar({ ...c, error: error.message }); continue; }
+      await cobrosQuitar(c.token);
+      n++;
+      logActivity('infraccion', `Pago registrado sin conexión — ${data.folio_inf}: ${fmt(data.monto_final)} (${c.metodo})`).catch(() => {});
+    }
+  } finally {
+    _sincCobros = false;
+    await actualizarIndicadorCobros();
+  }
+  if (n) {
+    showToast(n === 1 ? 'Se registró 1 cobro hecho sin conexión' : `Se registraron ${n} cobros hechos sin conexión`);
+    if ($('view-caja')?.classList.contains('active')) renderCaja();
+  }
+}
+
+async function actualizarIndicadorCobros() {
+  let items = [];
+  try { items = await cobrosListar(); } catch (_) {}
+  let el = $('cola-cobros');
+  if (!items.length) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('button');
+    el.id = 'cola-cobros'; el.type = 'button'; el.className = 'cola-chip';
+    el.onclick = () => verColaCobros();
+    const right = document.querySelector('.topbar-right');
+    if (right) right.prepend(el); else document.body.appendChild(el);
+  }
+  const conError = items.filter(i => i.error).length;
+  el.classList.toggle('cola-error', !!conError);
+  el.textContent = conError ? `${conError} ${conError === 1 ? 'cobro' : 'cobros'} por revisar` : `${items.length} ${items.length === 1 ? 'cobro' : 'cobros'} por subir`;
+  el.title = conError ? 'Hay cobros sin conexión que no se pudieron registrar: toca para ver' : 'Se registrarán solos al volver la señal';
+}
+
+async function verColaCobros() {
+  if (navigator.onLine) await sincronizarCobros();
+  const quedan = await cobrosListar();
+  if (!quedan.length) return;
+  const lineas = quedan.map(c => `• ${c.folio} · ${c.placa} · ${fmt(c.monto_final)} ${c.metodo} · ${new Date(c.cobrado_at).toLocaleString('es-MX')}` + (c.error ? `\n   No se registró: ${c.error}` : ''));
+  const conError = quedan.filter(c => c.error);
+  if (conError.length && confirm(`Cobros hechos sin conexión:\n\n${lineas.join('\n')}\n\n` +
+      `Los que no se registraron necesitan revisión (por ejemplo, otra caja ya los cobró: devuelve el dinero o avisa al Director).\n\n¿Quitar de la lista los ${conError.length} ya revisados?`)) {
+    for (const c of conError) await cobrosQuitar(c.token);
+    await actualizarIndicadorCobros();
+  } else if (!conError.length) {
+    alert(`Cobros hechos sin conexión:\n\n${lineas.join('\n')}\n\nSe registrarán solos al volver la señal.`);
+  }
+}
+
+function printComprobanteProvisional(c) {
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Comprobante provisional ${esc(c.folio)}</title>
+  <style>body{font-family:Arial,sans-serif;width:72mm;margin:0 auto;font-size:11px;color:#000}h1{font-size:13px;text-align:center;margin:6px 0}
+  .c{text-align:center}.r{display:flex;justify-content:space-between;margin:2px 0}.t{font-size:16px;font-weight:900;text-align:center;margin:6px 0}
+  .aviso{border:1.5px dashed #000;padding:4px;margin-top:6px;font-size:10px;text-align:center}@media print{button{display:none}}</style></head><body>
+  <button onclick="window.print()">Imprimir</button>
+  <h1>COMPROBANTE PROVISIONAL DE PAGO</h1>
+  <div class="c">${esc(_cachedConfig?.municipio || '')} · Tesorería / Caja de Tránsito</div><hr>
+  <div class="r"><span>Infracción</span><b>${esc(c.folio)}</b></div>
+  <div class="r"><span>Placa</span><span>${esc(c.placa)}</span></div>
+  <div class="r"><span>Infractor</span><span>${esc(c.infractor)}</span></div>
+  <div class="r"><span>Motivo</span><span>${esc(c.tipo)}</span></div>
+  <div class="r"><span>Monto original</span><span>${fmt(c.monto_original)}</span></div>
+  <div class="t">${fmt(c.monto_final)}</div>
+  <div class="r"><span>Forma de pago</span><span>${esc(c.metodo)}</span></div>
+  <div class="r"><span>Cajero</span><span>${esc(c.cajero)}</span></div>
+  <div class="r"><span>Fecha</span><span>${new Date(c.cobrado_at).toLocaleString('es-MX')}</span></div>
+  <div class="r"><span>Clave</span><span style="font-family:monospace">${esc(c.token.slice(0, 8).toUpperCase())}</span></div>
+  <div class="aviso">Cobro hecho sin conexión. El recibo oficial con código QR queda registrado al volver el internet y se puede reimprimir en Caja con el folio.</div>
+  </body></html>`;
+  const w = window.open('', '_blank', 'width=420,height=640');
+  if (!w) { alert('Permite las ventanas emergentes para imprimir el comprobante'); return; }
+  w.document.write(html); w.document.close();
+}
+
+window.addEventListener('online', () => { checkConexion().then(ok => { if (ok) { sincronizarCola(); sincronizarCobros(); } }); });
 window.addEventListener('offline', () => checkConexion());
 
 function _leerLocal(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (_) { return null; } }
@@ -1225,6 +1338,7 @@ async function openNewInfraccion(continuar) {
   const plHist = document.getElementById('placa-history');
   if (plHist) plHist.innerHTML = '';
   if ($('placa-ocr-status')) $('placa-ocr-status').textContent = '';
+  if ($('licencia-history')) $('licencia-history').innerHTML = '';
   // Pre-fill official with logged-in user if they are an oficial/supervisor
   if ($('inf-oficial')) {
     $('inf-oficial').dataset.preload = _session?.name || '';
@@ -1243,6 +1357,96 @@ async function openNewInfraccion(continuar) {
   await prepararCatalogoForm();
   autoFillMonto();
   if (previos?.["inf-placa"]) checkPlacaHistory();
+  if (previos?.["inf-licencia"]) checkLicenciaHistory();
+  iniciarFirma(previos ? continuar.firma : '');
+}
+
+// ── Firma del infractor en pantalla (firma.sql: infracciones.firma) ──
+let _firmaTrazos = 0;
+function iniciarFirma(previa) {
+  const c = $('inf-firma'); if (!c) return;
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const w = c.clientWidth || 480, h = c.clientHeight || 150;
+  c.width = w * ratio; c.height = h * ratio;
+  const ctx = c.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111827';
+  ctx.clearRect(0, 0, w, h);
+  _firmaTrazos = 0;
+  if (previa) {
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0, w, h); _firmaTrazos = 1; marcarFirma(); };
+    img.src = previa;
+  }
+  marcarFirma();
+  if (c.dataset.listo) return;
+  c.dataset.listo = '1';
+  let dibujando = false;
+  const punto = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  c.addEventListener('pointerdown', e => {
+    dibujando = true; c.setPointerCapture(e.pointerId);
+    const g = c.getContext('2d'), [x, y] = punto(e);
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + .1, y + .1); g.stroke();
+  });
+  c.addEventListener('pointermove', e => {
+    if (!dibujando) return;
+    const g = c.getContext('2d'), [x, y] = punto(e);
+    g.lineTo(x, y); g.stroke();
+  });
+  const fin = () => { if (dibujando) { dibujando = false; _firmaTrazos++; marcarFirma(); } };
+  c.addEventListener('pointerup', fin); c.addEventListener('pointercancel', fin); c.addEventListener('pointerleave', fin);
+}
+function marcarFirma() {
+  const el = $('inf-firma-estado'); if (!el) return;
+  el.textContent = _firmaTrazos ? '✓ Firma capturada: se imprime en la boleta.' : 'Pide al infractor que firme aquí. Si se niega, déjalo en blanco.';
+  el.style.color = _firmaTrazos ? 'var(--green)' : 'var(--muted)';
+}
+function limpiarFirma() { iniciarFirma(''); }
+// PNG reducido (≈ 10–25 KB) o '' si no firmó
+function firmaCapturada() {
+  const c = $('inf-firma'); if (!c || !_firmaTrazos) return '';
+  const out = document.createElement('canvas'); out.width = 480; out.height = 150;
+  const g = out.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 480, 150);
+  g.drawImage(c, 0, 0, 480, 150);
+  return out.toDataURL('image/png');
+}
+function imgFirma(r, alto) {
+  return r?.firma && /^data:image\/png;base64,/.test(r.firma) ? `<img src="${r.firma}" alt="Firma" style="height:${alto};max-width:100%;display:block;margin:0 auto">` : '';
+}
+
+// ── Reincidencia por licencia (cualquier placa) ──
+async function checkLicenciaHistory() {
+  const panel = $('licencia-history'); if (!panel) return;
+  const lic = ($('inf-licencia')||{}).value?.trim().toUpperCase().replace(/\s+/g, '');
+  if (!lic || lic.length < 4) { panel.innerHTML = ''; return; }
+  const haceUnAnio = new Date(Date.now() - 365 * 86400000).toISOString();
+  const { data } = await _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,placa,boleta,catalogo_numero')
+    .ilike('licencia', lic).gte('fecha', haceUnAnio).order('fecha', { ascending: false }).limit(50);
+  if (lic !== ($('inf-licencia')||{}).value?.trim().toUpperCase().replace(/\s+/g, '')) return;
+  await cargarCatalogo();
+  const prevId = $('inf-id')?.value;
+  const prev = (data || []).filter(r => String(r.id) !== String(prevId) && !(_boletaGrupo && r.boleta === _boletaGrupo) && r.estado !== 'cancelada');
+  if (!prev.length) {
+    panel.innerHTML = `<div style="background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:.5rem .9rem;margin:.35rem 0;font-size:.75rem;color:#065F46">✓ Licencia sin infracciones en los últimos 12 meses.</div>`;
+    return;
+  }
+  const adeudos = prev.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
+  const graves = prev.filter(r => catalogoPorNumero(r.catalogo_numero)?.grave);
+  const placas = [...new Set(prev.map(r => r.placa))];
+  panel.innerHTML = `<div style="background:#FFF7ED;border:1.5px solid #F59E0B;border-radius:8px;padding:.65rem .95rem;margin:.35rem 0">
+    <div style="font-size:.78rem;font-weight:800;color:#92400E;margin-bottom:.35rem">⚠ Licencia reincidente: ${prev.length} ${prev.length > 1 ? 'infracciones' : 'infracción'} en 12 meses${placas.length > 1 ? ` con ${placas.length} placas distintas` : ''}</div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.4rem">
+      ${adeudos.length ? `<span class="badge-red">${adeudos.length} sin pagar · ${fmt(adeudos.reduce((a, r) => a + Number(r.monto), 0))}</span>` : ''}
+      ${graves.length ? `<span class="badge-red">${graves.length} grave${graves.length > 1 ? 's' : ''}</span>` : ''}
+    </div>
+    ${prev.slice(0, 3).map(r => `<div style="font-size:.71rem;color:#78350F;display:flex;gap:.5rem;margin-bottom:.15rem;flex-wrap:wrap;align-items:center">
+      <span style="font-family:monospace;font-weight:700">${esc(r.folio || '—')}</span>
+      <span>${fmtDateShort(r.fecha)}</span>
+      <span style="font-family:monospace">${esc(r.placa)}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.tipo)}</span>
+      ${estadoBadge(r.estado)}
+    </div>`).join('')}
+  </div>`;
 }
 
 const CAMPOS_BOLETA = ['inf-fecha','inf-placa','inf-vehiculo','inf-color','inf-infractor','inf-licencia','inf-licencia-tipo','inf-correo','inf-domicilio','inf-ausente','inf-telefono','inf-ubicacion','inf-oficial'];
@@ -1398,6 +1602,9 @@ async function renderPermisos() {
       <td><span style="background:${diasBg};color:${diasColor};font-weight:700;font-size:.78rem;padding:.15rem .5rem;border-radius:6px">${diasTxt}</span></td>
       <td>${estadoBadge(r.estado)}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap;text-align:right;padding-right:.6rem">
+        ${r.telefono && dias !== null && dias <= 15 && r.estado !== 'suspendido' ? `<button class="btn-wa-icon" title="Avisar por WhatsApp que vence" onclick="event.stopPropagation();avisarVencimientoPermiso(${jsArg(r.telefono)},${jsArg(r.titular)},${jsArg(r.num||'')},${jsArg(r.placa||'')},${jsArg(r.vencimiento)})">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        </button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editPermiso('${r.id}')">Editar</button>
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();printPermiso('${r.id}')" title="Imprimir">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -1407,6 +1614,18 @@ async function renderPermisos() {
   }).join('') : `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Sin resultados</td></tr>`;
 
   renderPager('per-pager', _perPage, pages, 'goPerPage');
+}
+
+// Aviso de vencimiento por WhatsApp (el correo lo manda tareas-diarias 15 días antes)
+function avisarVencimientoPermiso(tel, titular, num, placa, venc) {
+  tel = String(tel || '').replace(/\D/g, ''); if (!tel) return;
+  const dias = _diasVigencia(venc);
+  const fecha = new Date(venc + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const cuando = dias < 0 ? `venció el ${fecha}` : dias === 0 ? 'vence hoy' : `vence el ${fecha} (en ${dias} día${dias === 1 ? '' : 's'})`;
+  const msg = `Estimado/a ${titular}, le recordamos que su permiso de circulación${num ? ` ${num}` : ''}${placa ? ` de la placa ${placa}` : ''} ${cuando}.\n\n` +
+    `Acuda a la Dirección de Tránsito y Movilidad Municipal para renovarlo y evitar infracciones.`;
+  window.open(`https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+  showToast('WhatsApp listo para enviar');
 }
 
 function limpiarFiltrosPer() {
@@ -1441,6 +1660,7 @@ async function submitPermiso(e) {
     vencimiento: $('per-venc').value,
     estado:      $('per-est').value,
     telefono:    ($('per-telefono')||{}).value?.trim()||null,
+    correo:      ($('per-correo')||{}).value?.trim()||'',
     obs:         ($('per-obs')||{}).value?.trim()||null,
     unidades:    parseInt(($('per-unidades')||{}).value)||1
   };
@@ -1482,6 +1702,7 @@ async function editPermiso(id) {
   $('per-venc').value = fmtDateInput(data.vencimiento);
   $('per-est').value = data.estado;
   if ($('per-telefono')) $('per-telefono').value = data.telefono||'';
+  if ($('per-correo')) $('per-correo').value = data.correo||'';
   if ($('per-obs')) $('per-obs').value = data.obs||'';
   if ($('per-unidades')) $('per-unidades').value = data.unidades||1;
   calcEstadoPermiso();
@@ -2012,7 +2233,7 @@ async function printInfraccion(id) {
           <div class="sig-label">Policía vial: ${esc(r.oficial||'—')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}${r.oficial_adscripcion ? ' · ' + esc(r.oficial_adscripcion) : ''}</div>
         </div>
         <div class="sig-box">
-          <div class="sig-line"></div>
+          ${imgFirma(r, '16mm') || '<div class="sig-line"></div>'}
           <div class="sig-label">Firma o huella del infractor</div>
         </div>
       </div>
@@ -2754,14 +2975,27 @@ async function renderPendientesTable() {
     if (periodoVal === 'hoy') q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
     else if (desde) q = q.gte('fecha', desde);
   }
-  await Promise.all([cargarCatalogo(), asegurarConfig()]);
+  await Promise.all([cargarCatalogo(), asegurarConfig()]).catch(() => {});
 
   if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
   else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
   else q = q.order('fecha',{ascending:false});
 
-  const { data, error } = await q;
+  let { data, error } = await q;
+  let sinConexion = false;
+  if (error && esErrorDeRed(error) || !navigator.onLine) {
+    // Caja sin conexión: última lista guardada en este equipo
+    const cache = _leerLocal('tm_pendientes');
+    if (cache?.rows) {
+      const s = _pendSearch.toLowerCase();
+      data = cache.rows.filter(r => !s || [r.placa, r.infractor, r.folio].some(v => String(v || '').toLowerCase().includes(s)));
+      error = null; sinConexion = cache.at;
+    }
+  }
   if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`; return; }
+  if (!sinConexion && !_pendSearch && !periodoVal) _guardarLocal('tm_pendientes', { at: new Date().toISOString(), rows: data || [] });
+  const avisoOff = $('pend-offline');
+  if (avisoOff) { avisoOff.style.display = sinConexion ? '' : 'none'; avisoOff.textContent = sinConexion ? `Sin conexión: lista guardada el ${new Date(sinConexion).toLocaleString('es-MX')}. Puedes cobrar; los cobros se registran solos al volver el internet.` : ''; }
   let all = data||[];
   // Recordatorio: descuento que vence en 2 días o menos (sin graves, que no tienen)
   if (periodoVal === 'desc_vence') all = all.filter(r => {
@@ -3163,9 +3397,15 @@ async function asegurarConfig() {
 }
 
 async function openRegistrarPago(infId) {
-  await asegurarConfig();
+  await asegurarConfig().catch(() => {});
+  if (!_cachedConfig) _cachedConfig = _leerLocal('tm_config');
 
-  const { data: r } = await _sb.from('infracciones').select('*').eq('id', infId).single();
+  let { data: r, error: errInf } = await _sb.from('infracciones').select('*').eq('id', infId).single();
+  window._pagoSinConexion = null;
+  if (!r && (!navigator.onLine || esErrorDeRed(errInf))) {
+    r = (_leerLocal('tm_pendientes')?.rows || []).find(x => String(x.id) === String(infId));
+    window._pagoSinConexion = r || null;
+  }
   if (!r) return;
   $('pago-inf-id').value = infId;
   const dias = Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
@@ -3194,6 +3434,7 @@ async function openRegistrarPago(infId) {
   if ($('pago-efectivo-wrap')) $('pago-efectivo-wrap').style.display = '';
   window._pagoMontoOriginal = r.monto;
   calcularMontoPago();
+  if (window._pagoSinConexion && infoEl) infoEl.insertAdjacentHTML('beforeend', '<div style="font-size:.75rem;color:#92400E;background:var(--amber-bg);border-radius:6px;padding:.4rem .6rem;margin-top:.5rem;font-weight:600">Sin conexión: se imprimirá un comprobante provisional y el pago se registrará al volver el internet.</div>');
   openModal('modal-pago');
 }
 
@@ -3233,12 +3474,25 @@ async function submitPago() {
   // El servidor calcula el descuento, asigna el cajero y marca la infracción
   // como pagada en una sola operación (evita cobros dobles).
   const metodo = $('pago-metodo')?.value||'efectivo';
+  const aplicar = parseInt(($('pago-descuento')||{}).value||'0') > 0, notas = $('pago-notas')?.value?.trim()||'';
+  const sinConexion = async () => {
+    const r = window._pagoSinConexion || (_leerLocal('tm_pendientes')?.rows || []).find(x => String(x.id) === String(infId));
+    if (btn) { btn.disabled=false; btn.textContent='Registrar pago'; }
+    if (!r) { alert('Sin conexión y esta infracción no está en la lista guardada de Caja. Intenta de nuevo cuando vuelva el internet.'); return; }
+    const c = await encolarCobro(r, aplicar, metodo, notas, window._pagoMontoFinal ?? Number(r.monto));
+    closeModal('modal-pago'); closeModal('modal-detail');
+    showToast(`Cobro guardado sin conexión: ${fmt(c.monto_final)}`);
+    printComprobanteProvisional(c);
+    renderPendientesTable();
+  };
+  if (!navigator.onLine || window._pagoSinConexion) return sinConexion();
   const { data: pago, error } = await _sb.rpc('registrar_pago', {
     p_infraccion_id: parseInt(infId),
-    p_aplicar_descuento: parseInt(($('pago-descuento')||{}).value||'0') > 0,
+    p_aplicar_descuento: aplicar,
     p_metodo: metodo,
-    p_notas: $('pago-notas')?.value?.trim()||''
+    p_notas: notas
   });
+  if (error && esErrorDeRed(error)) return sinConexion();
   if (btn) { btn.disabled=false; btn.textContent='Registrar pago'; }
   if (error) { alert('Error: '+error.message); return; }
   const final = Number(pago.monto_final);
@@ -3551,7 +3805,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
     ${r.oficial_adscripcion ? `<div class="t-small">${esc(r.oficial_adscripcion)}</div>` : ''}
     <div style="margin:.5mm 0"></div>
     <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
-    <div class="t-sig"></div>
+    ${imgFirma(r, '14mm') || '<div class="t-sig"></div>'}
     <div class="t-div"></div>
     <div class="t-small" style="text-align:justify">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
     <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
@@ -3631,6 +3885,16 @@ function initReporteMensual(mesSel) {
     sel.add(new Option(hoy.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }) + ' (en curso)', v));
   }
   if (mesSel && [...sel.options].some(o => o.value === mesSel)) sel.value = mesSel;
+  const tri = $('rep-trimestre');
+  if (tri && !tri.options.length) {
+    const hoy = new Date();
+    let y = hoy.getFullYear(), q = Math.floor(hoy.getMonth() / 3) + 1;
+    for (let i = 0; i < 8; i++) {
+      tri.add(new Option(`${['Primer', 'Segundo', 'Tercer', 'Cuarto'][q - 1]} trimestre ${y}${i === 0 ? ' (en curso)' : ''}`, `${y}-${q}`));
+      if (--q === 0) { q = 4; y--; }
+    }
+    if (tri.options.length > 1) tri.selectedIndex = 1;
+  }
   const enviar = $('rep-enviar'); if (enviar) enviar.style.display = _rol === 'admin' ? '' : 'none';
 }
 
@@ -3689,6 +3953,117 @@ async function printReporteMensual() {
   ${tabla('Recaudación por forma de pago', ['Forma de pago', 'Pagos', 'Total'], (r.por_metodo || []).map(p => [esc(p.metodo), p.pagos, fmt(p.total)]))}
   <div class="firma"><div>${esc(r.director || 'Director de Tránsito')}<br>Director de Tránsito y Movilidad</div></div>
   <div class="pie">Sistema de Tránsito y Movilidad Municipal</div>
+  </body></html>`;
+  if (!win) { alert('Permite las ventanas emergentes para ver el reporte'); return; }
+  win.document.write(html); win.document.close();
+}
+
+// ── Reporte trimestral para Cabildo (comparado con el mismo trimestre del año anterior) ──
+async function _todasFilas(tabla, cols, campo, desde, hasta) {
+  const filas = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await _sb.from(tabla).select(cols).gte(campo, desde).lt(campo, hasta).range(i, i + 999);
+    if (error) throw error;
+    filas.push(...(data || []));
+    if (!data || data.length < 1000) return filas;
+  }
+}
+function _barrasSVG(titulo, meses, actual, anterior, fmtV) {
+  const W = 640, H = 210, L = 64, B = 30, T = 14, max = Math.max(1, ...actual, ...anterior);
+  const paso = Math.pow(10, Math.floor(Math.log10(max)));
+  let tope = Math.ceil(max / paso) * paso;
+  if ([...actual, ...anterior].every(Number.isInteger) && tope < 4) tope = 4;
+  const y = v => T + (H - T - B) * (1 - v / tope), gw = (W - L - 10) / meses.length, bw = Math.min(46, gw / 3);
+  const ticks = [0, .25, .5, .75, 1].map(f => tope * f);
+  return `<h3>${titulo}</h3><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${titulo}">
+    ${ticks.map(t => `<line x1="${L}" x2="${W - 10}" y1="${y(t)}" y2="${y(t)}" stroke="#E5E7EB"/><text x="${L - 6}" y="${y(t) + 4}" font-size="10" text-anchor="end" fill="#4B5563">${fmtV(t)}</text>`).join('')}
+    ${meses.map((m, i) => { const x = L + gw * i + gw / 2; return `
+      <rect x="${x - bw - 2}" y="${y(anterior[i])}" width="${bw}" height="${H - B - y(anterior[i])}" fill="#9CA3AF"/>
+      <rect x="${x + 2}" y="${y(actual[i])}" width="${bw}" height="${H - B - y(actual[i])}" fill="#1A7A82"/>
+      <text x="${x + 2 + bw / 2}" y="${y(actual[i]) - 4}" font-size="10" text-anchor="middle" fill="#111827">${fmtV(actual[i])}</text>
+      <text x="${x}" y="${H - 10}" font-size="11" text-anchor="middle" fill="#111827">${m}</text>`; }).join('')}
+  </svg>`;
+}
+async function printReporteCabildo() {
+  const [y, q] = (($('rep-trimestre')||{}).value || '').split('-').map(Number);
+  if (!y) return;
+  const win = window.open('', '_blank', 'width=900,height=800');
+  const rango = yy => [new Date(yy, (q - 1) * 3, 1).toISOString(), new Date(yy, q * 3, 1).toISOString()];
+  const [d1, h1] = rango(y), [d0, h0] = rango(y - 1);
+  let datos;
+  try {
+    const cargar = (d, h) => Promise.all([
+      _todasFilas('infracciones', 'fecha,tipo,monto,estado,ubicacion', 'fecha', d, h),
+      _todasFilas('pagos', 'created_at,monto_final,monto_original,metodo', 'created_at', d, h),
+      _todasFilas('accidentes', 'fecha,tipo,lesionados,fallecidos,ubicacion', 'fecha', d, h),
+      _todasFilas('permisos', 'created_at', 'created_at', d, h),
+    ]);
+    datos = await Promise.all([cargar(d1, h1), cargar(d0, h0), asegurarConfig()]);
+  } catch (e) { if (win) win.close(); alert('No se pudo generar el reporte: ' + (e.message || e)); return; }
+  const [[inf, pag, acc, per], [inf0, pag0, acc0, per0], cfg] = datos;
+  const suma = (a, k) => a.reduce((s, r) => s + Number(r[k] || 0), 0);
+  const varia = (a, b) => !b ? (a ? 'sin datos del año anterior' : '') : `${a >= b ? '+' : ''}${Math.round((a - b) / b * 100)}% vs. ${y - 1}`;
+  const nombreTri = `${['Primer', 'Segundo', 'Tercer', 'Cuarto'][q - 1]} trimestre ${y}`;
+  const mesesIdx = [0, 1, 2].map(i => (q - 1) * 3 + i);
+  const meses = mesesIdx.map(m => new Date(y, m, 15).toLocaleDateString('es-MX', { month: 'short' }));
+  const porMes = (a, campo, k) => mesesIdx.map(m => a.filter(r => new Date(r[campo]).getMonth() === m).reduce((s, r) => s + (k ? Number(r[k] || 0) : 1), 0));
+  const contar = (a, f) => Object.entries(a.reduce((o, r) => { const k = f(r); if (k) o[k] = (o[k] || 0) + 1; return o; }, {})).sort((x, z) => z[1] - x[1]);
+  const infValidas = inf.filter(r => r.estado !== 'cancelada'), infValidas0 = inf0.filter(r => r.estado !== 'cancelada');
+  const recaud = suma(pag, 'monto_final'), recaud0 = suma(pag0, 'monto_final');
+  const pagadas = infValidas.filter(r => r.estado === 'pagada').length;
+  const motivos = contar(infValidas, r => r.tipo).slice(0, 10);
+  const calles = contar([...infValidas, ...acc], r => _calle(r.ubicacion)).slice(0, 8);
+  const tiposAcc = contar(acc, r => r.tipo);
+  const lesion = suma(acc, 'lesionados'), lesion0 = suma(acc0, 'lesionados'), fall = suma(acc, 'fallecidos'), fall0 = suma(acc0, 'fallecidos');
+  const fmtCorto = v => v >= 1000 ? `$${(v / 1000).toLocaleString('es-MX', { maximumFractionDigits: 1 })}k` : `$${Math.round(v)}`;
+  const tabla = (titulo, cab, filas) => filas.length ? `<h3>${titulo}</h3><table><thead><tr>${cab.map((c, i) => `<th${i ? ' class="n"' : ''}>${c}</th>`).join('')}</tr></thead>
+    <tbody>${filas.map(f => `<tr>${f.map((c, i) => `<td${i ? ' class="n"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Informe a Cabildo · ${esc(nombreTri)}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:2rem auto;max-width:780px;padding:0 1rem}
+    .k{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#4B5563}
+    h1{font-size:1.5rem;margin:.3rem 0 .2rem}
+    .sub{color:#4B5563;font-size:.85rem;margin-bottom:1.3rem}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid #111827;border-bottom:1px solid #111827;margin-bottom:.4rem}
+    .grid div{padding:.7rem .8rem .7rem 0;border-right:1px solid #E5E7EB}
+    .grid div:nth-child(3n){border-right:0}
+    .grid div:nth-child(n+4){border-top:1px solid #E5E7EB}
+    .grid b{display:block;font-size:1.3rem;margin-top:.15rem}
+    .grid small{color:#4B5563;font-size:.72rem}
+    .ley{font-size:.72rem;color:#4B5563;display:flex;gap:1rem;margin-top:.3rem}
+    .ley i{display:inline-block;width:10px;height:10px;margin-right:.3rem;vertical-align:-1px}
+    h3{font-size:.95rem;margin:1.4rem 0 .4rem}
+    table{width:100%;border-collapse:collapse;font-size:.82rem}
+    th{text-align:left;border-bottom:1px solid #111827;padding:.35rem 0}
+    td{border-bottom:1px solid #E5E7EB;padding:.35rem 0}
+    .n{text-align:right;font-variant-numeric:tabular-nums}
+    .firma{margin-top:3.5rem;display:flex;justify-content:flex-end}
+    .firma div{border-top:1px solid #111827;padding-top:.3rem;width:260px;text-align:center;font-size:.8rem}
+    .pie{margin-top:2rem;font-size:.7rem;color:#6B7280}
+    button{margin-bottom:1rem;padding:.45rem 1rem;background:#1A7A82;color:#fff;border:0;border-radius:6px;cursor:pointer;font:inherit}
+    @media print{button{display:none}body{margin:0 auto}h3{break-after:avoid}svg,table{break-inside:avoid}}
+  </style></head><body>
+  <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div class="k">Dirección de Tránsito y Movilidad · ${esc(cfg?.municipio || '')}${cfg?.estado ? ', ' + esc(cfg.estado) : ''}</div>
+  <h1>Informe trimestral al H. Cabildo</h1>
+  <div class="sub">${esc(nombreTri)} · comparado con el mismo periodo de ${y - 1} · generado el ${new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+  <div class="grid">
+    <div><small>Recaudación</small><b>${fmt(recaud)}</b><small>${esc(varia(recaud, recaud0))}</small></div>
+    <div><small>Infracciones levantadas</small><b>${infValidas.length}</b><small>${esc(varia(infValidas.length, infValidas0.length))}</small></div>
+    <div><small>Cobradas del trimestre</small><b>${infValidas.length ? Math.round(pagadas / infValidas.length * 100) : 0}%</b><small>${pagadas} de ${infValidas.length} boletas</small></div>
+    <div><small>Accidentes viales</small><b>${acc.length}</b><small>${esc(varia(acc.length, acc0.length))}</small></div>
+    <div><small>Lesionados / fallecidos</small><b>${lesion} / ${fall}</b><small>${y - 1}: ${lesion0} / ${fall0}</small></div>
+    <div><small>Permisos expedidos</small><b>${per.length}</b><small>${esc(varia(per.length, per0.length))}</small></div>
+  </div>
+  <div class="ley"><span><i style="background:#1A7A82"></i>${y}</span><span><i style="background:#9CA3AF"></i>${y - 1}</span></div>
+  ${_barrasSVG('Recaudación por mes', meses, porMes(pag, 'created_at', 'monto_final'), porMes(pag0, 'created_at', 'monto_final'), fmtCorto)}
+  ${_barrasSVG('Infracciones por mes', meses, porMes(infValidas, 'fecha'), porMes(infValidas0, 'fecha'), v => String(Math.round(v)))}
+  ${_barrasSVG('Accidentes por mes', meses, porMes(acc, 'fecha'), porMes(acc0, 'fecha'), v => String(Math.round(v)))}
+  ${tabla('Motivos de infracción más frecuentes', ['Motivo', 'Boletas', '% del total'], motivos.map(([t, n]) => [esc(t), n, Math.round(n / infValidas.length * 100) + '%']))}
+  ${tabla('Accidentes por tipo', ['Tipo', 'Accidentes'], tiposAcc.map(([t, n]) => [esc(t), n]))}
+  ${tabla('Calles con más hechos (infracciones y accidentes)', ['Calle o lugar', 'Hechos'], calles.map(([c, n]) => [esc(c), n]))}
+  <div class="firma"><div>${esc(cfg?.director || 'Director de Tránsito')}<br>Director de Tránsito y Movilidad</div></div>
+  <div class="pie">Cifras del Sistema de Tránsito y Movilidad Municipal al ${new Date().toLocaleDateString('es-MX')}. Recaudación = pagos registrados en Caja dentro del trimestre.</div>
   </body></html>`;
   if (!win) { alert('Permite las ventanas emergentes para ver el reporte'); return; }
   win.document.write(html); win.document.close();
@@ -4247,6 +4622,44 @@ async function logout() {
   window.location.replace('/login');
 }
 
+// ── Cierre de sesión por inactividad ──────────────────────
+// En los equipos compartidos (ventanilla, oficina) la sesión se cierra sola
+// tras 15 minutos sin usar la app; un minuto antes avisa. Los oficiales en
+// campo quedan fuera, y sin internet no se cierra (para no perder la cola).
+const INACTIVIDAD_MIN = 15;
+let _ultimaActividad = Date.now(), _avisoInactividad = null;
+function _marcarActividad() {
+  _ultimaActividad = Date.now();
+  try { localStorage.setItem('tm_actividad', String(_ultimaActividad)); } catch (_) {}
+  if (_avisoInactividad) { _avisoInactividad.remove(); _avisoInactividad = null; }
+}
+function iniciarControlInactividad() {
+  if (!_rol || _rol === 'oficial') return;
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => document.addEventListener(ev, () => {
+    if (Date.now() - _ultimaActividad > 5000 || _avisoInactividad) _marcarActividad();
+  }, { passive: true, capture: true }));
+  window.addEventListener('storage', e => { if (e.key === 'tm_actividad') { _ultimaActividad = Number(e.newValue) || Date.now(); if (_avisoInactividad) { _avisoInactividad.remove(); _avisoInactividad = null; } } });
+  _marcarActividad();
+  setInterval(() => {
+    if (!navigator.onLine) { _ultimaActividad = Date.now(); return; }
+    const quieto = Date.now() - _ultimaActividad, limite = INACTIVIDAD_MIN * 60000;
+    if (quieto >= limite) { logActivity('sesion', `Sesión cerrada por inactividad — ${_session?.name || ''}`).catch(() => {}); logout(); return; }
+    if (quieto >= limite - 60000) {
+      const seg = Math.max(0, Math.ceil((limite - quieto) / 1000));
+      if (!_avisoInactividad) {
+        _avisoInactividad = document.createElement('div');
+        _avisoInactividad.className = 'aviso-inactividad';
+        _avisoInactividad.setAttribute('role', 'alertdialog');
+        _avisoInactividad.innerHTML = `<div><strong>¿Sigues ahí?</strong><p>Por seguridad, la sesión se cerrará en <span id="inact-seg"></span> segundos.</p>
+          <button type="button" class="btn btn-primary" id="inact-seguir">Seguir trabajando</button></div>`;
+        document.body.appendChild(_avisoInactividad);
+        $('inact-seguir').onclick = _marcarActividad;
+      }
+      const el = $('inact-seg'); if (el) el.textContent = seg;
+    }
+  }, 1000);
+}
+
 // Confirma que la sesión de Supabase sigue siendo válida y el usuario activo
 async function verificarSesion() {
   const { data: { session } } = await _sb.auth.getSession();
@@ -4695,11 +5108,25 @@ async function renderMapa() {
   const estadoFil = ($('mapa-estado')||{}).value||'';
   const mesFil    = ($('mapa-mes')||{}).value||'';
 
+  const selMes = $('mapa-mes');
+  if (selMes && selMes.options.length <= 1) {
+    const hoy = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      selMes.add(new Option(d.toLocaleDateString('es-MX', { month: 'short', year: 'numeric' }), `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`));
+    }
+  }
+  renderZonas();
+
   let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,estado,fecha,lat,lng').not('lat','is',null).not('lng','is',null);
   if (estadoFil) q = q.eq('estado', estadoFil);
-  if (mesFil)    q = q.gte('fecha', mesFil+'-01').lte('fecha', mesFil+'-31');
+  if (mesFil) {
+    const [y, m] = mesFil.split('-').map(Number);
+    q = q.gte('fecha', new Date(y, m - 1, 1).toISOString()).lt('fecha', new Date(y, m, 1).toISOString());
+  }
   const { data } = await q;
-  const infs = (data||[]).filter(r=>r.lat&&r.lng);
+  const franja = (($('mapa-hora')||{}).value || '').split('-').map(Number);
+  const infs = (data||[]).filter(r => r.lat && r.lng && (franja.length < 2 || (new Date(r.fecha).getHours() >= franja[0] && new Date(r.fecha).getHours() < franja[1])));
 
   if($('mapa-count')) $('mapa-count').textContent = `${infs.length} infracciones con ubicación`;
 
@@ -4743,6 +5170,57 @@ async function renderMapa() {
 
   // Trigger resize in case map was hidden when initialized
   setTimeout(()=>_leafletMap.invalidateSize(),200);
+}
+
+// ── Zonas conflictivas por día y hora (infracciones + accidentes) ──
+const DIAS_SEM = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+function _calle(u) {
+  const t = String(u || '').split(/[,(]/)[0].replace(/\s+/g, ' ').trim();
+  return t.length >= 3 ? t : '';
+}
+async function renderZonas() {
+  const cont = $('zonas-heatmap'), tbody = $('zonas-calles'); if (!cont || !tbody) return;
+  const fuente = ($('zonas-fuente')||{}).value || 'ambos';
+  const dias = Number(($('zonas-periodo')||{}).value || 90);
+  const desde = new Date(Date.now() - dias * 86400000).toISOString();
+  const [{ data: infs }, { data: accs }] = await Promise.all([
+    fuente === 'accidentes' ? { data: [] } : _sb.from('infracciones').select('fecha,ubicacion').gte('fecha', desde).neq('estado', 'cancelada').limit(5000),
+    fuente === 'infracciones' ? { data: [] } : _sb.from('accidentes').select('fecha,ubicacion').gte('fecha', desde).limit(5000),
+  ]);
+  const celdas = Array.from({ length: 7 }, () => Array(24).fill(0));
+  const calles = {};
+  const sumar = (rows, clave) => (rows || []).forEach(r => {
+    const d = new Date(r.fecha), dia = (d.getDay() + 6) % 7, h = d.getHours();
+    celdas[dia][h]++;
+    const c = _calle(r.ubicacion); if (!c) return;
+    const k = c.toLowerCase();
+    const e = calles[k] || (calles[k] = { nombre: c, infracciones: 0, accidentes: 0, horas: Array(24).fill(0), dias: Array(7).fill(0) });
+    e[clave]++; e.horas[h]++; e.dias[dia]++;
+  });
+  sumar(infs, 'infracciones'); sumar(accs, 'accidentes');
+  const max = Math.max(1, ...celdas.flat());
+  const total = celdas.flat().reduce((a, b) => a + b, 0);
+  const color = n => n ? `rgba(220,38,38,${(0.12 + 0.88 * n / max).toFixed(2)})` : 'var(--stone)';
+  cont.innerHTML = total ? `<div class="heatmap" role="img" aria-label="Hechos por día de la semana y hora">
+      <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hm-h">${h % 3 === 0 ? h : ''}</div>`).join('')}
+      ${celdas.map((fila, d) => `<div class="hm-d">${DIAS_SEM[d]}</div>${fila.map((n, h) => `<div class="hm-c" style="background:${color(n)}" title="${DIAS_SEM[d]} ${h}:00–${h + 1}:00 · ${n} ${n === 1 ? 'hecho' : 'hechos'}"></div>`).join('')}`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem;font-size:.72rem;color:var(--muted);margin-top:.5rem">
+      <span>${total} hechos · el cuadro más oscuro tiene ${max}</span>
+      <span>${(() => { let b = [0, 0]; celdas.forEach((f, d) => f.forEach((n, h) => { if (n > celdas[b[0]][b[1]]) b = [d, h]; })); return `Pico: ${DIAS_SEM[b[0]]} de ${b[1]}:00 a ${b[1] + 1}:00`; })()}</span>
+    </div>` : '<div style="font-size:.8rem;color:var(--muted);padding:1rem 0">Sin hechos registrados en este periodo.</div>';
+  const top = Object.values(calles).sort((a, b) => (b.infracciones + b.accidentes) - (a.infracciones + a.accidentes)).slice(0, 10);
+  const pico = arr => arr.indexOf(Math.max(...arr));
+  tbody.innerHTML = top.length ? top.map(c => {
+    const h = pico(c.horas);
+    return `<tr>
+      <td style="font-weight:600">${esc(c.nombre)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${c.infracciones}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${c.accidentes}</td>
+      <td>${h}:00–${h + 1}:00</td>
+      <td>${DIAS_SEM[pico(c.dias)]}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted)">Sin ubicaciones capturadas en este periodo</td></tr>';
 }
 
 // ══════════════════════════════════════════════════════════
@@ -5405,6 +5883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   initUI();
   actualizarIndicadorCola();
+  actualizarIndicadorCobros();
   if (!(await checkConexion())) {
     navigate('dashboard');
     // Sin internet con sesión ya iniciada: queda listo para levantar boletas
@@ -5412,9 +5891,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   if (!(await verificarSesion())) return;
+  iniciarControlInactividad();
   precargarSinSenal();
   sincronizarCola();
-  setInterval(sincronizarCola, 120000);
+  sincronizarCobros();
+  setInterval(() => { sincronizarCola(); sincronizarCobros(); }, 120000);
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
   verificarTurnoEnServidor().catch(() => {});
