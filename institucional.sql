@@ -174,7 +174,7 @@ language plpgsql security definer set search_path = public as $$
 declare
   -- Columnas que no aportan a la bitácora (fotos e imágenes pesan mucho; fechas y tokens técnicos).
   excluir text[] := array['fotos', 'created_at', 'token_verificacion', 'foto', 'escudo', 'logo', 'token_credencial'];
-  v_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  v_new jsonb := case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end;
   v_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
   v_row jsonb := coalesce(v_new, v_old);
   v_cambios jsonb := '{}';
