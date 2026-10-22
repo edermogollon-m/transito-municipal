@@ -489,6 +489,27 @@ function check(name, errors, extra) {
     await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(900);
     let tk2 = ''; for (const p of popups2.splice(0)) { tk2 += await p.content().catch(() => ''); await p.close().catch(() => {}); }
     check('ticket con documento retenido y firmas', errors, tk2.includes('DOCUMENTO RETENIDO') && tk2.includes('VER-123456') && tk2.includes('Se negó a firmar') && tk2.includes('data:image/png;base64,iVBOR') ? null : 'falta retención o firmas');
+    // Impresión en campo: ticket ESC/POS, RawBT y respaldo al navegador
+    const esc = await page.evaluate(id => (async () => {
+      const r = (await _sb.from('infracciones').select('*').eq('id', id).single()).data;
+      r._lista = [r]; r.token_verificacion = '11111111-1111-4111-8111-111111111111'; r.licencia = 'LICENCIA-MUY-LARGA-123456789'; r.licencia_tipo = 'Transporte público';
+      const b = escposTicket(r, _cachedConfig || {}, 32);
+      const txt = String.fromCharCode(...b);
+      return { inicio: [b[0], b[1]], corte: [...b.slice(-4)], qr: txt.includes('\x1d(k'), folio: txt.includes(r.folio), retenido: txt.includes('DOCUMENTO RETENIDO'),
+               ascii: [...b].every(x => x < 128), anchoOk: txt.split('\n').filter(l => !/[\x00-\x1f]/.test(l)).every(l => l.length <= 32) };
+    })(), ret.id);
+    check('ticket ESC/POS', errors, esc.inicio.join() === '27,64' && esc.corte.join() === '29,86,66,0' && esc.qr && esc.folio && esc.retenido && esc.ascii && esc.anchoOk ? null : JSON.stringify(esc));
+    await page.evaluate(() => { guardarPrefImpresora({ modo: 'rawbt', ancho: 48 }); window.__rawbt = null; window.enviarRawBT = b => { window.__rawbt = b.length; }; });
+    await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(700);
+    const rawbt = await page.evaluate(() => window.__rawbt);
+    const abrioNav = popups2.length; for (const p of popups2.splice(0)) await p.close().catch(() => {});
+    check('modo RawBT', errors, rawbt > 200 && !abrioNav ? null : JSON.stringify({ rawbt, abrioNav }));
+    await page.evaluate(() => guardarPrefImpresora({ modo: 'bluetooth', ancho: 48 }));
+    await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(900);
+    const respaldo = popups2.length; for (const p of popups2.splice(0)) await p.close().catch(() => {});
+    check('Bluetooth sin impresora usa el navegador', errors, respaldo ? null : 'no abrió la impresión del navegador');
+    await page.evaluate(() => guardarPrefImpresora({ modo: 'navegador', ancho: 48 }));
+
     // Devolución del documento
     await page.evaluate(id => abrirDevolucion(id), ret.id); await page.waitForTimeout(500);
     await page.fill('#dev-identificacion', 'INE 123'); await page.fill('#dev-notas', 'Autoriza el supervisor');

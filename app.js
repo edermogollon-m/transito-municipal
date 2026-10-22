@@ -3821,6 +3821,178 @@ function buildTicket80(r, cfg, qrDataUrl) {
   </div>`;
 }
 
+// ── Impresión en campo (impresora térmica) ───────────────
+// Cada teléfono elige cómo imprime el ticket (se guarda en el dispositivo):
+//   navegador → el diálogo de impresión (impresoras de oficina, PDF)
+//   bluetooth → ESC/POS directo a una impresora térmica BLE (Chrome en Android)
+//   rawbt     → ESC/POS a la app RawBT (Android), para impresoras Bluetooth clásicas
+// Si el modo elegido falla, se imprime con el navegador.
+const IMPRESORA_KEY = 'tm_impresora';
+function prefImpresora() {
+  try { return { modo: 'navegador', ancho: 48, ...JSON.parse(localStorage.getItem(IMPRESORA_KEY) || '{}') }; }
+  catch (_) { return { modo: 'navegador', ancho: 48 }; }
+}
+function guardarPrefImpresora(p) { try { localStorage.setItem(IMPRESORA_KEY, JSON.stringify(p)); } catch (_) {} }
+
+// Las térmicas baratas no comparten página de códigos: el ticket va en ASCII
+function asciiTicket(t) {
+  return String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[ñÑ]/g, m => m === 'ñ' ? 'n' : 'N').replace(/[¿¡]/g, '').replace(/[—–]/g, '-').replace(/[·•]/g, '-')
+    .replace(/[“”«»]/g, '"').replace(/[‘’]/g, "'").replace(/°/g, 'o').replace(/[^\x20-\x7E\n]/g, '?');
+}
+function envolverTexto(t, ancho) {
+  const out = [];
+  asciiTicket(t).split('\n').forEach(par => {
+    let linea = '';
+    par.split(/\s+/).filter(Boolean).forEach(w => {
+      while (w.length > ancho) { if (linea) { out.push(linea); linea = ''; } out.push(w.slice(0, ancho)); w = w.slice(ancho); }
+      if (!linea) linea = w; else if ((linea + ' ' + w).length <= ancho) linea += ' ' + w; else { out.push(linea); linea = w; }
+    });
+    out.push(linea);
+  });
+  return out;
+}
+
+// Ticket ESC/POS de la boleta (mismos datos que el ticket impreso por el navegador)
+function escposTicket(r, cfg, ancho = 48) {
+  const b = [], txt = s => { for (const ch of asciiTicket(s)) b.push(ch.charCodeAt(0)); };
+  const cmd = (...xs) => b.push(...xs), ln = (s = '') => { txt(s); cmd(0x0A); };
+  const centro = () => cmd(0x1B, 0x61, 1), izq = () => cmd(0x1B, 0x61, 0);
+  const negrita = on => cmd(0x1B, 0x45, on ? 1 : 0), grande = on => cmd(0x1D, 0x21, on ? 0x11 : 0);
+  const raya = (c = '-') => ln(c.repeat(ancho));
+  const par = (k, v) => {   // etiqueta a la izquierda, valor a la derecha; si no cabe, en dos renglones
+    const a = asciiTicket(k), z = asciiTicket(v);
+    if (a.length + z.length + 1 <= ancho) ln(a + ' '.repeat(ancho - a.length - z.length) + z);
+    else { ln(a); envolverTexto(z, ancho).forEach(l => ln(' '.repeat(Math.max(0, ancho - l.length)) + l)); }
+  };
+  const parrafo = t => envolverTexto(t, ancho).forEach(l => ln(l));
+  const fecha = new Date(r.fecha);
+  const fmtF = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const { tramos, limFecha } = plazosPago(r, cfg, fmtF);
+  cmd(0x1B, 0x40);
+  centro(); negrita(true); parrafo((cfg?.municipio || 'Municipio').toUpperCase()); negrita(false);
+  if (cfg?.estado) parrafo(cfg.estado.toUpperCase());
+  parrafo('DIRECCION DE TRANSITO Y SEGURIDAD VIAL'); raya('=');
+  negrita(true); ln('BOLETA DE INFRACCION'); grande(true); ln(r.folio || '-'); grande(false); negrita(false);
+  izq(); raya();
+  par('FECHA:', fecha.toLocaleDateString('es-MX', fmtF)); par('HORA:', fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }));
+  if (r.ubicacion) parrafo('LUGAR: ' + r.ubicacion);
+  raya(); negrita(true); ln('VEHICULO'); negrita(false);
+  par('PLACA:', r.placa || '-'); if (r.vehiculo) parrafo(r.vehiculo + (r.color_vehiculo ? ' - ' + r.color_vehiculo : ''));
+  raya(); negrita(true); ln('INFRACTOR'); negrita(false);
+  parrafo(r.infractor || '-');
+  parrafo(r.infractor_ausente && !r.infractor_domicilio ? 'No presente o no proporciono domicilio (art. 327)' : 'Dom.: ' + (r.infractor_domicilio || 'no proporcionado'));
+  par('LIC:', (r.licencia || 'N/A') + (r.licencia_tipo ? ' ' + r.licencia_tipo : ''));
+  raya(); negrita(true); ln('INFRACCION'); negrita(false);
+  parrafo(r.tipo || '-');
+  if (r.fundamento) parrafo('Fundamento: ' + r.fundamento);
+  const circ = (r.circunstancias || []).map(c => textoCircunstancia(c));
+  parrafo('Circunstancias (art. 331): ' + (circ.length ? circ.join('; ') : 'ninguna; UMA base del tabulador'));
+  if ((r._lista || []).length > 1) {
+    raya(); negrita(true); ln('INFRACCIONES DE ESTA BOLETA'); negrita(false);
+    r._lista.forEach((x, i) => par((x.folio || '-') + (i === 0 ? ' (mayor)' : ''), '$' + Number(x.monto).toLocaleString('es-MX')));
+  }
+  raya('='); centro(); ln('MONTO A PAGAR'); grande(true); negrita(true); ln('$' + Number(r.monto).toLocaleString('es-MX') + ' MXN'); grande(false); negrita(false); izq();
+  if (r._grave) parrafo('SIN DESCUENTO: se paga integra conforme al Reglamento.');
+  else tramos.forEach(x => parrafo(`${x.pct}% de descuento pagando a mas tardar el ${x.hasta}: $${x.monto} MXN`));
+  parrafo('Fecha limite de pago: ' + limFecha);
+  if (r.documento_retenido) { raya(); parrafo('DOCUMENTO RETENIDO (arts. 343-344): ' + (DOC_RETENIDO[r.documento_retenido] || '') + (r.documento_numero ? ' ' + r.documento_numero : '') + '. Se devuelve en ' + (cfg?.resguardo_lugar || 'la Delegacion') + ' al pagar.'); }
+  raya();
+  parrafo('Policia vial: ' + (r.oficial || '-') + (r.oficial_placa ? ' - Placa ' + r.oficial_placa : '') + (r.oficial_adscripcion ? ' - ' + r.oficial_adscripcion : ''));
+  parrafo('Firma del oficial: ' + (r.firma_oficial ? 'capturada en el dispositivo' : '______________________'));
+  parrafo('Firma del infractor: ' + (r.firma_infractor ? 'capturada en el dispositivo' : r.firma_negada ? 'se nego a firmar' : '____________________'));
+  raya(); parrafo(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocacion.');
+  const url = asciiTicket(urlVerificacion(r.token_verificacion));
+  if (url) {
+    centro(); ln('Verifique su boleta:');
+    const datos = [...url].map(c => c.charCodeAt(0)), n = datos.length + 3;
+    cmd(0x1D, 0x28, 0x6B, 4, 0, 0x31, 0x41, 0x32, 0);          // QR modelo 2
+    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x43, ancho >= 48 ? 6 : 5); // tamaño de módulo
+    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x45, 0x31);              // corrección M
+    cmd(0x1D, 0x28, 0x6B, n & 0xFF, n >> 8, 0x31, 0x50, 0x30, ...datos);
+    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x51, 0x30);              // imprimir
+    ln(); izq();
+  }
+  cmd(0x1B, 0x64, 3, 0x1D, 0x56, 0x42, 0);                       // avanzar y cortar
+  return new Uint8Array(b);
+}
+
+// ── Impresora Bluetooth (BLE) ──
+const BT_SERVICIOS = ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', '0000ff00-0000-1000-8000-00805f9b34fb', '0000fee7-0000-1000-8000-00805f9b34fb'];
+let _btDev = null, _btChar = null;
+async function abrirCaracteristicaBT(dev) {
+  const gatt = dev.gatt.connected ? dev.gatt : await dev.gatt.connect();
+  for (const uuid of BT_SERVICIOS) {
+    let serv; try { serv = await gatt.getPrimaryService(uuid); } catch (_) { continue; }
+    const c = (await serv.getCharacteristics()).find(x => x.properties.writeWithoutResponse || x.properties.write);
+    if (c) { _btDev = dev; _btChar = c; return c; }
+  }
+  throw new Error('La impresora no ofrece un canal de escritura conocido');
+}
+async function conectarImpresoraBT() {
+  if (!navigator.bluetooth) throw new Error('Este navegador no permite Bluetooth. Usa Chrome en Android o el modo RawBT');
+  const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: BT_SERVICIOS });
+  await abrirCaracteristicaBT(dev);
+  guardarPrefImpresora({ ...prefImpresora(), modo: 'bluetooth', nombre: dev.name || 'Impresora' });
+  return dev.name || 'Impresora';
+}
+async function enviarBT(bytes) {
+  if (!_btChar || !_btDev?.gatt.connected) {
+    // Reconectar sin pedir permiso de nuevo (Chrome recuerda las impresoras autorizadas)
+    const conocidas = navigator.bluetooth?.getDevices ? await navigator.bluetooth.getDevices() : [];
+    const dev = _btDev || conocidas.find(d => d.name === prefImpresora().nombre) || conocidas[0];
+    if (!dev) throw new Error('Conecta la impresora en "Impresora del ticket"');
+    await abrirCaracteristicaBT(dev);
+  }
+  for (let i = 0; i < bytes.length; i += 180) {
+    const trozo = bytes.slice(i, i + 180);
+    if (_btChar.properties.writeWithoutResponse && _btChar.writeValueWithoutResponse) await _btChar.writeValueWithoutResponse(trozo);
+    else await _btChar.writeValue(trozo);
+    await new Promise(res => setTimeout(res, 20));
+  }
+}
+function enviarRawBT(bytes) {
+  let bin = ''; bytes.forEach(x => { bin += String.fromCharCode(x); });
+  window.location.href = 'intent:base64,' + btoa(bin) + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+}
+// Devuelve true si se imprimió por la impresora térmica; false = usar el navegador
+async function imprimirTermica(bytes) {
+  const { modo } = prefImpresora();
+  if (modo === 'navegador') return false;
+  try {
+    if (modo === 'bluetooth') await enviarBT(bytes); else enviarRawBT(bytes);
+    return true;
+  } catch (err) {
+    console.warn('impresora:', err);
+    showToast('No se pudo imprimir en la impresora (' + err.message + '). Se abre la impresión del navegador.');
+    return false;
+  }
+}
+
+function abrirImpresora() {
+  const p = prefImpresora();
+  $('imp-modo').value = p.modo; $('imp-ancho').value = String(p.ancho);
+  $('imp-estado').textContent = p.modo === 'bluetooth' ? (p.nombre ? `Impresora: ${p.nombre}${_btChar ? ' (conectada)' : ''}` : 'Sin impresora conectada') : '';
+  $('imp-bt-wrap').style.display = p.modo === 'bluetooth' ? '' : 'none';
+  openModal('modal-impresora');
+}
+function cambiarModoImpresora() {
+  guardarPrefImpresora({ ...prefImpresora(), modo: $('imp-modo').value, ancho: parseInt($('imp-ancho').value) || 48 });
+  $('imp-bt-wrap').style.display = $('imp-modo').value === 'bluetooth' ? '' : 'none';
+}
+async function botonConectarBT() {
+  try { const n = await conectarImpresoraBT(); $('imp-estado').textContent = `Impresora: ${n} (conectada)`; showToast('Impresora conectada'); }
+  catch (err) { $('imp-estado').textContent = err.message; }
+}
+async function imprimirPrueba() {
+  const cfg = _cachedConfig || {};
+  const r = { folio: 'PRUEBA', fecha: new Date().toISOString(), placa: 'ABC-123', infractor: 'Ticket de prueba', tipo: 'Prueba de impresión',
+    monto: 0, circunstancias: [], token_verificacion: '00000000-0000-4000-8000-000000000000' };
+  const ok = await imprimirTermica(escposTicket(r, cfg, prefImpresora().ancho));
+  if (!ok) showToast('El modo "navegador" imprime con el botón Ticket 80mm');
+}
+
 async function printTicket80(id) {
   if (!id) return;
   const [{ data: r }, { data: cfg }] = await Promise.all([
@@ -3837,6 +4009,7 @@ async function printTicket80(id) {
   await cargarCatalogo();
   r._grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
   r._lista = await infraccionesDeBoleta(r);
+  if (await imprimirTermica(escposTicket(r, cfg, prefImpresora().ancho))) return;
   const ticketHTML = buildTicket80(r, cfg, qrDataUrl);
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
