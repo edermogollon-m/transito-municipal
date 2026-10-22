@@ -95,7 +95,7 @@ async function checkPlacaHistory() {
   const placa = ($('inf-placa')||{}).value?.trim().toUpperCase();
   const panel = $('placa-history');
   if (!panel) return;
-  if (!placa || placa.length < 3) { panel.innerHTML = ''; window._placaAdeudos = []; return; }
+  if (!placa || placa.length < 3) { panel.innerHTML = ''; window._placaAdeudos = []; _alertaMostrada = ''; return; }
 
   // Consultar historial completo y padrón vehicular en paralelo
   const [{ data }, { data: veh }] = await Promise.all([
@@ -125,6 +125,7 @@ async function checkPlacaHistory() {
   window._placaAdeudos = adeudos;
   sugerirAgravanteAdeudos();
   window._placaMontoAdeudos = montoAdeudos;
+  revisarAlertaPlaca(placa, adeudos);
 
   let html = '';
 

@@ -75,7 +75,7 @@ async function printCorteCaja() {
   </body></html>`;
 
   const win = window.open('', '_blank', 'width=850,height=700');
-  win.document.write(html);
+  win.document.write(conMarca(html));
   win.document.close();
   win.onload = () => { win.focus(); win.print(); };
 }

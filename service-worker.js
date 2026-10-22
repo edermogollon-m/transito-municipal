@@ -1,4 +1,4 @@
-const CACHE = 'transito-v6';
+const CACHE = 'transito-v7';
 const PRECACHE = [
   '/',
   '/login',
@@ -27,6 +27,9 @@ const PRECACHE = [
   '/js/accidentes.js',
   '/js/turnos.js',
   '/js/extras.js',
+  '/js/institucional.js',
+  '/js/alertas.js',
+  '/marca.js',
   '/js/arranque.js',
   '/config.js',
   '/supabase.js',

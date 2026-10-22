@@ -806,4 +806,70 @@ do $$ declare c jsonb; c2 jsonb; v jsonb; begin
   end;
 end $$;
 reset role;
+-- Credencial verificable, placas reportadas e imagen institucional (institucional.sql)
+select pg_temp.como('ofi');
+set role authenticated;
+do $$ declare t uuid; t2 uuid; v jsonb; n int; begin
+  select token_credencial into t from usuarios where usuario = 'ofi';
+  assert t is not null, 'token de credencial';
+  begin
+    perform regenerar_credencial((select id from usuarios where usuario = 'ofi'));
+    raise exception 'el oficial repuso su credencial';
+  exception when others then if sqlerrm = 'el oficial repuso su credencial' then raise; end if;
+  end;
+  begin
+    insert into vehiculos_reportados (placa, motivo) values ('XYZ-1', 'robo');
+    raise exception 'el oficial reportó una placa';
+  exception when others then if sqlerrm = 'el oficial reportó una placa' then raise; end if;
+  end;
+  insert into alertas_placa (placa, motivo, oficial) values ('rob-123 a', 'Robo', 'Otro nombre');
+  assert (select count(*) from alertas_placa) = 0, 'el oficial lee las alertas';
+end $$;
+reset role;
+select pg_temp.como('sup');
+set role authenticated;
+do $$ declare r vehiculos_reportados; begin
+  insert into vehiculos_reportados (placa, motivo, detalle) values ('rob-123 a', 'robo', 'denuncia') returning * into r;
+  assert r.placa = 'ROB123A' and r.reportado_por = 'Supervisor', 'placa normalizada y quién reportó';
+  begin
+    insert into vehiculos_reportados (placa, motivo) values ('ROB123A', 'busqueda');
+    raise exception 'placa reportada dos veces';
+  exception when unique_violation then null;
+  end;
+  assert (select oficial from alertas_placa limit 1) = 'Oficial' and (select placa from alertas_placa limit 1) = 'ROB123A', 'el servidor pone al oficial de la alerta';
+  update vehiculos_reportados set activo = false where id = r.id;
+  assert (select retirado_por from vehiculos_reportados where id = r.id) = 'Supervisor', 'quién retiró el reporte';
+end $$;
+reset role;
+select pg_temp.como('admin');
+set role authenticated;
+do $$ declare t uuid; t2 uuid; v jsonb; begin
+  select token_credencial into t from usuarios where usuario = 'ofi';
+  t2 := regenerar_credencial((select id from usuarios where usuario = 'ofi'));
+  assert t2 <> t, 'credencial repuesta';
+  update configuracion set color_institucional = '#7A1F3D', institucion = 'H. Ayuntamiento', escudo = 'data:image/png;base64,iVBORw0KGgo=' where id = 1;
+  begin
+    update configuracion set escudo = 'data:image/png;base64,x" onerror="alert(1)' where id = 1;
+    raise exception 'escudo no válido aceptado';
+  exception when check_violation then null;
+  end;
+  begin
+    update usuarios set foto = 'https://ejemplo.com/foto.jpg' where usuario = 'ofi';
+    raise exception 'foto no válida aceptada';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
+select set_config('prueba.token_cred', (select token_credencial::text from usuarios where usuario = 'ofi'), false);
+set role anon;
+do $$ declare v jsonb; begin
+  v := verificar_oficial(current_setting('prueba.token_cred')::uuid);
+  assert v ->> 'nombre' = 'Oficial' and (v ->> 'activo')::boolean and v ->> 'color' = '#7A1F3D' and not (v ? 'usuario'), 'verificación pública de la credencial';
+  assert verificar_oficial(gen_random_uuid()) is null, 'credencial falsa';
+  assert (portal_info() ->> 'institucion') = 'H. Ayuntamiento', 'portal con imagen institucional';
+end $$;
+reset role;
+do $$ begin
+  assert not exists (select 1 from auditoria where tabla = 'configuracion' and cambios ? 'escudo'), 'la bitácora copia el escudo';
+end $$;
 \echo 'OK   pruebas de base de datos'

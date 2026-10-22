@@ -584,7 +584,7 @@ function printComprobanteProvisional(c) {
   </body></html>`;
   const w = window.open('', '_blank', 'width=420,height=640');
   if (!w) { alert('Permite las ventanas emergentes para imprimir el comprobante'); return; }
-  w.document.write(html); w.document.close();
+  w.document.write(conMarca(html)); w.document.close();
 }
 
 window.addEventListener('online', () => { checkConexion().then(ok => { if (ok) { sincronizarCola(); sincronizarCobros(); } }); });
@@ -612,9 +612,9 @@ async function cargarCatalogo() {
 // que el oficial pueda levantar boletas aunque se quede sin señal.
 async function precargarSinSenal() {
   const { data } = await _sb.from('configuracion').select('*').eq('id', 1).single();
-  if (data) { _cachedConfig = { ...(_cachedConfig||{}), ...data }; _guardarLocal('tm_config', data); }
+  if (data) { _cachedConfig = { ...(_cachedConfig||{}), ...data }; _guardarLocal('tm_config', data); iniciarMarcaPanel(data); }
   else if (!_cachedConfig) _cachedConfig = _leerLocal('tm_config');
-  await cargarCatalogo();
+  await Promise.all([cargarCatalogo(), cargarReportados()]);
 }
 function catalogoPorNumero(n) { return (_catalogo||[]).find(c => c.numero === Number(n)) || null; }
 function citaCorta(c) {

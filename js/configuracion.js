@@ -29,6 +29,7 @@ async function loadConfig() {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
   }
+  cargarMarcaConfig(data);
   if (_rol === 'admin') renderRespaldos();
 }
 

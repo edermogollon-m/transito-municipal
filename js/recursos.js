@@ -147,7 +147,7 @@ async function docRecurso(impId, cuerpo) {
   p{line-height:1.5;text-align:justify;white-space:pre-wrap}.f{margin-top:22mm;text-align:center}.f div{border-top:1px solid #111;width:70mm;margin:0 auto;padding-top:2mm;font-size:9pt}</style></head><body>
   <h1>${esc((cfg?.municipio||'Municipio').toUpperCase())} · DIRECCIÓN DE TRÁNSITO Y SEGURIDAD VIAL</h1>
   ${cuerpo(v, cfg)}</body></html>`;
-  const w = window.open('', '_blank', 'width=800,height=900'); w.document.write(html); w.document.close(); w.onload = () => { w.focus(); w.print(); };
+  const w = window.open('', '_blank', 'width=800,height=900'); w.document.write(conMarca(html)); w.document.close(); w.onload = () => { w.focus(); w.print(); };
 }
 function printAcuseRecurso(impId) {
   return docRecurso(impId, v => `<h2>ACUSE DE RECIBO DEL RECURSO DE REVOCACIÓN ${esc(v.folio)}</h2>

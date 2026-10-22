@@ -10,6 +10,7 @@ function buildTicket80(r, cfg, qrDataUrl) {
   const ref = (r.folio||'INF').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
 
   return `<div class="t80">
+    <div class="t-center"><!--ESCUDO:13mm:gris--></div>
     <div class="t-center t-bold" style="font-size:7.5pt;letter-spacing:.5px">${mun.toUpperCase()}</div>
     ${est?`<div class="t-center" style="font-size:6.5pt">${est.toUpperCase()}</div>`:''}
     <div class="t-center" style="font-size:7pt">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
@@ -305,6 +306,6 @@ async function printTicket80(id) {
   </body></html>`;
 
   const win = window.open('', '_blank', 'width=340,height=750');
-  if (win) { win.document.write(html); win.document.close(); }
+  if (win) { win.document.write(conMarca(html)); win.document.close(); }
 }
 

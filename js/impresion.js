@@ -78,6 +78,7 @@ async function printInfraccion(id) {
           <div class="dept-name">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
           <div class="state-name">${estMun.toUpperCase()}</div>
         </div>
+        <!--LOGO:13mm-->
         <div class="copy-tag">${label}</div>
       </div>
       <div class="title-bar">
@@ -255,7 +256,7 @@ async function printInfraccion(id) {
   </body></html>`;
 
   const win = window.open('', '_blank', 'width=870,height=960');
-  win.document.write(html);
+  win.document.write(conMarca(html));
   win.document.close();
 }
 
@@ -274,7 +275,7 @@ async function printAccidente(id) {
   const estadoMap = { en_proceso:'En proceso', cerrado:'Cerrado', derivado:'Derivado al Ministerio Público' };
   const fecha = r.fecha ? new Date(r.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'}) : '—';
   const win = window.open('','_blank','width=850,height=1100');
-  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
+  win.document.write(conMarca(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/>
   <title>Parte de Accidente ${esc(r.folio||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
@@ -350,7 +351,7 @@ async function printAccidente(id) {
   <div class="footer">
     Documento generado el ${new Date().toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})} · ${mun} · Sistema de Tránsito y Movilidad · HCE Consultoría
   </div>
-  </body></html>`);
+  </body></html>`));
   win.document.close();
 }
 
@@ -565,6 +566,6 @@ async function printPermiso(id) {
   </body></html>`;
 
   const win = window.open('', '_blank', 'width=900,height=1000');
-  if (win) { win.document.write(html); win.document.close(); }
+  if (win) { win.document.write(conMarca(html)); win.document.close(); }
 }
 

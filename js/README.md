@@ -30,8 +30,13 @@ es el que arranca la app.
 | `analisis.js` | Rendimiento, búsqueda global y calendario |
 | `accidentes.js` | Accidentes viales |
 | `turnos.js` | Bitácora de turno |
-| `extras.js` | Notificaciones push y credencial del oficial |
+| `extras.js` | Notificaciones push |
+| `institucional.js` | Imagen institucional (escudo, logo y color en documentos impresos) y credencial del oficial con QR verificable |
+| `alertas.js` | Placas reportadas y alertas a pantalla completa al capturar una placa |
 | `arranque.js` | Arranque de la app y guardas de permisos (va al final) |
+
+`marca.js` (en la raíz) lo comparten el panel, el login y las páginas públicas:
+pinta el escudo, el nombre y el color del Ayuntamiento.
 
 Al agregar un módulo: súmalo a `index.html` (en orden) y a `PRECACHE` en
 `service-worker.js`.
