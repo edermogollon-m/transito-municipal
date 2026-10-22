@@ -26,6 +26,7 @@ async function loadConfig() {
   if($('cfg-avisos-correo'))  $('cfg-avisos-correo').checked   = !!data.avisos_correo;
   if($('cfg-avisos-whatsapp'))$('cfg-avisos-whatsapp').checked = !!data.avisos_whatsapp;
   if($('cfg-pago-linea'))     $('cfg-pago-linea').checked      = !!data.pago_en_linea;
+  estadoMercadoPago();
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
@@ -112,5 +113,23 @@ async function respaldarAhora() {
     renderRespaldos();
   } catch (e) { alert('No se pudo respaldar: ' + (e.message || e)); }
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Respaldar ahora'; } }
+}
+
+// ¿La función pago-mp tiene la cuenta de Mercado Pago? (secreto MP_ACCESS_TOKEN)
+async function estadoMercadoPago() {
+  const el = $('cfg-mp-estado'); if (!el) return;
+  el.textContent = 'Revisando la cuenta de Mercado Pago…';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/pago-mp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ accion: 'estado' })
+    });
+    const d = await res.json();
+    el.innerHTML = !d.conectado
+      ? '<span style="color:var(--amber)">● Falta conectar la cuenta de Mercado Pago.</span> Mientras tanto el botón de pago no aparece en el portal.'
+      : d.prueba
+        ? '<span style="color:var(--blue)">● Cuenta conectada en modo de prueba:</span> los pagos no son reales.'
+        : '<span style="color:var(--green)">● Cuenta de Mercado Pago conectada.</span>';
+  } catch { el.textContent = 'No se pudo revisar la cuenta de Mercado Pago.'; }
 }
 

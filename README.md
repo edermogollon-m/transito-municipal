@@ -129,6 +129,13 @@ proyectos activos a la vez).
   recibo por correo con Resend (`RESEND_API_KEY`). Correr después de
   `repuve.sql`.
 
+- `pago_linea.sql` — al regresar de Mercado Pago el portal confirma el pago
+  (`pago_en_linea_estado`, con la placa o el folio) y entrega el enlace del
+  recibo digital. La función `pago-mp` responde `{ accion: "estado" }` para
+  que el botón "Pagar en línea" solo aparezca con la cuenta conectada
+  (secreto `MP_ACCESS_TOKEN`; opcional `MP_WEBHOOK_SECRET`) y el permiso
+  activo en Configuración. Correr después de `ciudadano.sql`.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
 `cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql` → `inmutable.sql` → `roles.sql`. Todos son idempotentes y ya están aplicados en
