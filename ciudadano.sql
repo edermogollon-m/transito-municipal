@@ -266,6 +266,15 @@ returns void language sql security definer set search_path = public as $$
 $$;
 revoke all on function public.desactivar_push(text) from public, anon, authenticated;
 
+-- La llave privada VAPID vive en Vault ('vapid_privada'); la función "push" la
+-- lee aquí si no tiene el secreto VAPID_PRIVADA. Solo la llave de servicio.
+create or replace function public.llave_push_privada()
+returns text language plpgsql stable security definer set search_path = public as $$
+begin
+  return (select decrypted_secret from vault.decrypted_secrets where name = 'vapid_privada' limit 1);
+end $$;
+revoke all on function public.llave_push_privada() from public, anon, authenticated;
+
 do $$ begin
   if exists (select 1 from pg_namespace where nspname = 'vault') then
     execute $v$ select vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'push_cron')

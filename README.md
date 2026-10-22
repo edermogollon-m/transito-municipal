@@ -123,8 +123,8 @@ proyectos activos a la vez).
   `push_enviados`, `tomar_push`): multa nueva en sus placas, un día antes de
   que se acabe el descuento y avisos viales. El cron `enviar-push` llama cada
   15 minutos a la función `push` con el secreto de Vault `push_cron`.
-  Requiere `configuracion.push_publica` y los secretos `VAPID_PUBLICA` y
-  `VAPID_PRIVADA` en las funciones. En iPhone los avisos solo llegan con el
+  Requiere la llave pública en `configuracion.push_publica` y la privada en
+  Vault `vapid_privada` (o los secretos `VAPID_PUBLICA` y `VAPID_PRIVADA`). En iPhone los avisos solo llegan con el
   portal instalado en la pantalla de inicio. La función `recibo` manda el
   recibo por correo con Resend (`RESEND_API_KEY`). Correr después de
   `repuve.sql`.

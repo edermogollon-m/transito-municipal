@@ -2,9 +2,9 @@
 // registrada, último día de descuento y avisos viales.
 //
 // La llama pg_cron cada 15 minutos (encabezado x-cron-secret, validado contra
-// Vault 'push_cron'). Secretos: VAPID_PUBLICA y VAPID_PRIVADA (la pública
-// también va en configuracion.push_publica) y, opcional, VAPID_CONTACTO
-// ("mailto:transito@municipio.gob.mx").
+// Vault 'push_cron'). Llaves VAPID: la pública en configuracion.push_publica
+// y la privada en Vault 'vapid_privada' (o los secretos VAPID_PUBLICA y
+// VAPID_PRIVADA). Opcional: VAPID_CONTACTO ("mailto:transito@municipio.gob.mx").
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import webpush from "npm:web-push@3.6.7";
 
@@ -20,7 +20,8 @@ Deno.serve(async (req) => {
   const ok = !!secreto && (await admin.rpc("es_secreto", { p_nombre: "push_cron", p_secreto: secreto })).data === true;
   if (!ok) return json({ error: "No autorizado" }, 401);
 
-  const publica = Deno.env.get("VAPID_PUBLICA"), privada = Deno.env.get("VAPID_PRIVADA");
+  const publica = Deno.env.get("VAPID_PUBLICA") || (await admin.rpc("push_config")).data?.publica;
+  const privada = Deno.env.get("VAPID_PRIVADA") || (await admin.rpc("llave_push_privada")).data;
   if (!publica || !privada) return json({ error: "Faltan las llaves VAPID" }, 500);
   webpush.setVapidDetails(Deno.env.get("VAPID_CONTACTO") || "mailto:transito@example.com", publica, privada);
 
