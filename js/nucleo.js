@@ -284,6 +284,16 @@ function toggleSidebar() {
 function closeSidebar() {
   document.getElementById('sidebar')?.classList.remove('open');
   document.getElementById('sidebar-backdrop')?.classList.remove('open');
+  toggleMenuCuenta(false);
+}
+
+// Menú "Mi cuenta" al pie del menú lateral (credencial, impresora, contraseña, salir)
+function toggleMenuCuenta(abrir) {
+  const menu = document.getElementById('menu-cuenta'), chip = document.getElementById('user-chip');
+  if (!menu || !chip) return;
+  const open = typeof abrir === 'boolean' ? abrir : menu.hidden;
+  menu.hidden = !open;
+  chip.setAttribute('aria-expanded', String(open));
 }
 
 function navigate(view, btn) {

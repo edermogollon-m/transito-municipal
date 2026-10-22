@@ -188,7 +188,7 @@ async function renderPendientesTable() {
     return t && (new Date(r.fecha).getTime() + t.dias * 86400000 - Date.now()) <= 2 * 86400000;
   });
 
-  const badge = $('badge-pendientes');
+  const badge = $('badge-caja-pend');
   if (badge) { badge.textContent = all.length; badge.style.display = all.length ? 'inline' : 'none'; }
 
   // Contador y totales

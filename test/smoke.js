@@ -624,6 +624,16 @@ function check(name, errors, extra) {
     // Credencial con QR, boleta con escudo y color del Ayuntamiento, Mi credencial y Configuración
     const sello = await page.evaluate(() => !!document.querySelector('.sidebar-logo [data-escudo] img'));
     check('escudo en el menú lateral', errors, sello ? null : 'sin escudo');
+    const menu = await page.evaluate(async () => {
+      const grupos = [...document.querySelectorAll('.sidebar-section-label')].map(e => e.textContent.trim());
+      const cerrado = $('menu-cuenta').hidden;
+      $('user-chip').click(); const abierto = !$('menu-cuenta').hidden && $('user-chip').getAttribute('aria-expanded') === 'true';
+      const items = [...document.querySelectorAll('#menu-cuenta .cuenta-item')].map(e => e.textContent.trim());
+      toggleMenuCuenta(false);
+      const vacio = [...document.querySelectorAll('.nav-badge')].some(b => b.style.display !== 'none' && !b.textContent.trim());
+      return { grupos, cerrado, abierto, items, vacio, caja: !!$('badge-caja-pend') };
+    });
+    check('menú lateral agrupado y Mi cuenta', errors, menu.grupos.join('|') === 'Operación|Caja y trámites|Consulta|Resultados|Administración' && menu.cerrado && menu.abierto && menu.items.length === 4 && menu.items[3] === 'Cerrar sesión' && !menu.vacio && menu.caja ? null : JSON.stringify(menu).slice(0, 200));
     await page.evaluate(() => printCredencial(1)); await page.waitForTimeout(900);
     let cred = ''; for (const p of popups2.splice(0)) { cred += await p.content().catch(() => ''); await p.close().catch(() => {}); }
     check('credencial con foto, QR y escudo', errors, cred.includes('Credencial vigente') && cred.includes('cred-qr') && cred.includes('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB') && /#7a1f3d/i.test(cred) && cred.includes('PV-001') ? null : 'credencial: ' + cred.slice(0, 200));
