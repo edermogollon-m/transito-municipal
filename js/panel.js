@@ -86,7 +86,7 @@ async function renderDashboard() {
   if($('s-pend-delta')) $('s-pend-delta').innerHTML = `${porCobrar.length} ${porCobrar.length===1?'boleta':'boletas'}` + (vencidas ? ` · <span class="vencidas">${vencidas} ${vencidas===1?'vencida':'vencidas'}</span>` : '');
   if($('s-grua'))       $('s-grua').textContent  = gruaCount;
   if($('s-grua-sub'))   $('s-grua-sub').textContent = gruaCount ? (gruaCount===1 ? 'vehículo retenido' : 'vehículos retenidos') : 'corralón vacío';
-  if($('badge-pendientes')) $('badge-pendientes').textContent = porCobrar.length || '';
+  { const b = $('badge-pendientes'); if (b) { b.textContent = porCobrar.length; b.style.display = porCobrar.length ? 'inline' : 'none'; } }
 
   // Cobranza de las boletas levantadas este mes
   if ($('dash-cobranza')) {
