@@ -204,16 +204,16 @@ do $$ declare v_id bigint; p pagos; begin
     raise exception 'descuento fuera de plazo';
   exception when others then if sqlerrm = 'descuento fuera de plazo' then raise; end if;
   end;
+  -- El oficial no cambia estados (controles.sql: ni siquiera ve la fila para actualizarla)
   begin
     update infracciones set estado = 'pagada' where id = v_id;
-    raise exception 'pagada sin cobro';
-  exception when others then if sqlerrm = 'pagada sin cobro' then raise; end if;
+  exception when others then null;
   end;
   begin
     update infracciones set estado = 'cancelada', cancelacion_motivo = 'x' where id = v_id;
-    raise exception 'oficial canceló';
-  exception when others then if sqlerrm = 'oficial canceló' then raise; end if;
+  exception when others then null;
   end;
+  assert (select estado from infracciones where id = v_id) = 'pendiente', 'el oficial cambió el estado';
   begin
     insert into pagos (infraccion_id, monto_original, monto_final) values (v_id, 1, 1);
     raise exception 'pago directo sin registrar_pago';
@@ -370,9 +370,9 @@ do $$ declare v_id bigint; v_id2 bigint; begin
   assert (select count(*) from infracciones where boleta = 'GRUPO-A') = 2, 'varias infracciones en una boleta';
   begin
     update infracciones set circunstancias = '["agr_e"]' where id = v_id2;
-    raise exception 'se pudieron cambiar las circunstancias';
-  exception when insufficient_privilege then null;   -- inmutable.sql
+  exception when insufficient_privilege then null;   -- inmutable.sql (y el oficial no actualiza: controles.sql)
   end;
+  assert (select circunstancias::text from infracciones where id = v_id2) = '[]', 'se pudieron cambiar las circunstancias';
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero) values ('BOL-002', 'X', 'Uso de celular al conducir', 1, 1133) returning id into v_id;
   assert (select boleta = folio from infracciones where id = v_id), 'sin grupo, la boleta es el folio';
   begin
@@ -472,6 +472,157 @@ do $$ begin
   exception when others then if sqlerrm = 'el administrador se quitó su rol' then raise; end if;
   end;
   assert admin_guardar_usuario(null, 'Nueva Caja', 'caja2', 'cajero', 'NC', 'clave123') > 0, 'alta de cajero';
+end $$;
+reset role;
+
+-- ── Controles por rol (controles.sql) ───────────────────────────────
+select pg_temp.como('admin');
+set role authenticated;
+do $$ declare v_clave text; begin
+  perform admin_guardar_usuario(null, 'Lic. Jurídico', 'juri', 'juridico', 'LJ', 'clave123');
+  perform admin_guardar_usuario(null, 'Corralón', 'corral', 'corralon', 'CO', 'clave123');
+  perform admin_guardar_usuario(null, 'Contralora', 'contra', 'contraloria', 'CT', 'clave123');
+  v_clave := admin_restablecer_contrasena((select id from usuarios where usuario = 'corral'));
+  assert length(v_clave) = 8, 'contraseña temporal de 8 caracteres';
+end $$;
+reset role;
+do $$ begin
+  assert (select encrypted_password = extensions.crypt('clave123', encrypted_password) from auth.users u join usuarios x on x.auth_id = u.id where x.usuario = 'corral') = false,
+    'la contraseña no cambió';
+end $$;
+select pg_temp.como('ofi');
+set role authenticated;
+do $$ begin
+  begin
+    perform admin_restablecer_contrasena((select id from usuarios where usuario = 'admin'));
+    raise exception 'el oficial restableció una contraseña';
+  exception when others then if sqlerrm = 'el oficial restableció una contraseña' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- Impugnaciones: el supervisor registra, Jurídico resuelve
+insert into infracciones (placa, infractor, tipo, monto) values ('IMP-001', 'X', 'Prueba', 500), ('IMP-002', 'X', 'Prueba', 500);
+set role authenticated;
+do $$ declare v bigint := (select id from infracciones where placa = 'IMP-001'); begin
+  perform pg_temp.como('sup');
+  update infracciones set estado = 'impugnada', impugnacion_motivo = 'No era yo' where id = v;
+  begin
+    update infracciones set estado = 'cancelada', cancelacion_motivo = 'Procede' where id = v;
+    raise exception 'el supervisor resolvió la impugnación';
+  exception when others then if sqlerrm = 'el supervisor resolvió la impugnación' then raise; end if;
+  end;
+  perform pg_temp.como('juri');
+  update infracciones set estado = 'cancelada', cancelacion_motivo = 'Impugnación procedente' where id = v;
+  assert (select estado from infracciones where id = v) = 'cancelada', 'Jurídico resuelve';
+  begin
+    update infracciones set estado = 'cancelada', cancelacion_motivo = 'x' where placa = 'IMP-002';
+    raise exception 'Jurídico canceló sin impugnación';
+  exception when others then if sqlerrm = 'Jurídico canceló sin impugnación' then raise; end if;
+  end;
+end $$;
+reset role;
+
+-- Pagos: nadie los edita; el Director los anula con motivo
+insert into infracciones (placa, infractor, tipo, monto, fecha) values ('ANU-001', 'X', 'Prueba', 1000, now());
+set role authenticated;
+do $$ declare v bigint := (select id from infracciones where placa = 'ANU-001'); p pagos; n int; begin
+  perform pg_temp.como('caja');
+  p := registrar_pago(v, false, 'efectivo');
+  update pagos set monto_final = 1 where id = p.id; get diagnostics n = row_count;
+  assert n = 0, 'Caja editó un pago';
+  begin
+    perform anular_pago(p.id, 'error');
+    raise exception 'Caja anuló un pago';
+  exception when others then if sqlerrm = 'Caja anuló un pago' then raise; end if;
+  end;
+  perform pg_temp.como('admin');
+  begin
+    update pagos set monto_final = 1 where id = p.id; get diagnostics n = row_count;
+    assert n = 0, 'el Director editó un pago';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform anular_pago(p.id, ' ');
+    raise exception 'anulación sin motivo';
+  exception when others then if sqlerrm = 'anulación sin motivo' then raise; end if;
+  end;
+  perform anular_pago(p.id, 'Se cobró a la placa equivocada');
+  assert not exists (select 1 from pagos where id = p.id), 'el pago sigue vigente';
+  assert (select anulacion_motivo || '|' || anulado_por from pagos_anulados where id = p.id) = 'Se cobró a la placa equivocada|Admin', 'registro de la anulación';
+  assert (select estado from infracciones where id = v) = 'pendiente', 'la infracción vuelve a pendiente';
+  assert verificar_documento(p.token_verificacion) ->> 'estado' = 'anulado', 'el QR dice anulado';
+  perform pg_temp.como('caja');
+  p := registrar_pago(v, false, 'tarjeta');   -- se puede volver a cobrar
+  assert p.monto_final = 1000, 'nuevo cobro';
+end $$;
+reset role;
+
+-- Corte de caja: efectivo contado contra el sistema
+set role authenticated;
+do $$ declare r jsonb; c cortes_caja; begin
+  perform pg_temp.como('caja');
+  r := resumen_corte();
+  assert (r ->> 'num_pagos')::int >= 1, 'pagos del día en el corte';
+  c := cerrar_corte((r ->> 'efectivo')::numeric - 50, 'Faltaron 50');
+  assert c.diferencia = -50 and c.cajero = 'Caja', 'diferencia del corte';
+  r := resumen_corte();
+  assert (r ->> 'num_pagos')::int = 0, 'el siguiente corte empieza después del anterior';
+  perform pg_temp.como('ofi');
+  begin
+    perform cerrar_corte(0);
+    raise exception 'el oficial hizo un corte';
+  exception when others then if sqlerrm = 'el oficial hizo un corte' then raise; end if;
+  end;
+  assert (select count(*) from cortes_caja) = 0, 'el oficial ve los cortes';
+  perform pg_temp.como('contra');
+  assert (select count(*) from cortes_caja) = 1 and (select count(*) from pagos) > 0 and (select count(*) from auditoria) > 0,
+    'Contraloría ve caja y bitácora';
+end $$;
+reset role;
+
+-- Contraloría no cambia nada; Corralón solo grúa
+set role authenticated;
+do $$ declare n int; begin
+  perform pg_temp.como('contra');
+  begin insert into infracciones (placa, infractor, tipo, monto) values ('CON-1','X','Prueba',1); raise exception 'Contraloría levantó';
+  exception when others then if sqlerrm = 'Contraloría levantó' then raise; end if; end;
+  update infracciones set estado = 'impugnada', impugnacion_motivo = 'x' where placa = 'IMP-002'; get diagnostics n = row_count;
+  assert n = 0, 'Contraloría cambió un estado';
+  begin insert into grua (placa) values ('CON-1'); raise exception 'Contraloría metió a corralón';
+  exception when others then if sqlerrm = 'Contraloría metió a corralón' then raise; end if; end;
+  perform pg_temp.como('corral');
+  insert into grua (placa) values ('COR-1');
+  update grua set estado = 'liberado' where placa = 'COR-1'; get diagnostics n = row_count;
+  assert n = 1, 'Corralón libera';
+  begin insert into infracciones (placa, infractor, tipo, monto) values ('COR-1','X','Prueba',1); raise exception 'Corralón levantó';
+  exception when others then if sqlerrm = 'Corralón levantó' then raise; end if; end;
+end $$;
+reset role;
+
+-- Nada se borra; accidentes: el oficial edita solo los suyos en proceso
+insert into accidentes (tipo, oficial, estado) values ('choque', 'Otro Agente', 'en_proceso');
+set role authenticated;
+do $$ declare n int; v uuid; begin
+  perform pg_temp.como('ofi');
+  insert into accidentes (tipo, estado) values ('choque', 'en_proceso') returning id into v;
+  update accidentes set descripcion = 'actualizado' where id = v; get diagnostics n = row_count;
+  assert n = 1, 'el oficial edita su accidente';
+  update accidentes set estado = 'cerrado' where id = v;
+  update accidentes set descripcion = 'otra vez' where id = v; get diagnostics n = row_count;
+  assert n = 0, 'el oficial editó un accidente cerrado';
+  update accidentes set descripcion = 'ajeno' where oficial = 'Otro Agente'; get diagnostics n = row_count;
+  assert n = 0, 'el oficial editó un accidente ajeno';
+  perform pg_temp.como('sup');
+  update accidentes set descripcion = 'revisado' where id = v; get diagnostics n = row_count;
+  assert n = 1, 'el supervisor edita cualquiera';
+  delete from accidentes where id = v; get diagnostics n = row_count;
+  assert n = 0, 'el supervisor borró un accidente';
+  delete from grua; get diagnostics n = row_count;
+  assert n = 0, 'el supervisor borró grúas';
+  perform pg_temp.como('admin');
+  delete from permisos; get diagnostics n = row_count;
+  assert n = 0, 'el Director borró permisos';
 end $$;
 reset role;
 \echo 'OK   pruebas de base de datos'

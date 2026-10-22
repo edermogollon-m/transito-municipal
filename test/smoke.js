@@ -386,7 +386,10 @@ function check(name, errors, extra) {
     for (const [rol, esperado] of Object.entries({
       oficial: { visibles: ['infracciones', 'grua', 'accidentes'], ocultas: ['caja', 'configuracion', 'usuarios', 'bitacora', 'reportes'], nueva: true, cobrar: false, estado: false },
       cajero:  { visibles: ['caja', 'infracciones'], ocultas: ['configuracion', 'usuarios', 'bitacora', 'accidentes', 'permisos'], nueva: false, cobrar: true, estado: false },
-      supervisor: { visibles: ['caja', 'bitacora', 'reportes'], ocultas: ['configuracion', 'usuarios'], nueva: true, cobrar: false, estado: true }
+      supervisor: { visibles: ['caja', 'bitacora', 'reportes'], ocultas: ['configuracion', 'usuarios'], nueva: true, cobrar: false, estado: true },
+      juridico: { visibles: ['infracciones'], ocultas: ['caja', 'grua', 'configuracion', 'usuarios', 'bitacora'], nueva: false, cobrar: false, estado: false },
+      corralon: { visibles: ['grua', 'vehiculos'], ocultas: ['infracciones', 'caja', 'configuracion', 'usuarios'], nueva: false, cobrar: false, estado: false },
+      contraloria: { visibles: ['caja', 'bitacora', 'infracciones', 'reportes'], ocultas: ['configuracion', 'usuarios'], nueva: false, cobrar: false, estado: false }
     })) {
       ADMIN.rol = rol;
       ({ page, errors } = await newPage(browser));
