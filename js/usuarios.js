@@ -3,7 +3,7 @@ async function renderOficiales() {
   renderTurnosActivos();
   const tbody = $('oficiales-table'); if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  const { data, error } = await _sb.from('infracciones').select('oficial,monto,estado,fecha');
+  const { data, error } = await todas(() => _sb.from('infracciones').select('id,oficial,monto,estado,fecha'));
   if (error) { tbody.innerHTML=`<tr><td colspan="6" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const map = {};
   (data||[]).forEach(r => {

@@ -15,12 +15,15 @@ function puedeEditarAccidente(r) {
 async function renderAccidentes() {
   const tbody=$('accidentes-table'); if(!tbody) return;
   tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  let q=_sb.from('accidentes').select('*');
-  if(_accSearch) q=q.or(`folio.ilike.%${_accSearch}%,ubicacion.ilike.%${_accSearch}%,oficial.ilike.%${_accSearch}%`);
-  if(_accTipo)   q=q.eq('tipo',_accTipo);
-  if(_accEstado) q=q.eq('estado',_accEstado);
-  q=q.order('fecha',{ascending:false});
-  const {data,error}=await q;
+  const consulta = () => {
+    let q=_sb.from('accidentes').select('*');
+    if(_accSearch) q=q.or(orBuscar(['folio', 'ubicacion', 'oficial'], _accSearch));
+    if(_accTipo)   q=q.eq('tipo',_accTipo);
+    if(_accEstado) q=q.eq('estado',_accEstado);
+    q=q.order('fecha',{ascending:false});
+    return q;
+  };
+  const {data,error}=await todas(consulta);
   if(error){tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`;return;}
   const all=data||[];
   // stats

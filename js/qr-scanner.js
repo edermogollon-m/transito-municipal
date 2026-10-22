@@ -108,7 +108,7 @@ async function buscarInfPago() {
   const qf = q.replace(/[,()"'\\%*]/g, ' ').trim();
   // También las pagadas, para reimprimir su recibo
   const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,pagos(id)')
-    .in('estado',['pendiente','vencida','pagada']).or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(12);
+    .in('estado',['pendiente','vencida','pagada']).or(orBuscar(['placa', 'infractor', 'folio'], qf)).order('fecha',{ascending:false}).limit(12);
   const rows = data||[];
   const accion = r => {
     const pagoId = r.estado === 'pagada' ? (Array.isArray(r.pagos) ? r.pagos[0]?.id : r.pagos?.id) : null;

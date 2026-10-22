@@ -150,23 +150,25 @@ async function renderPendientesTable() {
   const tbody = $('pendientes-table'); if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono,catalogo_numero').in('estado',['pendiente','vencida']);   // las vencidas también se cobran
-  if (_pendSearch) q = q.or(`placa.ilike.%${_pendSearch}%,infractor.ilike.%${_pendSearch}%,folio.ilike.%${_pendSearch}%`);
-
-  // Período
-  const periodoVal = ($('pend-periodo')||{}).value||'';
-  if (periodoVal) {
-    const desde = _periodoRango(periodoVal);
-    if (periodoVal === 'hoy') q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
-    else if (desde) q = q.gte('fecha', desde);
-  }
   await Promise.all([cargarCatalogo(), asegurarConfig()]).catch(() => {});
+  const periodoVal = ($('pend-periodo')||{}).value||'';
+  const consulta = () => {
+    let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,telefono,catalogo_numero').in('estado',['pendiente','vencida']);   // las vencidas también se cobran
+    if (_pendSearch) q = q.or(orBuscar(['placa', 'infractor', 'folio'], _pendSearch));
 
-  if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
-  else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
-  else q = q.order('fecha',{ascending:false});
+    // Período
+    if (periodoVal) {
+      const desde = _periodoRango(periodoVal);
+      if (periodoVal === 'hoy') q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
+      else if (desde) q = q.gte('fecha', desde);
+    }
 
-  let { data, error } = await q;
+    if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
+    else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
+    else q = q.order('fecha',{ascending:false});
+    return q;
+  };
+  let { data, error } = await todas(consulta);
   let sinConexion = false;
   if (error && esErrorDeRed(error) || !navigator.onLine) {
     // Caja sin conexión: última lista guardada en este equipo
@@ -271,9 +273,9 @@ async function renderCajaStats() {
   const mesInicio = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
   const [{ data: hoyData }, { data: mesData }, { data: pendData }] = await Promise.all([
-    _sb.from('pagos').select('monto_final,metodo').gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59'),
-    _sb.from('pagos').select('monto_final').gte('created_at', mesInicio+'T00:00:00'),
-    _sb.from('infracciones').select('monto').in('estado',['pendiente','vencida'])
+    todas(() => _sb.from('pagos').select('id,monto_final,metodo').gte('created_at', today+'T00:00:00').lte('created_at', today+'T23:59:59')),
+    todas(() => _sb.from('pagos').select('id,monto_final').gte('created_at', mesInicio+'T00:00:00')),
+    todas(() => _sb.from('infracciones').select('id,monto').in('estado',['pendiente','vencida']))
   ]);
 
   const h = hoyData || [];
@@ -344,13 +346,16 @@ async function renderCajaTable() {
   const tbody = $('caja-table'); if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('pagos').select('*, infracciones(placa,infractor,tipo)').order('created_at',{ascending:false});
-  if (_cajaFecha)  q = q.gte('created_at',_cajaFecha+'T00:00:00').lte('created_at',_cajaFecha+'T23:59:59');
-  if (_cajaMetodo) q = q.eq('metodo', _cajaMetodo);
-  if (_cajaCajero) q = q.ilike('cajero', `%${_cajaCajero}%`);
-  if (_cajaSearch) q = q.or(`folio_inf.ilike.%${_cajaSearch}%,cajero.ilike.%${_cajaSearch}%,infracciones.placa.ilike.%${_cajaSearch}%`);
+  const consulta = () => {
+    let q = _sb.from('pagos').select('*, infracciones(placa,infractor,tipo)').order('created_at',{ascending:false});
+    if (_cajaFecha)  q = q.gte('created_at',_cajaFecha+'T00:00:00').lte('created_at',_cajaFecha+'T23:59:59');
+    if (_cajaMetodo) q = q.eq('metodo', _cajaMetodo);
+    if (_cajaCajero) q = q.ilike('cajero', `%${_cajaCajero}%`);
+    if (_cajaSearch) q = q.or(orBuscar(['folio_inf', 'cajero', 'infracciones.placa'], _cajaSearch));
 
-  const { data, error } = await q;
+    return q;
+  };
+  const { data, error } = await todas(consulta);
   if (error) { tbody.innerHTML=`<tr><td colspan="10" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const all = data||[];
 

@@ -10,8 +10,8 @@ async function renderVehiculos() {
 
   // Fetch all vehiculos + all infractions for stats
   const [vehRes, infRes] = await Promise.all([
-    _sb.from('vehiculos').select('*'),
-    _sb.from('infracciones').select('placa,monto,estado')
+    todas(() => _sb.from('vehiculos').select('*')),
+    todas(() => _sb.from('infracciones').select('id,placa,monto,estado'))
   ]);
   if (vehRes.error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(vehRes.error.message)}</td></tr>`; return; }
 

@@ -90,13 +90,9 @@ async function printReporteMensual() {
 
 // ── Reporte trimestral para Cabildo (comparado con el mismo trimestre del año anterior) ──
 async function _todasFilas(tabla, cols, campo, desde, hasta) {
-  const filas = [];
-  for (let i = 0; ; i += 1000) {
-    const { data, error } = await _sb.from(tabla).select(cols).gte(campo, desde).lt(campo, hasta).range(i, i + 999);
-    if (error) throw error;
-    filas.push(...(data || []));
-    if (!data || data.length < 1000) return filas;
-  }
+  const { data, error } = await todas(() => _sb.from(tabla).select('id,' + cols).gte(campo, desde).lt(campo, hasta));
+  if (error) throw error;
+  return data;
 }
 function _barrasSVG(titulo, meses, actual, anterior, fmtV) {
   const W = 640, H = 210, L = 64, B = 30, T = 14, max = Math.max(1, ...actual, ...anterior);
@@ -223,11 +219,11 @@ async function generateReport(tipo) {
 
   let rows = [], headers = [], title = '';
   if (tipo==='infracciones') {
-    const { data } = await _sb.from('infracciones').select('*').order('fecha',{ascending:false});
+    const { data } = await todas(() => _sb.from('infracciones').select('*').order('fecha',{ascending:false}));
     rows = data||[]; headers = ['Folio','Fecha','Placa','Infractor','Tipo','Monto','Estado'];
     title = 'Reporte de Infracciones';
   } else {
-    const { data } = await _sb.from('permisos').select('*').order('created_at',{ascending:false});
+    const { data } = await todas(() => _sb.from('permisos').select('*').order('created_at',{ascending:false}));
     rows = data||[]; headers = ['Núm.','Titular','Tipo','Placa','Ruta','Vencimiento','Estado'];
     title = 'Reporte de Permisos de Circulación';
   }

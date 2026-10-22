@@ -7,11 +7,14 @@ const GRUA_PAGE = 20;
 async function renderGrua() {
   const tbody = $('grua-table'); if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
-  let q = _sb.from('grua').select('*');
-  if (_gruaSearch) q = q.or(`placa.ilike.%${_gruaSearch}%,propietario.ilike.%${_gruaSearch}%`);
-  if (_gruaEstado) q = q.eq('estado', _gruaEstado);
-  q = q.order('fecha', {ascending:false});
-  const { data, error } = await q;
+  const consulta = () => {
+    let q = _sb.from('grua').select('*');
+    if (_gruaSearch) q = q.or(orBuscar(['placa', 'propietario'], _gruaSearch));
+    if (_gruaEstado) q = q.eq('estado', _gruaEstado);
+    q = q.order('fecha', {ascending:false});
+    return q;
+  };
+  const { data, error } = await todas(consulta);
   if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`; return; }
   const all = data||[];
 

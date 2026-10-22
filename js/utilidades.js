@@ -86,7 +86,7 @@ async function exportExcel(tipo) {
   let rows = [], wsName = '', filename = '';
 
   if (tipo === 'infracciones') {
-    const { data } = await _sb.from('infracciones').select('folio,fecha,placa,infractor,tipo,monto,ubicacion,estado,obs').order('fecha',{ascending:false});
+    const { data } = await todas(() => _sb.from('infracciones').select('id,folio,fecha,placa,infractor,tipo,monto,ubicacion,estado,obs').order('fecha',{ascending:false}));
     rows = (data||[]).map(r => ({
       'Folio': r.folio||'',
       'Fecha': r.fecha ? new Date(r.fecha).toLocaleDateString('es-MX') : '',
@@ -100,7 +100,7 @@ async function exportExcel(tipo) {
     }));
     wsName = 'Infracciones'; filename = `infracciones_${new Date().toISOString().slice(0,10)}.xlsx`;
   } else {
-    const { data } = await _sb.from('pagos').select('created_at,folio_inf,monto_original,descuento_pct,monto_final,metodo,cajero').order('created_at',{ascending:false});
+    const { data } = await todas(() => _sb.from('pagos').select('id,created_at,folio_inf,monto_original,descuento_pct,monto_final,metodo,cajero').order('created_at',{ascending:false}));
     rows = (data||[]).map(r => ({
       'Fecha y hora': r.created_at ? new Date(r.created_at).toLocaleString('es-MX') : '',
       'Folio infracción': r.folio_inf||'',
@@ -126,11 +126,11 @@ async function exportExcel(tipo) {
 async function exportCSV(tipo) {
   let rows = [], headers = [], filename = '';
   if (tipo==='infracciones') {
-    const { data } = await _sb.from('infracciones').select('*').order('fecha',{ascending:false});
+    const { data } = await todas(() => _sb.from('infracciones').select('*').order('fecha',{ascending:false}));
     rows = data||[]; headers = ['folio','fecha','placa','infractor','tipo','monto','ubicacion','estado','obs'];
     filename = 'infracciones.csv';
   } else {
-    const { data } = await _sb.from('permisos').select('*').order('created_at',{ascending:false});
+    const { data } = await todas(() => _sb.from('permisos').select('*').order('created_at',{ascending:false}));
     rows = data||[]; headers = ['num','titular','tipo','placa','ruta','inicio','vencimiento','estado'];
     filename = 'permisos.csv';
   }

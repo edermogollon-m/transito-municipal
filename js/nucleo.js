@@ -145,6 +145,27 @@ function esc(s) {
 // Argumento seguro para un onclick="fn(...)" construido con un template.
 function jsArg(v) { return esc(JSON.stringify(v ?? '')); }
 
+// Filtro de búsqueda para .or(): el texto va entre comillas para que una coma,
+// un paréntesis o un punto ("Pérez, Juan") no rompan la consulta.
+function orBuscar(campos, texto) {
+  const v = String(texto ?? '').replace(/\\/g, '').replace(/"/g, '\\"');
+  return campos.map(c => `${c}.ilike."%${v}%"`).join(',');
+}
+
+// Supabase entrega como máximo 1,000 filas por consulta (FILAS_POR_CONSULTA). todas()
+// pide por lotes hasta traerlas completas; crear() arma la consulta con sus filtros.
+// Se ordena además por id para que ningún registro se repita o se salte entre lotes.
+let FILAS_POR_CONSULTA = 1000;
+async function todas(crear) {
+  const filas = [], lote = FILAS_POR_CONSULTA;
+  for (let i = 0; ; i += lote) {
+    const { data, error } = await crear().order('id', { ascending: true }).range(i, i + lote - 1);
+    if (error) return { data: filas, error };
+    filas.push(...(data || []));
+    if (!data || data.length < lote) return { data: filas, error: null };
+  }
+}
+
 // ── logActivity ───────────────────────────────────────────
 async function logActivity(tipo, texto) {
   await _sb.from('actividad').insert({ tipo, texto });
