@@ -93,19 +93,6 @@ async function viewDetail(tabla, id) {
     <div id="detail-recurso"></div>
     <div id="detail-boleta"></div>
 
-    <!-- Cambiar estado (una impugnación la resuelve Jurídico o el Director) -->
-    <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:${r.estado==='impugnada'&&!puede('resolver')?'none':'flex'};align-items:center;gap:.6rem;flex-wrap:wrap">
-      <span style="font-size:.75rem;font-weight:600;color:var(--muted)">Cambiar estado:</span>
-      <select id="detail-estado" class="form-select" style="width:auto;min-width:130px;flex-shrink:0">
-        <option value="pendiente"  ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
-        <option value="pagada"     ${r.estado==='pagada'?'selected':''}>Pagada</option>
-        ${r.estado==='impugnada'?'<option value="impugnada" selected>Impugnada (recurso en trámite)</option>':''}
-        <option value="cancelada"  ${r.estado==='cancelada'?'selected':''}>Cancelada</option>
-        <option value="vencida"    ${r.estado==='vencida'?'selected':''}>Vencida</option>
-      </select>
-      <button class="btn btn-primary btn-sm" onclick="saveDetailEstado('infracciones','${r.id}')">Aplicar</button>
-    </div>
-
     <!-- Acciones -->
     <div class="detail-actions" style="margin-top:.75rem;flex-wrap:wrap;gap:.5rem">
       ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-sm" style="background:var(--green);color:#fff;border:none" onclick="openRegistrarPago('${r.id}')">
@@ -114,6 +101,7 @@ async function viewDetail(tabla, id) {
       </button>`:''}
       ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Recurso de revocación</button>`:''}
       ${r.estado==='impugnada'?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="resolverImpugnacion('${r.id}')">Resolver impugnación</button>`:''}
+      ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="cancelarInfraccion('${r.id}')">Cancelar infracción</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket 80mm</button>
       <button class="btn btn-ghost btn-sm" onclick="printParabrisas('${r.id}')" title="Aviso corto con QR para dejar en el parabrisas cuando el conductor no está">Parabrisas</button>
       <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta carta</button>
@@ -219,21 +207,21 @@ async function viewDetail(tabla, id) {
 async function saveDetailEstado(tabla, id) {
   const estado = $('detail-estado').value;
   const cambios = { estado };
-  if (tabla==='infracciones' && estado==='pagada') {
-    closeModal('modal-detail');
-    openRegistrarPago(id);   // marcar como pagada siempre pasa por el cobro
-    return;
-  }
-  if (tabla==='infracciones' && estado==='cancelada') {
-    const motivo = prompt('Motivo de la cancelación:');
-    if (!motivo || !motivo.trim()) return;
-    cambios.cancelacion_motivo = motivo.trim();
-  }
   const { error } = await _sb.from(tabla).update(cambios).eq('id', id);
   if (error) { alert('Error: '+error.message); return; }
   closeModal('modal-detail');
-  if (tabla==='infracciones') { renderInfracciones(); renderDashboard(); }
-  else renderPermisos();
+  renderPermisos();
+}
+
+// Una infracción con error se cancela con su motivo (controles.sql valida el rol)
+async function cancelarInfraccion(id) {
+  const motivo = prompt('Motivo de la cancelación:');
+  if (!motivo || !motivo.trim()) return;
+  const { error } = await _sb.from('infracciones').update({ estado: 'cancelada', cancelacion_motivo: motivo.trim() }).eq('id', id);
+  if (error) { alert('Error: '+error.message); return; }
+  closeModal('modal-detail');
+  renderInfracciones(); renderDashboard();
+  showToast('Infracción cancelada');
 }
 
 // Los registros no se borran (controles.sql): el permiso se cancela con motivo

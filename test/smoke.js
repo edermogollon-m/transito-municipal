@@ -503,7 +503,7 @@ function check(name, errors, extra) {
       await page.evaluate(id => viewDetail('infracciones', id), infId); await page.waitForTimeout(800);
       const det = await page.evaluate(() => {
         const visible = re => [...document.querySelectorAll('#modal-detail [onclick]')].some(b => re.test(b.getAttribute('onclick')) && b.offsetParent !== null);
-        return { cobrar: visible(/openRegistrarPago/), estado: visible(/saveDetailEstado\('infracciones'/) };
+        return { cobrar: visible(/openRegistrarPago/), estado: visible(/cancelarInfraccion\(/), selector: !!document.querySelector('#modal-detail #detail-estado') || document.querySelector('#modal-detail').textContent.includes('Cambiar estado') };
       });
       await page.evaluate(() => { closeModal('modal-detail'); navigate('infracciones'); }); await page.waitForTimeout(500);
       const nueva = await page.evaluate(() => [...document.querySelectorAll('#view-infracciones [onclick*="openNewInfraccion"]')].some(b => b.offsetParent !== null));
@@ -514,7 +514,8 @@ function check(name, errors, extra) {
         ...esperado.ocultas.filter(v => vis[v]).map(v => 've ' + v),
         nueva !== esperado.nueva && 'nueva infracción: ' + nueva,
         det.cobrar !== esperado.cobrar && 'cobrar: ' + det.cobrar,
-        det.estado !== esperado.estado && 'cambiar estado: ' + det.estado,
+        det.estado !== esperado.estado && 'cancelar infracción: ' + det.estado,
+        det.selector && 'sigue el selector "Cambiar estado"',
         enConfig && 'abrió configuración'
       ].filter(Boolean);
       check('rol ' + rol + ': menú y acciones', errors, fallas.length ? fallas.join(', ') : null);
