@@ -107,6 +107,9 @@
     @media (max-width:1100px) { .dash-kpis { grid-template-columns:repeat(3,1fr); } .kpi-hero { grid-column:1 / -1; } }
     @media (max-width:600px) { .dash-kpis { grid-template-columns:1fr 1fr; gap:.6rem; } .dash-kpis > :last-child { grid-column:1 / -1; } }
 
+    /* ── Firmas en el teléfono ─────────────────────────────── */
+    .firma-pad{width:100%;height:120px;border:1px dashed var(--border);border-radius:8px;background:#fff;touch-action:none;cursor:crosshair;display:block}
+
     /* ── PANEL: resumen de hoy, tendencia y cobranza ────────── */
     .dash-hoy { display:flex; align-items:baseline; justify-content:space-between; gap:.5rem 1.5rem; flex-wrap:wrap; margin:0 0 .9rem; }
     .dash-saludo { font-size:1.15rem; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
@@ -971,6 +974,12 @@
             <label>Medio de defensa (art. 328: recurso de revocación)</label>
             <textarea class="form-input" id="cfg-recurso" rows="4"></textarea>
           </div>
+          <div class="form-field"><label>Lugar de resguardo de documentos retenidos</label><input class="form-input" id="cfg-resguardo" type="text" placeholder="Ej. Delegación de Tránsito, Misantla"/></div>
+          <div class="form-field" style="display:flex;flex-direction:column;gap:.35rem;font-size:.82rem">
+            <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-correo"/> Enviar avisos por correo al ciudadano</label>
+            <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-whatsapp"/> Enviar avisos por WhatsApp al ciudadano</label>
+            <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-pago-linea"/> Permitir el pago en línea (Mercado Pago) en el portal ciudadano</label>
+          </div>
           <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Las multas del tabulador se expresan en cuotas: el monto permitido es cuotas × UMA. Actualiza la UMA cada año cuando el INEGI publique el nuevo valor (DOF, enero; vigente desde el 1 de febrero).</p>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
         </div>
@@ -1042,6 +1051,10 @@
           <button class="caja-tab" id="tab-cortes" onclick="switchCajaTab('cortes')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
             Cortes y anulaciones
+          </button>
+          <button class="caja-tab" id="tab-resguardo" onclick="switchCajaTab('resguardo')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/></svg>
+            Documentos en resguardo
           </button>
         </div>
 
@@ -1144,6 +1157,14 @@
                 <tbody id="anulados-table"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+        <!-- RESGUARDO section (arts. 343-344) -->
+        <div id="caja-section-resguardo" style="display:none">
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Documentos retenidos en resguardo</div><div class="card-subtitle">Se devuelven al pagar la multa o al cancelarse; un mando puede devolverlos antes indicando el motivo.</div></div></div>
+            <div class="table-wrap"><table><thead><tr><th>Folio</th><th>Fecha</th><th>Placa</th><th>Infractor</th><th>Documento</th><th>Estado de la multa</th><th></th></tr></thead>
+              <tbody id="resguardo-table"></tbody></table></div>
           </div>
         </div>
       </div>
@@ -1498,7 +1519,7 @@
       </div>
       <div class="form-row">
         <div class="form-field"><label>Nombre completo *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
-        <div class="form-field"><label>Núm. de licencia o permiso</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text"/></div>
+        <div class="form-field"><label>Núm. de licencia o permiso</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text" onblur="checkConductorHistory()"/></div>
       </div>
       <div class="form-row">
         <div class="form-field"><label>Tipo de licencia o permiso</label>
@@ -1585,6 +1606,30 @@
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Evidencia fotográfica</div>
         <span style="font-size:.7rem;color:var(--muted);font-weight:400">(opcional · máx. 3 fotos)</span>
       </div>
+      <div class="form-row">
+        <div class="form-field"><label>Documento retenido en garantía (arts. 343-344)</label>
+          <select id="inf-doc-retenido" class="form-select">
+            <option value="">Ninguno</option>
+            <option value="licencia">Licencia o permiso de conducir</option>
+            <option value="tarjeta_circulacion">Tarjeta de circulación</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Número del documento</label><input id="inf-doc-numero" class="form-input" type="text" placeholder="Folio de la licencia o tarjeta"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Firma del infractor</label>
+          <canvas id="firma-infractor" class="firma-pad" width="400" height="140"></canvas>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.25rem;font-size:.75rem">
+            <label style="display:flex;gap:.35rem;align-items:center;cursor:pointer"><input type="checkbox" id="inf-firma-negada"/> Se negó a firmar</label>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="limpiarFirma('firma-infractor')">Borrar</button>
+          </div>
+        </div>
+        <div class="form-field"><label>Firma del policía vial</label>
+          <canvas id="firma-oficial" class="firma-pad" width="400" height="140"></canvas>
+          <div style="text-align:right;margin-top:.25rem"><button type="button" class="btn btn-ghost btn-sm" onclick="limpiarFirma('firma-oficial')">Borrar</button></div>
+        </div>
+      </div>
+      <div id="conductor-history"></div>
       <div class="form-field" style="margin-bottom:.5rem">
         <label class="foto-upload-btn" for="inf-fotos" style="display:inline-flex">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -1865,19 +1910,77 @@
 
 <!-- MODAL: Impugnación -->
 <div class="modal-overlay" id="modal-impugnacion">
-  <div class="modal" style="width:460px">
+  <div class="modal" style="width:540px">
     <div class="modal-header">
-      <div class="modal-title" id="modal-imp-title">Registrar impugnación</div>
+      <div class="modal-title" id="modal-imp-title">Recurso de revocación</div>
       <button class="modal-close" onclick="closeModal('modal-impugnacion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <input type="hidden" id="imp-inf-id"/>
-    <div class="form-field" style="margin-top:.25rem">
-      <label>Motivo de la impugnación</label>
-      <textarea id="imp-motivo" class="form-input" rows="4" placeholder="Describe el motivo de la impugnación…" style="resize:vertical;font-family:inherit"></textarea>
+    <div id="imp-info" style="font-size:.8rem;background:var(--stone);border-radius:8px;padding:.55rem .75rem;margin-bottom:.6rem"></div>
+    <div class="form-row">
+      <div class="form-field"><label>Fecha de presentación</label><input id="imp-fecha" class="form-input" type="date" oninput="calcularPlazoRecurso()"/></div>
+      <div class="form-field"><label>Promovente</label><input id="imp-promovente" class="form-input" type="text" placeholder="Nombre de quien presenta el recurso"/></div>
     </div>
+    <div class="form-field"><label>Domicilio para recibir notificaciones</label><input id="imp-domicilio" class="form-input" type="text"/></div>
+    <div class="form-field">
+      <label>Hechos y agravios</label>
+      <textarea id="imp-motivo" class="form-input" rows="4" placeholder="Lo que expone el promovente y por qué considera ilegal la infracción…" style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="form-field">
+      <label>Pruebas (fotos o documentos escaneados)</label>
+      <input id="imp-pruebas" type="file" accept="image/*" multiple class="form-input"/>
+    </div>
+    <div id="imp-plazo" style="font-size:.78rem;margin:.2rem 0 .4rem"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-impugnacion')">Cancelar</button>
-      <button class="btn btn-primary" id="imp-submit-btn" onclick="submitImpugnacion()">Registrar impugnación</button>
+      <button class="btn btn-primary" id="imp-submit-btn" onclick="submitImpugnacion()">Registrar recurso</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-resolucion">
+  <div class="modal" style="width:600px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-res-title">Resolver recurso de revocación</div>
+      <button class="modal-close" onclick="closeModal('modal-resolucion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <input type="hidden" id="res-imp-id"/>
+    <div id="res-info" style="font-size:.8rem;background:var(--stone);border-radius:8px;padding:.55rem .75rem;margin-bottom:.6rem"></div>
+    <div class="form-field"><label>Sentido de la resolución</label>
+      <select id="res-resultado" class="form-select" onchange="plantillaResolucion()">
+        <option value="improcedente">Improcedente: se confirma la infracción</option>
+        <option value="procedente">Procedente: se revoca y cancela la infracción</option>
+        <option value="desechada">Se desecha (extemporáneo o sin requisitos)</option>
+      </select>
+    </div>
+    <div class="form-field"><label>Resolución (considerandos y puntos resolutivos)</label>
+      <textarea id="res-texto" class="form-input" rows="10" style="resize:vertical;font-family:inherit;font-size:.8rem"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-resolucion')">Cancelar</button>
+      <button class="btn btn-primary" id="res-submit-btn" onclick="submitResolucion()">Firmar y emitir resolución</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-devolucion">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <div class="modal-title">Devolver documento retenido</div>
+      <button class="modal-close" onclick="closeModal('modal-devolucion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <input type="hidden" id="dev-inf-id"/>
+    <div id="dev-info" style="font-size:.8rem;background:var(--stone);border-radius:8px;padding:.55rem .75rem;margin-bottom:.6rem"></div>
+    <div class="form-field"><label>Se entrega a</label><input id="dev-entregado" class="form-input" type="text" placeholder="Nombre completo de quien recoge"/></div>
+    <div class="form-field"><label>Identificación presentada</label><input id="dev-identificacion" class="form-input" type="text" placeholder="Ej. INE 1234567890"/></div>
+    <div class="form-field"><label>Firma de quien recibe</label>
+      <canvas id="firma-devolucion" class="firma-pad" width="400" height="140"></canvas>
+      <div style="text-align:right;margin-top:.25rem"><button type="button" class="btn btn-ghost btn-sm" onclick="limpiarFirma('firma-devolucion')">Borrar</button></div>
+    </div>
+    <div class="form-field"><label>Notas <span id="dev-notas-req" style="color:var(--red)"></span></label><input id="dev-notas" class="form-input" type="text"/></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-devolucion')">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitDevolucion()">Registrar devolución</button>
     </div>
   </div>
 </div>

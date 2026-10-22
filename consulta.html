@@ -174,7 +174,9 @@
       .datos{grid-template-columns:1fr;}
     }
     @media (prefers-reduced-motion: reduce){ .esqueleto{animation:none;} }
-  </style>
+      .btn-pagar{display:flex;align-items:center;justify-content:center;gap:.45rem;width:calc(100% - 2rem);margin:.2rem 1rem .8rem;padding:.7rem 1rem;border:none;border-radius:10px;background:#009EE3;color:#fff;font:700 .9rem inherit;cursor:pointer}
+    .btn-pagar:hover{background:#0087C2}.btn-pagar:disabled{opacity:.7;cursor:wait}
+</style>
 </head>
 <body>
 
@@ -439,6 +441,9 @@ function infCard(r) {
     </div>
     ${plazo}
     ${aviso}
+    ${activa && _params.pago_en_linea && r.estado !== 'impugnada' ? `<button type="button" class="btn-pagar" onclick="pagarEnLinea(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Pagar en línea ${montoFmt(p.tramo ? p.hoy : r.monto)}</button>` : ''}
     <details class="inf-mas">
       <summary>Ver detalle</summary>
       <div class="datos">
@@ -514,8 +519,31 @@ _sb.rpc('portal_info').then(({ data }) => {
   if (d.correo) $('pie-contacto').innerHTML = `Dudas: <a href="mailto:${esc(d.correo)}">${esc(d.correo)}</a><br>`;
 }).catch(() => {});
 
+// Pago en línea (Mercado Pago): el monto lo calcula el servidor
+async function pagarEnLinea(id, placa, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…'; }
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/pago-mp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ accion: 'crear', infraccion_id: id, placa })
+    });
+    const d = await res.json();
+    if (!res.ok || !d.url) throw new Error(d.error || 'No se pudo iniciar el pago');
+    location.href = d.url;
+  } catch (err) {
+    alert(err.message + '. Puedes pagar en la Tesorería Municipal.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Pagar en línea'; }
+  }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
-  const q = new URLSearchParams(location.search).get('q');
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q');
+  const pago = params.get('pago');
+  if (pago) {
+    const txt = { ok: '¡Pago recibido! En unos minutos la infracción aparecerá como pagada.', pendiente: 'Tu pago está en proceso (OXXO o transferencia). Se reflejará cuando Mercado Pago lo acredite.', error: 'El pago no se completó. Puedes intentarlo de nuevo.' }[pago];
+    if (txt) { const b = document.createElement('div'); b.className = 'aviso ' + (pago === 'error' ? 'rojo' : 'verde'); b.setAttribute('role', 'status'); b.style.cssText = 'max-width:760px;margin:12px auto'; b.textContent = txt; document.querySelector('main, body').prepend(b); }
+  }
   if (q) { $('q').value = q; buscar(); }
 });
 </script>

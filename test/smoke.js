@@ -76,7 +76,7 @@ const TABLES = {
   reglamento_articulos: [
     { numero: '160', texto: 'Artículo 160. Los conductores tendrán las siguientes prohibiciones: I. Utilizar dispositivos… <img src=x onerror="window.__xss=1">' },
     { numero: '75', texto: 'Artículo 75. Límites de velocidad…' }, { numero: '153', texto: 'Artículo 153. Todo conductor…' }
-  ], usuarios: [ADMIN], pagos: [], turnos: [],
+  ], usuarios: [ADMIN], pagos: [], turnos: [], impugnaciones: [], devoluciones: [], documentos_en_resguardo: [],
   auditoria: [
     { id: 1, ts: '2026-06-03T10:05:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'cambio', usuario_nombre: XSS, resumen: XSS, cambios: { monto: { antes: 800, despues: XSS } } },
     { id: 2, ts: '2026-06-03T10:00:00Z', tabla: 'infracciones', registro_id: 'x', accion: 'alta', usuario_nombre: 'Admin Prueba', resumen: 'INF-2026-0001', cambios: { tipo: XSS, placa: 'XSS-001' } }
@@ -111,6 +111,10 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (dbDown || u.pathname.includes('/realtime/')) return r.abort();
     const json = { 'Content-Type': 'application/json' };
     if (u.pathname.startsWith('/auth/v1/token')) return r.fulfill({ status: 200, headers: json, body: JSON.stringify(SESSION) });
+    if (u.pathname === '/functions/v1/pago-mp') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'pago-mp', ...b });
+      return r.fulfill({ status: 200, headers: { ...json, 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ url: BASE + '/consulta?q=' + b.placa + '&pago=ok' }) });
+    }
     if (u.pathname.startsWith('/auth/v1/')) return r.fulfill({ status: 204, body: '' });
     // Storage: subida de fotos y enlaces firmados
     if (u.pathname.startsWith('/storage/v1/object/sign/')) {
@@ -142,6 +146,27 @@ async function newPage(browser, { dbDown = false } = {}) {
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
+    if (table === 'rpc/historial_conductor') {
+      const lic = norm(JSON.parse(req.postData() || '{}').p_licencia);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(TABLES.infracciones.filter(i => norm(i.licencia) === lic)) });
+    }
+    if (table === 'rpc/presentar_impugnacion') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'presentar_impugnacion', ...b });
+      const v = { id: 900 + TABLES.impugnaciones.length, folio: 'IMP-2026-0001', infraccion_id: b.p_infraccion_id, presentada_el: b.p_presentada_el, promovente: b.p_promovente,
+        domicilio: b.p_domicilio, hechos: b.p_hechos, pruebas: b.p_pruebas, plazo_vence: '2026-11-11', extemporanea: false, estado: 'en_tramite', resolucion: '', registrado_por: ADMIN.nombre };
+      TABLES.impugnaciones.push(v);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(v) });
+    }
+    if (table === 'rpc/resolver_impugnacion') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'resolver_impugnacion', ...b });
+      const v = TABLES.impugnaciones.find(x => x.id === b.p_id) || {};
+      Object.assign(v, { estado: b.p_resultado, resolucion: b.p_resolucion, resuelto_por: ADMIN.nombre, resuelto_el: new Date().toISOString() });
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(v) });
+    }
+    if (table === 'rpc/devolver_documento') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'devolver_documento', ...b });
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ id: 1, infraccion_id: b.p_infraccion_id, entregado_a: b.p_entregado_a }) });
+    }
     if (table === 'rpc/registrar_pago') {
       const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'registrar_pago', ...b });
       const inf = TABLES.infracciones.find(i => i.id === b.p_infraccion_id) || {};
@@ -152,7 +177,7 @@ async function newPage(browser, { dbDown = false } = {}) {
     }
     if (table === 'rpc/parametros_descuento') {
       const c = TABLES.configuracion[0];
-      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ descuento_pct: c.descuento_pct, dias_descuento: c.dias_descuento, descuento2_pct: 0, dias_descuento2: null, dias_limite: c.dias_limite }) });
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ descuento_pct: c.descuento_pct, dias_descuento: c.dias_descuento, descuento2_pct: 0, dias_descuento2: null, dias_limite: c.dias_limite, pago_en_linea: !!c.pago_en_linea }) });
     }
     if (table === 'rpc/parametros_pago') {
       const c = TABLES.configuracion[0];
@@ -220,7 +245,7 @@ function check(name, errors, extra) {
     check('formatos de placa', errors, JSON.stringify(formatos) === JSON.stringify(['ABC-1234', '123-ABC', '', 'PBA-123-C']) ? null : JSON.stringify(formatos));
 
     // Boleta sin señal: se guarda en el dispositivo y se sube sola al volver internet
-    await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; $('inf-domicilio').value = 'Conocido, Misantla'; });
+    await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; $('inf-domicilio').value = 'Conocido, Misantla'; $('inf-firma-negada').checked = true; });
     await page.context().setOffline(true);
     await page.evaluate(() => submitInfraccion({ preventDefault() {} }));
     await page.waitForTimeout(500);
@@ -438,6 +463,56 @@ function check(name, errors, extra) {
     venc.estado = 'pendiente';
     await page.close();
 
+    // Trámites: firmas, documento retenido, reincidencia, recurso de revocación y devolución
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/login');
+    await page.fill('#username', 'admin'); await page.fill('#password', 'x');
+    await Promise.all([page.waitForURL(BASE + '/', { timeout: 10000 }).catch(() => {}), page.click('.btn-login')]);
+    await page.waitForFunction(() => typeof navigate === 'function'); await page.waitForTimeout(800);
+    await page.evaluate(() => openNewInfraccion()); await page.waitForTimeout(900);
+    const pad = await page.$('#firma-infractor'); await pad.scrollIntoViewIfNeeded(); await page.waitForTimeout(200); const bb = await pad.boundingBox();
+    await page.mouse.move(bb.x + 20, bb.y + 30); await page.mouse.down(); await page.mouse.move(bb.x + 120, bb.y + 70, { steps: 8 }); await page.mouse.move(bb.x + 200, bb.y + 40, { steps: 8 }); await page.mouse.up();
+    const firma = await page.evaluate(() => ({ inf: firmaDataURL('firma-infractor').slice(0, 22), ofi: firmaDataURL('firma-oficial') }));
+    check('firma en pantalla', errors, firma.inf === 'data:image/png;base64,' && firma.ofi === '' ? null : JSON.stringify(firma));
+    // Reincidencia del conductor: misma licencia y mismo artículo → agravante g)
+    TABLES.infracciones.push(...withIds({ placa: 'OTRO-01', infractor: 'Reincidente', tipo: 'Uso de celular al conducir', monto: 1876, estado: 'pagada', licencia: 'LIC-777', catalogo_numero: 1133, fecha: new Date().toISOString() }));
+    await page.selectOption('#inf-tipo', 'Uso de celular al conducir'); await page.evaluate(() => autoFillMonto()); await page.waitForTimeout(300);
+    await page.fill('#inf-licencia', 'LIC-777'); await page.evaluate(() => checkConductorHistory()); await page.waitForTimeout(500);
+    const reinc = await page.evaluate(() => ({ g: document.querySelector('.inf-circ[value="agr_g"]').checked, monto: $('inf-monto').value, panel: $('conductor-history').textContent }));
+    check('reincidencia por licencia', errors, reinc.g && reinc.monto === '3519' && /infracción\(es\) previa/.test(reinc.panel) ? null : JSON.stringify(reinc).slice(0, 200));
+    await page.evaluate(() => closeModal('modal-infraccion'));
+    // Documento retenido y firmas en la boleta impresa
+    const ret = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.estado === 'pendiente' && !r.boleta?.startsWith('B-'));
+    Object.assign(ret, { documento_retenido: 'licencia', documento_numero: 'VER-123456', firma_negada: true,
+      firma_oficial: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' });
+    const popups2 = []; page.context().on('page', p => popups2.push(p));
+    await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(900);
+    let tk2 = ''; for (const p of popups2.splice(0)) { tk2 += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    check('ticket con documento retenido y firmas', errors, tk2.includes('DOCUMENTO RETENIDO') && tk2.includes('VER-123456') && tk2.includes('Se negó a firmar') && tk2.includes('data:image/png;base64,iVBOR') ? null : 'falta retención o firmas');
+    // Devolución del documento
+    await page.evaluate(id => abrirDevolucion(id), ret.id); await page.waitForTimeout(500);
+    await page.fill('#dev-identificacion', 'INE 123'); await page.fill('#dev-notas', 'Autoriza el supervisor');
+    await page.evaluate(() => submitDevolucion()); await page.waitForTimeout(500);
+    const dev = rpcCalls.find(c => c.fn === 'devolver_documento');
+    check('devolución de documento', errors, dev && dev.p_infraccion_id === ret.id && dev.p_identificacion === 'INE 123' ? null : JSON.stringify(dev));
+    // Recurso de revocación: plazo, registro y resolución
+    await page.evaluate(id => impugnarInfraccion(id), ret.id); await page.waitForTimeout(600);
+    const plazo = await page.textContent('#imp-plazo');
+    await page.fill('#imp-motivo', 'No circulaba en ese lugar a esa hora; anexo constancia de trabajo.');
+    await page.evaluate(() => submitImpugnacion()); await page.waitForTimeout(900);
+    for (const p of popups2.splice(0)) await p.close().catch(() => {});
+    const imp = rpcCalls.find(c => c.fn === 'presentar_impugnacion');
+    check('registrar recurso de revocación', errors, imp && imp.p_infraccion_id === ret.id && /15 días hábiles/.test(plazo) ? null : JSON.stringify({ imp, plazo }));
+    await page.evaluate(id => abrirResolucion(id), TABLES.impugnaciones[0].id); await page.waitForTimeout(600);
+    const borrador = await page.inputValue('#res-texto');
+    await page.evaluate(() => { $('res-texto').value = $('res-texto').value.replace(/\[exponer aquí[^\]]*\]/, 'no se desvirtúan los hechos asentados por el policía vial'); });
+    await page.evaluate(() => submitResolucion()); await page.waitForTimeout(900);
+    let resHtml = ''; for (const p of popups2.splice(0)) { resHtml += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    const res = rpcCalls.find(c => c.fn === 'resolver_impugnacion');
+    check('resolución escrita del recurso', errors, res && res.p_resultado === 'improcedente' && /artículo 383 del Reglamento/.test(borrador) && resHtml.includes('RESOLUCIÓN DEL RECURSO') ? null : JSON.stringify(res).slice(0, 160));
+    check('trámites escapan los textos', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    await page.close();
+
     // 3b. Verificación pública del QR
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/verificar?t=' + TOKEN);
@@ -461,6 +536,17 @@ function check(name, errors, extra) {
     await page.goto(BASE + '/consulta?q=' + encodeURIComponent(XSS));
     await page.waitForTimeout(1500);
     check('consulta ciudadana escapa la búsqueda', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    await page.close();
+    // Pago en línea (Mercado Pago) desde el portal
+    TABLES.configuracion[0].pago_en_linea = true;
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/consulta?q=ABC-123'); await page.waitForTimeout(1500);
+    const hayBoton = await page.evaluate(() => !!document.querySelector('.btn-pagar'));
+    if (hayBoton) { await Promise.all([page.waitForURL(/pago=ok/, { timeout: 8000 }).catch(() => {}), page.click('.btn-pagar')]); await page.waitForTimeout(800); }
+    const mp = rpcCalls.find(c => c.fn === 'pago-mp');
+    const avisoPago = await page.evaluate(() => document.body.textContent.includes('Pago recibido'));
+    check('pago en línea desde el portal', errors, hayBoton && mp && mp.accion === 'crear' && avisoPago ? null : JSON.stringify({ hayBoton, mp, avisoPago }));
+    TABLES.configuracion[0].pago_en_linea = false;
     await page.close();
 
     // 4. Sin base de datos: mensajes claros en vez de pantallas vacías

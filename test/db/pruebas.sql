@@ -656,4 +656,104 @@ do $$ begin
   assert (select folio from infracciones where placa = 'FOL-001') like 'MIS-%', 'el cliente no elige el folio';
   assert (select count(distinct public.nuevo_folio_inf()) from generate_series(1, 200)) = 200, 'folios distintos';
 end $$;
+-- ── Trámites (tramites.sql) ─────────────────────────────────────────
+do $$ begin
+  assert sumar_dias_habiles('2026-10-21', 15) = '2026-11-11', '15 días hábiles sin fines de semana';
+  assert sumar_dias_habiles('2026-10-23', 1) = '2026-10-26', 'del viernes al lunes';
+end $$;
+insert into infracciones (placa, infractor, tipo, monto, documento_retenido, documento_numero, licencia, catalogo_numero, fecha)
+values ('TRA-001', 'X', 'Uso de celular al conducir', 1, 'licencia', 'L-1', 'LIC-9', 1133, now() - interval '2 days');
+set role authenticated;
+select pg_temp.como('caja');
+do $$ declare v_id bigint := (select id from infracciones where placa = 'TRA-001'); begin
+  begin
+    perform devolver_documento(v_id, 'Juan', 'INE', '', '');
+    raise exception 'caja devolvió sin pago';
+  exception when others then if sqlerrm = 'caja devolvió sin pago' then raise; end if;
+  end;
+  perform registrar_pago(v_id, true, 'efectivo');
+  assert (devolver_documento(v_id, 'Juan', 'INE', '', '')).devuelto_por = 'Caja', 'devolución tras el pago';
+  begin
+    perform devolver_documento(v_id, 'Juan', 'INE', '', '');
+    raise exception 'se devolvió dos veces';
+  exception when others then if sqlerrm = 'se devolvió dos veces' then raise; end if;
+  end;
+  assert not exists (select 1 from documentos_en_resguardo where id = v_id), 'ya no está en resguardo';
+end $$;
+reset role;
+-- Historial del conductor: el oficial ve la reincidencia aunque no capturó esas boletas
+set role authenticated;
+select pg_temp.como('ofi');
+do $$ begin
+  assert (select count(*) from historial_conductor('lic 9')) = 1, 'historial por licencia (sin guiones ni mayúsculas)';
+  assert (select count(*) from historial_conductor('L')) = 0, 'licencia demasiado corta';
+end $$;
+reset role;
+-- Recurso de revocación: lo registra un mando; lo resuelve Jurídico o el Director
+insert into infracciones (placa, infractor, tipo, monto, fecha) values ('TRA-002', 'X', 'Prueba', 500, '2026-10-21 10:00-06');
+set role authenticated;
+select pg_temp.como('ofi');
+do $$ begin
+  begin
+    perform presentar_impugnacion((select id from infracciones where placa = 'TRA-002'), current_date, 'X', '', 'hechos');
+    raise exception 'el oficial registró un recurso';
+  exception when others then if sqlerrm = 'el oficial registró un recurso' then raise; end if;
+  end;
+end $$;
+select pg_temp.como('sup');
+do $$ declare v impugnaciones; begin
+  v := presentar_impugnacion((select id from infracciones where placa = 'TRA-002'), '2026-11-12', 'Promovente', 'Calle 1', 'No era mi vehículo');
+  assert v.plazo_vence = '2026-11-11' and v.extemporanea, 'extemporáneo al día siguiente del plazo';
+  assert (select estado from infracciones where placa = 'TRA-002') = 'impugnada', 'la infracción queda impugnada';
+  begin
+    perform resolver_impugnacion(v.id, 'procedente', 'Se revoca la boleta por no acreditarse los hechos que la motivan, con fundamento en el artículo 383.');
+    raise exception 'el supervisor resolvió el recurso';
+  exception when others then if sqlerrm = 'el supervisor resolvió el recurso' then raise; end if;
+  end;
+end $$;
+select pg_temp.como('juri');
+do $$ declare v impugnaciones := (select i from impugnaciones i join infracciones f on f.id = i.infraccion_id where f.placa = 'TRA-002'); begin
+  begin
+    perform resolver_impugnacion(v.id, 'procedente', 'corta');
+    raise exception 'resolución sin fundamentos';
+  exception when others then if sqlerrm = 'resolución sin fundamentos' then raise; end if;
+  end;
+  v := resolver_impugnacion(v.id, 'procedente', 'Se revoca la boleta por no acreditarse los hechos que la motivan, con fundamento en el artículo 383.');
+  assert v.estado = 'procedente' and v.resuelto_por = 'Lic. Jurídico', 'resolución registrada';
+  assert (select estado || '|' || cancelacion_motivo from infracciones where placa = 'TRA-002') like 'cancelada|Recurso de revocación IMP-%', 'procedente cancela la infracción';
+end $$;
+reset role;
+-- Avisos: la cola se arma solo con los canales activos; el recordatorio de
+-- descuento por correo es de tareas-diarias, aquí solo va por WhatsApp
+update configuracion set avisos_correo = true, avisos_whatsapp = true where id = 1;
+insert into infracciones (placa, infractor, tipo, monto, infractor_correo, telefono, fecha) values ('TRA-003', 'X', 'Prueba', 500, 'a@b.mx', '228 123 4567', now() - interval '4 days 2 hours');
+do $$ begin
+  perform programar_avisos();
+  assert exists (select 1 from avisos a join infracciones i on i.id = a.infraccion_id where i.placa = 'TRA-003' and a.canal = 'correo' and a.tipo = 'emision'), 'aviso de emisión por correo';
+  assert (select destino from avisos a join infracciones i on i.id = a.infraccion_id where i.placa = 'TRA-003' and a.canal = 'whatsapp' and a.tipo = 'emision') = '522281234567', 'whatsapp con lada 52';
+  assert exists (select 1 from avisos a join infracciones i on i.id = a.infraccion_id where i.placa = 'TRA-003' and a.canal = 'whatsapp' and a.tipo = 'descuento1'), 'aviso de descuento por WhatsApp';
+  assert not exists (select 1 from avisos a join infracciones i on i.id = a.infraccion_id where i.placa = 'TRA-003' and a.canal = 'correo' and a.tipo like 'descuento%'), 'sin correo de descuento duplicado';
+  assert programar_avisos() = 0, 'no duplica avisos';
+  perform marcar_aviso((select min(id) from avisos), true);
+  assert (select estado from avisos where id = (select min(id) from avisos)) = 'enviado', 'aviso marcado como enviado';
+end $$;
+update configuracion set avisos_correo = false, avisos_whatsapp = false where id = 1;
+-- Pago en línea: monto con descuento e idempotencia por referencia
+do $$ declare v_id bigint := (select id from infracciones where placa = 'TRA-003'); p pagos; begin
+  assert (select descuento_pct from monto_a_pagar(v_id)) = 75, 'descuento vigente para el pago en línea';
+  p := registrar_pago_en_linea(v_id, 'MP-1', 125);
+  assert p.metodo = 'en_linea' and p.monto_final = 125, 'pago en línea asentado';
+  assert (registrar_pago_en_linea(v_id, 'MP-1', 125)).id = p.id, 'la misma notificación no duplica el pago';
+  assert (select estado from infracciones where id = v_id) = 'pagada', 'infracción pagada';
+end $$;
+set role anon;
+do $$ begin
+  begin
+    perform registrar_pago_en_linea(1, 'MP-X', 1);
+    raise exception 'anon registró un pago en línea';
+  exception when others then if sqlerrm = 'anon registró un pago en línea' then raise; end if;
+  end;
+  assert (parametros_descuento() ? 'pago_en_linea'), 'el portal sabe si hay pago en línea';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'
