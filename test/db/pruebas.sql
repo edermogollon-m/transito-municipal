@@ -625,4 +625,28 @@ do $$ declare n int; v uuid; begin
   assert n = 0, 'el Director borró permisos';
 end $$;
 reset role;
+
+-- ── Errores de la app y datos de transferencia (mejoras.sql) ────────
+select pg_temp.como('ofi');
+set role authenticated;
+do $$ begin
+  insert into errores_app (pagina, mensaje) values ('/', 'TypeError: x is undefined');
+  assert (select count(*) from errores_app) = 0, 'el oficial lee los errores';
+end $$;
+select pg_temp.como('admin');
+do $$ begin
+  assert (select usuario from errores_app where mensaje like 'TypeError%') = 'Oficial', 'error con el usuario';
+  update configuracion set pago_clabe = '012345678901234567', pago_banco = 'BBVA' where id = 1;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  begin
+    insert into errores_app (mensaje) values ('spam');
+    raise exception 'anon escribió errores';
+  exception when others then if sqlerrm = 'anon escribió errores' then raise; end if;
+  end;
+  assert portal_info() ->> 'pago_clabe' = '012345678901234567', 'CLABE en el portal';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'

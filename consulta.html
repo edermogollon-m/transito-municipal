@@ -155,6 +155,9 @@
     .pasos li{counter-increment:p;display:flex;gap:.7rem;font-size:.84rem;color:var(--text);line-height:1.5;}
     .pasos li::before{content:counter(p);width:24px;height:24px;border-radius:50%;background:var(--ac-bg);color:var(--ac);font-weight:700;font-size:.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
     .bloque p{font-size:.82rem;color:var(--muted);line-height:1.6;}
+    .bloque .datos{padding:0;}
+    .bloque .link{margin-left:.6rem;background:none;border:0;color:var(--ac);font-weight:600;font-size:.8rem;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+    .bloque a{color:var(--ac);}
 
     .pie{text-align:center;font-size:.72rem;color:var(--subtle);padding:1rem 1rem 2.5rem;line-height:1.7;}
     .pie a{text-decoration:none;}
@@ -369,6 +372,21 @@ async function buscar() {
       <li>Paga y conserva tu recibo: trae un código para comprobar que es auténtico.</li>
     </ol>
   </div>`;
+  if (porPagar.length && _info.pago_clabe) html += `<div class="bloque">
+    <h3>Pagar por transferencia</h3>
+    <div class="datos">
+      ${_info.pago_banco ? `<div class="dato"><small>Banco</small>${esc(_info.pago_banco)}</div>` : ''}
+      ${_info.pago_beneficiario ? `<div class="dato"><small>Beneficiario</small>${esc(_info.pago_beneficiario)}</div>` : ''}
+      <div class="dato full"><small>CLABE</small><span style="font-family:var(--mono);font-size:1rem;font-weight:700;letter-spacing:.04em">${esc(_info.pago_clabe)}</span>
+        <button class="link" type="button" onclick="copiarTexto(${esc(JSON.stringify(_info.pago_clabe))}, 'CLABE copiada')">Copiar</button></div>
+    </div>
+    <ol class="pasos" style="margin-top:.8rem">
+      <li><span>Haz una transferencia por cada infracción, por el monto que le corresponde hoy:${porPagar.map((r, i) => ` <strong style="font-family:var(--mono);white-space:nowrap">${esc(r.folio || '—')}</strong> ${montoFmt(pl[i].hoy)}`).join(' ·')}.</span></li>
+      <li><span>Escribe el <strong>folio</strong> de la boleta como referencia o concepto.</span></li>
+      <li><span>Envía tu comprobante a ${_info.correo ? `<a href="mailto:${esc(_info.correo)}">${esc(_info.correo)}</a>` : 'la Dirección de Tránsito'}. La Tesorería registra el pago cuando confirma el depósito y aquí aparecerá como pagada.</span></li>
+    </ol>
+    <p style="margin-top:.6rem">El descuento se respeta con la fecha de tu transferencia.</p>
+  </div>`;
   html += `<div class="bloque">
     <h3>¿No estás de acuerdo con la infracción?</h3>
     <p>${esc(_info.leyenda_recurso || 'Contra la boleta procede el recurso de revocación en los términos de la legislación aplicable. Acude a la Dirección de Tránsito para orientarte.')}</p>
@@ -441,6 +459,10 @@ function infCard(r) {
       </div>
     </details>
   </article>`;
+}
+
+function copiarTexto(txt, aviso) {
+  navigator.clipboard?.writeText(txt).then(() => showToast(aviso)).catch(() => showToast(txt));
 }
 
 function copiarFolio(folio) {

@@ -1765,10 +1765,14 @@ async function loadConfig() {
   if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
   if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
   if($('cfg-recurso'))        $('cfg-recurso').value        = data.leyenda_recurso || '';
+  if($('cfg-pago-banco'))     $('cfg-pago-banco').value     = data.pago_banco || '';
+  if($('cfg-pago-clabe'))     $('cfg-pago-clabe').value     = data.pago_clabe || '';
+  if($('cfg-pago-beneficiario')) $('cfg-pago-beneficiario').value = data.pago_beneficiario || '';
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
     $('cfg-tipos-extra').value = Array.isArray(extras) ? extras.join('\n') : '';
   }
+  if (_rol === 'admin') renderRespaldos();
 }
 
 async function saveConfig() {
@@ -1792,11 +1796,49 @@ async function saveConfig() {
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
+  if ($('cfg-pago-clabe')) {
+    const clabe = $('cfg-pago-clabe').value.replace(/\s/g, '');
+    if (clabe && !/^\d{18}$/.test(clabe)) { alert('La CLABE debe tener 18 dígitos.'); return; }
+    payload.pago_clabe = clabe;
+    payload.pago_banco = $('cfg-pago-banco').value.trim();
+    payload.pago_beneficiario = $('cfg-pago-beneficiario').value.trim();
+  }
   const { error } = await _sb.from('configuracion').upsert(payload, { onConflict:'id' });
   if (error) { alert('Error guardando configuración: '+error.message); return; }
   _cachedConfig = { ...(_cachedConfig||{}), ...payload };
   await logActivity('config', `Configuración del sistema actualizada por ${_session.name}`);
   showToast('Configuración guardada correctamente');
+}
+
+// ── Respaldos diarios (mejoras.sql + función tareas-diarias) ─────
+async function renderRespaldos() {
+  const cont = $('respaldos-lista'); if (!cont) return;
+  cont.innerHTML = '<div style="font-size:.8rem;color:var(--muted)">Cargando…</div>';
+  const { data, error } = await _sb.storage.from('respaldos').list('', { limit: 60, sortBy: { column: 'name', order: 'desc' } });
+  if (error) { cont.innerHTML = `<div style="font-size:.8rem;color:var(--red)">${esc(error.message)}</div>`; return; }
+  const archivos = (data || []).filter(f => /^\d{4}-\d{2}-\d{2}/.test(f.name));
+  cont.innerHTML = archivos.length ? `<table><thead><tr><th>Día</th><th>Tamaño</th><th></th></tr></thead><tbody>${archivos.map(f => `<tr>
+      <td>${esc(fmtDateShort(f.name.slice(0, 10) + 'T12:00:00'))}</td>
+      <td>${((f.metadata?.size || 0) / 1024).toFixed(0)} KB</td>
+      <td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="descargarRespaldo(${esc(JSON.stringify(f.name))})">Descargar</button></td>
+    </tr>`).join('')}</tbody></table>`
+    : '<div style="font-size:.8rem;color:var(--muted)">Todavía no hay respaldos. El primero se genera esta madrugada o con “Respaldar ahora”.</div>';
+}
+async function descargarRespaldo(nombre) {
+  const { data, error } = await _sb.storage.from('respaldos').createSignedUrl(nombre, 120, { download: true });
+  if (error) { alert('No se pudo descargar: ' + error.message); return; }
+  window.location.href = data.signedUrl;
+}
+async function respaldarAhora() {
+  const btn = $('btn-respaldar'); if (btn) { btn.disabled = true; btn.textContent = 'Respaldando…'; }
+  try {
+    const { data, error } = await _sb.functions.invoke('tareas-diarias', { body: { solo: 'respaldo' } });
+    if (error) throw error;
+    if (data?.respaldo?.error) throw new Error(data.respaldo.error);
+    showToast(`Respaldo listo: ${data.respaldo.filas} registros`);
+    renderRespaldos();
+  } catch (e) { alert('No se pudo respaldar: ' + (e.message || e)); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Respaldar ahora'; } }
 }
 
 // ── Ticket de infracción ──────────────────────────────────
@@ -2706,6 +2748,7 @@ async function renderPendientesTable() {
     if (periodoVal === 'hoy') q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
     else if (desde) q = q.gte('fecha', desde);
   }
+  await Promise.all([cargarCatalogo(), asegurarConfig()]);
 
   if (_pendSort==='fecha_asc')   q = q.order('fecha',{ascending:true});
   else if (_pendSort==='monto_desc') q = q.order('monto',{ascending:false});
@@ -2713,7 +2756,12 @@ async function renderPendientesTable() {
 
   const { data, error } = await q;
   if (error) { tbody.innerHTML=`<tr><td colspan="8" style="color:red">${esc(error.message)}</td></tr>`; return; }
-  const all = data||[];
+  let all = data||[];
+  // Recordatorio: descuento que vence en 2 días o menos (sin graves, que no tienen)
+  if (periodoVal === 'desc_vence') all = all.filter(r => {
+    const t = !catalogoPorNumero(r.catalogo_numero)?.grave && descuentoVigente(r, _cachedConfig);
+    return t && (new Date(r.fecha).getTime() + t.dias * 86400000 - Date.now()) <= 2 * 86400000;
+  });
 
   const badge = $('badge-pendientes');
   if (badge) { badge.textContent = all.length; badge.style.display = all.length ? 'inline' : 'none'; }
@@ -2727,8 +2775,6 @@ async function renderPendientesTable() {
   if (_pendPage>pages) _pendPage=pages;
   const rows = all.slice((_pendPage-1)*PEND_PAGE_SIZE, _pendPage*PEND_PAGE_SIZE);
   const today = Date.now();
-
-  await Promise.all([cargarCatalogo(), asegurarConfig()]);
 
   tbody.innerHTML = rows.length ? rows.map(r=>{
     const dias = Math.floor((today - new Date(r.fecha).getTime())/86400000);
@@ -2757,7 +2803,8 @@ async function renderPendientesTable() {
         ${r.telefono?`<button class="btn-wa-icon" onclick="event.stopPropagation();_waFromBtn(this)" title="WhatsApp"
           data-tel="${r.telefono.replace(/\D/g,'')}" data-nombre="${esc(r.infractor)}"
           data-folio="${esc(r.folio||'')}" data-placa="${esc(r.placa||'')}" data-tipo="${esc(r.tipo)}"
-          data-monto="${r.monto||0}" data-ubicacion="" data-fecha="${r.fecha||''}">
+          data-monto="${r.monto||0}" data-ubicacion="" data-fecha="${r.fecha||''}"
+          data-desc-pct="${descPct}" data-desc-hasta="${descOk ? new Date(new Date(r.fecha).getTime() + tramo.dias*86400000).toISOString() : ''}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#128C7E" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         </button>`:''}
       </td>
@@ -3059,7 +3106,11 @@ async function handleQRResult(data) {
   if (!infId) { showToast('QR no reconocido o la infracción no existe'); return; }
   const { data: inf } = await _sb.from('infracciones').select('estado').eq('id', infId).single();
   if (!inf) { showToast('Infracción no encontrada'); return; }
-  if (inf.estado !== 'pendiente') { showToast('Esta infracción ya fue pagada o está vencida'); return; }
+  // Las vencidas también se cobran; solo se rechazan las pagadas, canceladas o en impugnación
+  if (inf.estado !== 'pendiente' && inf.estado !== 'vencida') {
+    showToast(inf.estado === 'pagada' ? 'Esta infracción ya está pagada' : `Esta infracción está ${inf.estado}: no se puede cobrar`);
+    return;
+  }
   openRegistrarPago(infId);
 }
 
@@ -3415,7 +3466,7 @@ async function restablecerContrasena(id, nombre) {
   const { data, error } = await _sb.rpc('admin_restablecer_contrasena', { p_id: id });
   if (error) { alert('Error: '+error.message); return; }
   await logActivity('usuario', `Contraseña restablecida para ${nombre}`);
-  prompt(`Contraseña temporal de ${nombre}. Entrégasela en persona:`, data);
+  prompt(`Contraseña temporal de ${nombre}. Entrégasela en persona y pídele que la cambie en "Cambiar mi contraseña":`, data);
 }
 
 async function toggleUsuario(id, activo) {
@@ -3967,7 +4018,10 @@ function notificarWhatsApp(data) {
     `💰 Monto: $${Number(data.monto).toLocaleString('es-MX')} MXN\n` +
     `📍 Lugar: ${data.ubicacion||'—'}\n` +
     `📅 Fecha: ${fecha}\n\n` +
-    `Consulte y pague en: ${window.location.origin}/consulta\n` +
+    (data.descPct && data.descHasta
+      ? `⏰ Si paga a más tardar el ${new Date(data.descHasta).toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long'})} paga $${Math.round(Number(data.monto)*(1-data.descPct/100)).toLocaleString('es-MX')} MXN (${data.descPct}% de descuento).\n\n`
+      : '') +
+    `Consulte y pague en: ${window.location.origin}/consulta?q=${encodeURIComponent(data.folio||data.placa||'')}\n` +
     `Dirección de Tránsito y Movilidad Municipal.`;
   window.open(`https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
   const fmt10 = tel.replace(/(\d{3})(\d{3})(\d{4})/,'$1-$2-$3');
@@ -3977,7 +4031,8 @@ function notificarWhatsApp(data) {
 function _waFromBtn(btn) {
   const d = btn.dataset;
   notificarWhatsApp({ telefono:d.tel, infractor:d.nombre, folio:d.folio,
-    placa:d.placa, tipo:d.tipo, monto:d.monto, ubicacion:d.ubicacion, fecha:d.fecha });
+    placa:d.placa, tipo:d.tipo, monto:d.monto, ubicacion:d.ubicacion, fecha:d.fecha,
+    descPct:Number(d.descPct)||0, descHasta:d.descHasta||'' });
 }
 
 // ══════════════════════════════════════════════════════════
@@ -4007,6 +4062,7 @@ function _bitDetalle(e) {
 
 async function renderBitacora(mas) {
   const tbody = $('bitacora-table'); if (!tbody) return;
+  if (!mas && _rol === 'admin') renderErroresApp();
   if (!mas) { _bitDesde = 0; tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>'; }
   const PAG = 100;
   let q = _sb.from('auditoria').select('*').order('ts', { ascending: false }).range(_bitDesde, _bitDesde + PAG - 1);
@@ -4037,6 +4093,22 @@ async function renderBitacora(mas) {
   const btnMas = $('bit-mas'); if (btnMas) btnMas.style.display = (data || []).length === PAG ? '' : 'none';
 }
 
+// Errores que reportó la app en los navegadores del personal (solo el Director)
+async function renderErroresApp() {
+  const card = $('errores-card'), tbody = $('errores-table'); if (!card || !tbody) return;
+  card.style.display = '';
+  const { data, error } = await _sb.from('errores_app').select('*').order('created_at', { ascending: false }).limit(50);
+  if (error) { tbody.innerHTML = `<tr><td colspan="4" style="color:red">${esc(error.message)}</td></tr>`; return; }
+  const n = $('errores-count'); if (n) n.textContent = (data || []).length ? `${data.length} recientes` : '';
+  tbody.innerHTML = (data || []).length ? data.map(e => `<tr>
+      <td style="white-space:nowrap">${esc(new Date(e.created_at).toLocaleString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }))}</td>
+      <td style="font-weight:600">${esc(e.usuario || '—')}</td>
+      <td style="font-size:.78rem">${esc(/^view-[a-z]+$/.test(e.pagina || '') ? (document.querySelector(`[data-view="${e.pagina.slice(5)}"]`)?.textContent.replace(/\d+/g, '').trim() || e.pagina.slice(5)) : (e.pagina || '—'))}</td>
+      <td style="font-size:.78rem;line-height:1.5"><div style="font-weight:600">${esc(e.mensaje)}</div>
+        ${e.detalle ? `<details><summary style="cursor:pointer;color:var(--muted)">Detalle</summary><pre style="white-space:pre-wrap;font-size:.7rem;margin:.3rem 0 0">${esc(e.detalle)}</pre><div style="color:var(--muted);font-size:.7rem">${esc(e.navegador)}</div></details>` : ''}</td>
+    </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin errores registrados. Todo en orden.</td></tr>';
+}
+
 // Historial de un registro dentro de su detalle (solo lo ven mandos: RLS).
 async function cargarHistorial(tabla, id, cont) {
   if (!cont || (_rol !== 'admin' && _rol !== 'supervisor')) return;
@@ -4050,6 +4122,28 @@ async function cargarHistorial(tabla, id, cont) {
     </div>`).join('')}
   </div>`;
 }
+
+// ── Registro de errores (mejoras.sql: errores_app) ────────
+// Se anotan hasta 5 errores distintos por sesión para no llenar la tabla.
+const _erroresVistos = new Set();
+function reportarError(mensaje, detalle) {
+  try {
+    if (typeof _sb === 'undefined' || !_sb || !_rol) return;
+    mensaje = String(mensaje || 'Error desconocido').slice(0, 1000);
+    if (_erroresVistos.has(mensaje) || _erroresVistos.size >= 5) return;
+    if (/ResizeObserver loop|Script error\.?$/.test(mensaje)) return;
+    _erroresVistos.add(mensaje);
+    _sb.from('errores_app').insert({
+      pagina: (document.querySelector('.view.active')?.id || location.pathname).slice(0, 300),
+      mensaje, detalle: String(detalle || '').slice(0, 4000), navegador: navigator.userAgent.slice(0, 300),
+    }).then(() => {}, () => {});
+  } catch (_) { /* nunca romper la app por reportar */ }
+}
+window.addEventListener('error', e => reportarError(e.message, `${e.filename || ''}:${e.lineno || ''}:${e.colno || ''}\n${e.error?.stack || ''}`));
+window.addEventListener('unhandledrejection', e => {
+  const r = e.reason;
+  reportarError(r?.message || String(r), r?.stack || '');
+});
 
 // ── Toast ─────────────────────────────────────────────────
 function showToast(msg) {
@@ -4111,6 +4205,34 @@ function initUI() {
       closeModal('modal-search');
     }
   });
+}
+
+// ── Cambiar mi contraseña ─────────────────────────────────
+function openCambiarContrasena() {
+  ['pwd-actual','pwd-nueva','pwd-confirma'].forEach(id => { if ($(id)) $(id).value = ''; });
+  openModal('modal-contrasena');
+  setTimeout(() => $('pwd-actual')?.focus(), 50);
+}
+
+async function cambiarContrasena() {
+  const actual = $('pwd-actual').value, nueva = $('pwd-nueva').value, confirma = $('pwd-confirma').value;
+  if (!actual || !nueva) { alert('Escribe tu contraseña actual y la nueva'); return; }
+  if (nueva.length < 6) { alert('La nueva contraseña debe tener al menos 6 caracteres'); return; }
+  if (nueva !== confirma) { alert('La confirmación no coincide con la nueva contraseña'); return; }
+  if (nueva === actual) { alert('La nueva contraseña debe ser distinta de la actual'); return; }
+  const btn = $('pwd-submit'); if (btn) btn.disabled = true;
+  try {
+    // Confirmar la contraseña actual antes de cambiarla
+    const { data: { session } } = await _sb.auth.getSession();
+    const email = session?.user?.email;
+    const { error: e1 } = await _sb.auth.signInWithPassword({ email, password: actual });
+    if (e1) { alert('La contraseña actual no es correcta'); return; }
+    const { error: e2 } = await _sb.auth.updateUser({ password: nueva });
+    if (e2) { alert('No se pudo cambiar: ' + e2.message); return; }
+    await logActivity('usuario', `${_session?.name || 'Usuario'} cambió su contraseña`);
+    closeModal('modal-contrasena');
+    showToast('Contraseña actualizada');
+  } finally { if (btn) btn.disabled = false; }
 }
 
 async function logout() {
