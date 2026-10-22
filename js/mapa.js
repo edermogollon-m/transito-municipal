@@ -17,13 +17,16 @@ async function renderMapa() {
   }
   renderZonas();
 
-  let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,estado,fecha,lat,lng').not('lat','is',null).not('lng','is',null);
-  if (estadoFil) q = q.eq('estado', estadoFil);
-  if (mesFil) {
-    const [y, m] = mesFil.split('-').map(Number);
-    q = q.gte('fecha', new Date(y, m - 1, 1).toISOString()).lt('fecha', new Date(y, m, 1).toISOString());
-  }
-  const { data } = await q;
+  const consulta = () => {
+    let q = _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,estado,fecha,lat,lng').not('lat','is',null).not('lng','is',null);
+    if (estadoFil) q = q.eq('estado', estadoFil);
+    if (mesFil) {
+      const [y, m] = mesFil.split('-').map(Number);
+      q = q.gte('fecha', new Date(y, m - 1, 1).toISOString()).lt('fecha', new Date(y, m, 1).toISOString());
+    }
+    return q;
+  };
+  const { data } = await todas(consulta);
   const franja = (($('mapa-hora')||{}).value || '').split('-').map(Number);
   const infs = (data||[]).filter(r => r.lat && r.lng && (franja.length < 2 || (new Date(r.fecha).getHours() >= franja[0] && new Date(r.fecha).getHours() < franja[1])));
 
@@ -83,8 +86,8 @@ async function renderZonas() {
   const dias = Number(($('zonas-periodo')||{}).value || 90);
   const desde = new Date(Date.now() - dias * 86400000).toISOString();
   const [{ data: infs }, { data: accs }] = await Promise.all([
-    fuente === 'accidentes' ? { data: [] } : _sb.from('infracciones').select('fecha,ubicacion').gte('fecha', desde).neq('estado', 'cancelada').limit(5000),
-    fuente === 'infracciones' ? { data: [] } : _sb.from('accidentes').select('fecha,ubicacion').gte('fecha', desde).limit(5000),
+    fuente === 'accidentes' ? { data: [] } : todas(() => _sb.from('infracciones').select('id,fecha,ubicacion').gte('fecha', desde).neq('estado', 'cancelada')),
+    fuente === 'infracciones' ? { data: [] } : todas(() => _sb.from('accidentes').select('id,fecha,ubicacion').gte('fecha', desde)),
   ]);
   const celdas = Array.from({ length: 7 }, () => Array(24).fill(0));
   const calles = {};

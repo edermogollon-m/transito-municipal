@@ -12,9 +12,12 @@ async function renderRendimiento() {
     desde = d.toISOString().slice(0,10);
   }
 
-  let q = _sb.from('infracciones').select('oficial,monto,estado,fecha');
-  if (desde) q = q.gte('fecha', desde);
-  const { data } = await q;
+  const consulta = () => {
+    let q = _sb.from('infracciones').select('oficial,monto,estado,fecha');
+    if (desde) q = q.gte('fecha', desde);
+    return q;
+  };
+  const { data } = await todas(consulta);
   const all = data||[];
 
   // Group by oficial
@@ -90,10 +93,10 @@ async function runGlobalSearch() {
     res.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Buscando…</div>';
 
     const [{ data: infs }, { data: vehs }, { data: pers }, { data: gru }] = await Promise.all([
-      _sb.from('infracciones').select('id,folio,placa,infractor,tipo,estado,monto').or(`folio.ilike.%${q}%,placa.ilike.%${q}%,infractor.ilike.%${q}%`).limit(5),
-      _sb.from('vehiculos').select('id,placa,propietario,marca,modelo,estado').or(`placa.ilike.%${q}%,propietario.ilike.%${q}%`).limit(4),
-      _sb.from('permisos').select('id,num,titular,tipo,placa,estado').or(`num.ilike.%${q}%,titular.ilike.%${q}%,placa.ilike.%${q}%`).limit(4),
-      _sb.from('grua').select('id,folio,placa,propietario,motivo,estado').or(`folio.ilike.%${q}%,placa.ilike.%${q}%,propietario.ilike.%${q}%`).limit(3),
+      _sb.from('infracciones').select('id,folio,placa,infractor,tipo,estado,monto').or(orBuscar(['folio', 'placa', 'infractor'], q)).limit(5),
+      _sb.from('vehiculos').select('id,placa,propietario,marca,modelo,estado').or(orBuscar(['placa', 'propietario'], q)).limit(4),
+      _sb.from('permisos').select('id,num,titular,tipo,placa,estado').or(orBuscar(['num', 'titular', 'placa'], q)).limit(4),
+      _sb.from('grua').select('id,folio,placa,propietario,motivo,estado').or(orBuscar(['folio', 'placa', 'propietario'], q)).limit(3),
     ]);
 
     const sections = [];
@@ -149,7 +152,7 @@ async function renderCalendario() {
   const desde = new Date(y, m, 1).toISOString().slice(0,10);
   const hasta  = new Date(y, m+1, 0).toISOString().slice(0,10);
 
-  const { data } = await _sb.from('infracciones').select('fecha,estado,monto').gte('fecha', desde+'T00:00:00').lte('fecha', hasta+'T23:59:59');
+  const { data } = await todas(() => _sb.from('infracciones').select('id,fecha,estado,monto').gte('fecha', desde+'T00:00:00').lte('fecha', hasta+'T23:59:59'));
   const byDay = {};
   (data||[]).forEach(r => {
     const day = r.fecha.slice(8,10);

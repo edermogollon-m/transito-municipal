@@ -96,6 +96,8 @@ TABLES.alertas_placa = [];
 TABLES.avisos_viales = [];
 const VAPID_PRUEBA = 'B' + 'A'.repeat(86);
 let placasPush = [];
+let maxFilas = 1000;   // como Supabase: máximo de filas por consulta
+const restLog = [];
 const alertas = [];   // alertas de placa que la app registró
 
 const LIBS_DIR = process.env.LIBS_DIR;
@@ -257,6 +259,11 @@ async function newPage(browser, { dbDown = false } = {}) {
       if (!rows.length) return r.fulfill({ status: 406, headers: json, body: JSON.stringify({ code: 'PGRST116', message: 'no rows' }) });
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(rows[0]) });
     }
+    if (req.method() === 'GET') {
+      restLog.push(table + decodeURIComponent(u.search.replace(/\+/g, ' ')));
+      const off = Number(u.searchParams.get('offset') || 0);
+      rows = rows.slice(off, off + Math.min(Number(u.searchParams.get('limit') || maxFilas), maxFilas));
+    }
     r.fulfill({ status: 200, headers: { ...json, 'Content-Range': `0-${rows.length}/${rows.length}` }, body: JSON.stringify(rows) });
   });
   return { page, errors };
@@ -289,6 +296,23 @@ function check(name, errors, extra) {
       await page.waitForTimeout(500);
       check('módulo ' + v, errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
     }
+    // Más registros que el máximo por consulta: la lista y el panel los traen todos, por lotes
+    maxFilas = 2; restLog.length = 0;
+    await page.evaluate(() => { FILAS_POR_CONSULTA = 2; navigate('infracciones'); limpiarFiltrosInf(); }); await page.waitForTimeout(800);
+    const totalInf = await page.evaluate(() => $('inf-count-label').textContent);
+    const pedidoLista = restLog.filter(x => x.startsWith('infracciones?') && x.includes('offset=')).pop() || '';
+    maxFilas = 1000; await page.evaluate(() => { FILAS_POR_CONSULTA = 1000; });
+    check('más de 1,000 boletas: la lista las trae todas y sin fotos', errors,
+      !totalInf.startsWith(TABLES.infracciones.length + ' ') ? `dice "${totalInf}" con ${TABLES.infracciones.length} boletas`
+      : /select=\*|fotos|firma/.test(pedidoLista) ? 'la lista pide la boleta completa: ' + pedidoLista : null);
+    // Buscar con coma o paréntesis no rompe la consulta
+    const filtro = await page.evaluate(() => orBuscar(['placa', 'folio'], 'Pérez, Juan (2)'));
+    await page.evaluate(() => { $('inf-search').value = 'Pérez, Juan'; filterInfracciones(); }); await page.waitForTimeout(500);
+    const pedidoBusca = restLog.filter(x => x.startsWith('infracciones?') && x.includes('ilike')).pop() || '';
+    check('búsqueda con coma', errors, filtro !== 'placa.ilike."%Pérez, Juan (2)%",folio.ilike."%Pérez, Juan (2)%"' ? 'filtro: ' + filtro
+      : !pedidoBusca.includes('placa.ilike."%Pérez, Juan%"') ? 'consulta: ' + pedidoBusca : null);
+    await page.evaluate(() => limpiarFiltrosInf());
+
     // Boleta nueva con su artículo del reglamento (se reusa abajo para la prueba sin señal)
     await page.evaluate(() => openNewInfraccion());
     await page.waitForTimeout(600);

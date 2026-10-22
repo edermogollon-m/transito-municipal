@@ -12,11 +12,14 @@ async function renderPermisos() {
   if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted)">Cargando…</td></tr>`;
 
-  let q = _sb.from('permisos').select('*').order('vencimiento',{ascending:true});
-  if (_perEstado) q = q.eq('estado', _perEstado);
-  if (_perTipo)   q = q.eq('tipo', _perTipo);
-  if (_perSearch) q = q.or(`titular.ilike.%${_perSearch}%,placa.ilike.%${_perSearch}%,num.ilike.%${_perSearch}%,ruta.ilike.%${_perSearch}%`);
-  const { data, error } = await q;
+  const consulta = () => {
+    let q = _sb.from('permisos').select('*').order('vencimiento',{ascending:true});
+    if (_perEstado) q = q.eq('estado', _perEstado);
+    if (_perTipo)   q = q.eq('tipo', _perTipo);
+    if (_perSearch) q = q.or(orBuscar(['titular', 'placa', 'num', 'ruta'], _perSearch));
+    return q;
+  };
+  const { data, error } = await todas(consulta);
   if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${esc(error.message)}</td></tr>`; return; }
 
   const all = data || [];

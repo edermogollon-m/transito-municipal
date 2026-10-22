@@ -25,9 +25,9 @@ async function renderDashboard() {
     { data: gruaRet },
     { data: turnosAct }
   ] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial,capturo_auth'),
-    _sb.from('pagos').select('monto_final,created_at').gte('created_at', mesInicio).lt('created_at', mesFin),
-    _sb.from('pagos').select('monto_final').gte('created_at', pmInicio).lt('created_at', pmCorte),
+    todas(() => _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial,capturo_auth')),
+    todas(() => _sb.from('pagos').select('id,monto_final,created_at').gte('created_at', mesInicio).lt('created_at', mesFin)),
+    todas(() => _sb.from('pagos').select('id,monto_final').gte('created_at', pmInicio).lt('created_at', pmCorte)),
     _sb.from('grua').select('id').eq('estado','retenido'),
     _sb.from('turnos').select('id').eq('estado','activo')
   ]);
@@ -169,9 +169,9 @@ async function renderAlertas() {
     { data: accProceso }
   ] = await Promise.all([
     _sb.from('permisos').select('id,num,titular,vencimiento').in('estado',['vigente','por-vencer']).lte('vencimiento', en30).gte('vencimiento', hoy).order('vencimiento'),
-    _sb.from('infracciones').select('id,folio,placa').eq('estado','pendiente').lt('fecha', hace25).order('fecha'),
-    _sb.from('grua').select('id').eq('estado','retenido').lte('fecha', hace15),
-    _sb.from('infracciones').select('id').eq('estado','impugnada').lte('fecha', hace7),
+    todas(() => _sb.from('infracciones').select('id,folio,placa').eq('estado','pendiente').lt('fecha', hace25).order('fecha')),
+    todas(() => _sb.from('grua').select('id').eq('estado','retenido').lte('fecha', hace15)),
+    todas(() => _sb.from('infracciones').select('id').eq('estado','impugnada').lte('fecha', hace7)),
     _sb.from('accidentes').select('id').eq('estado','en_proceso').limit(99)
   ]);
 

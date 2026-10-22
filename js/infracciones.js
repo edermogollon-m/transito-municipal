@@ -35,28 +35,33 @@ async function renderInfracciones() {
       '<option value="Otro">Otro</option>';
   }
 
-  let q = _sb.from('infracciones').select('*');
-  if (_infMias) { await _authListo; q = q.or(filtroMios()); }
-  if (_infEstado)  q = q.eq('estado', _infEstado);
-  if (_infTipo)    q = q.eq('tipo', _infTipo);
-  if (_infSearch)  q = q.or(`placa.ilike.%${_infSearch}%,infractor.ilike.%${_infSearch}%,folio.ilike.%${_infSearch}%`);
-  if (_infPeriodo) {
-    const desde = _periodoRango(_infPeriodo);
-    if (_infPeriodo === 'hoy') {
-      q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
-    } else if (desde) {
-      q = q.gte('fecha', desde);
+  // Solo las columnas de la tabla: la boleta completa (fotos, firmas) se pide al abrir el detalle.
+  if (_infMias) await _authListo;
+  const consulta = () => {
+    let q = _sb.from('infracciones').select('id,folio,fecha,placa,infractor,tipo,monto,estado,oficial,telefono,ubicacion');
+    if (_infMias) q = q.or(filtroMios());
+    if (_infEstado)  q = q.eq('estado', _infEstado);
+    if (_infTipo)    q = q.eq('tipo', _infTipo);
+    if (_infSearch)  q = q.or(orBuscar(['placa', 'infractor', 'folio'], _infSearch));
+    if (_infPeriodo) {
+      const desde = _periodoRango(_infPeriodo);
+      if (_infPeriodo === 'hoy') {
+        q = q.gte('fecha', desde+'T00:00:00').lte('fecha', desde+'T23:59:59');
+      } else if (desde) {
+        q = q.gte('fecha', desde);
+      }
     }
-  }
 
-  // Sort
-  const [sortCol, sortDir] = _infSort.split('_');
-  const asc = sortDir === 'asc';
-  if (sortCol === 'monto') q = q.order('monto', {ascending: asc});
-  else if (sortCol === 'folio') q = q.order('id', {ascending: asc});   // los folios son aleatorios (folios.sql)
-  else q = q.order('fecha', {ascending: asc});
+    // Sort
+    const [sortCol, sortDir] = _infSort.split('_');
+    const asc = sortDir === 'asc';
+    if (sortCol === 'monto') q = q.order('monto', {ascending: asc});
+    else if (sortCol === 'folio') q = q.order('id', {ascending: asc});   // los folios son aleatorios (folios.sql)
+    else q = q.order('fecha', {ascending: asc});
+    return q;
+  };
 
-  const { data, error } = await q;
+  const { data, error } = await todas(consulta);
   if (error) { tbody.innerHTML = `<tr><td colspan="9" style="color:red">${esc(error.message)}</td></tr>`; return; }
 
   const all = data || [];
