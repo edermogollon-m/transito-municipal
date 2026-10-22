@@ -117,6 +117,10 @@ async function newPage(browser, { dbDown = false } = {}) {
       const paths = JSON.parse(req.postData() || '{}').paths || [];
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(paths.map(p => ({ path: p, signedURL: '/object/sign/evidencias/' + p + '?token=x', error: null }))) });
     }
+    if (u.pathname.startsWith('/storage/v1/object/list/')) {
+      const dia = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify([0, 1, 2].map(d => ({ name: dia(d) + '.json.gz', metadata: { size: 182000 + d * 900 } }))) });
+    }
     if (u.pathname.startsWith('/storage/v1/object/')) {
       storageUploads.push(u.pathname);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ Key: u.pathname.replace('/storage/v1/object/', '') }) });
