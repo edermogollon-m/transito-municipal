@@ -115,6 +115,39 @@
     .dash-saludo { font-size:1.15rem; font-weight:700; color:var(--ink); letter-spacing:-.01em; }
     .dash-hoy-items { display:flex; gap:.4rem 1.1rem; flex-wrap:wrap; font-size:.8rem; color:var(--muted); }
     .dash-hoy-items strong { color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums; }
+    /* Inicio según el rol (js/inicio.js) */
+    #inicio-rol { margin:0 0 1.1rem; }
+    .inicio { background:var(--white); border:1px solid var(--border); border-radius:14px; padding:1rem; display:flex; flex-direction:column; gap:.85rem; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+    .inicio-grande { display:flex; align-items:center; gap:1rem; width:100%; min-height:84px; padding:1rem 1.25rem; border:0; border-radius:12px; background:var(--ac); color:#fff; font:inherit; text-align:left; cursor:pointer; box-shadow:0 6px 18px -6px rgba(26,122,130,.55); transition:transform .1s, filter .15s; }
+    .inicio-grande:hover { filter:brightness(1.06); } .inicio-grande:active { transform:scale(.99); }
+    .inicio-grande svg { flex-shrink:0; width:44px; height:44px; padding:9px; border-radius:50%; background:rgba(255,255,255,.18); }
+    .inicio-grande span { font-size:1.3rem; font-weight:800; line-height:1.2; }
+    .inicio-grande small { display:block; font-size:.78rem; font-weight:500; opacity:.85; margin-top:.15rem; }
+    .inicio-grande.verde { background:var(--green); box-shadow:0 6px 18px -6px rgba(5,150,105,.5); }
+    .inicio-grande.azul { background:var(--blue); box-shadow:0 6px 18px -6px rgba(37,99,235,.45); }
+    .inicio-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.6rem; }
+    .inicio-stat { background:var(--stone); border-radius:10px; padding:.6rem .8rem; }
+    .inicio-stat b { display:block; font-size:1.25rem; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+    .inicio-stat span { font-size:.75rem; color:var(--muted); }
+    .inicio-botones { display:flex; flex-wrap:wrap; gap:.5rem; }
+    .inicio-botones .btn { flex:1 1 auto; justify-content:center; min-height:40px; }
+    .inicio-lista { display:flex; flex-direction:column; gap:.35rem; }
+    .inicio-lista-tit { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+    .inicio-item { display:grid; grid-template-columns:auto 1fr auto; gap:.75rem; align-items:center; width:100%; padding:.55rem .7rem; border:1px solid var(--border); border-radius:9px; background:var(--white); font:inherit; font-size:.8rem; color:var(--text); text-align:left; cursor:pointer; }
+    .inicio-item span:nth-child(2) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .inicio-item span:last-child { color:var(--muted); font-size:.74rem; white-space:nowrap; }
+    .inicio-item .urgente { color:var(--red)!important; font-weight:700; }
+    .inicio-item:hover { border-color:var(--ac); }
+    .inicio-tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.6rem; }
+    .inicio-tile { display:flex; flex-direction:column; align-items:flex-start; gap:.15rem; padding:.75rem .85rem; border:1px solid var(--border); border-radius:10px; background:var(--stone); font:inherit; text-align:left; cursor:pointer; }
+    .inicio-tile b { font-size:1.5rem; font-weight:800; color:var(--ink); line-height:1.1; font-variant-numeric:tabular-nums; }
+    .inicio-tile span { font-size:.76rem; color:var(--muted); line-height:1.35; }
+    .inicio-tile.alerta { border-color:#FECACA; background:#FEF2F2; } .inicio-tile.alerta b { color:#B91C1C; }
+    .inicio-tile:hover { border-color:var(--ac); }
+    .av-item { display:flex; gap:.75rem; align-items:flex-start; justify-content:space-between; padding:.65rem 0; border-bottom:1px solid var(--border); }
+    .av-item strong { font-size:.86rem; } .av-item p { font-size:.8rem; color:var(--text); margin-top:.15rem; line-height:1.45; }
+    .av-item small { display:block; font-size:.72rem; color:var(--muted); margin-top:.2rem; }
+    .av-vacio { font-size:.8rem; color:var(--muted); padding:.6rem 0; }
     .kpi-spark { display:flex; align-items:flex-end; gap:2px; height:28px; margin-top:auto; padding-top:.5rem; }
     .kpi-spark i { flex:1; min-width:2px; background:var(--border); border-radius:1px; }
     .kpi-spark i.hoy { background:var(--ac); }
@@ -634,6 +667,9 @@
           <div class="dash-saludo" id="dash-saludo">Panel general</div>
           <div class="dash-hoy-items" id="dash-hoy-items" aria-live="polite"></div>
         </div>
+
+        <!-- Inicio según el rol (js/inicio.js) -->
+        <div id="inicio-rol" hidden></div>
 
         <!-- Cifras principales -->
         <div class="dash-kpis">
@@ -1972,6 +2008,52 @@
   </div>
 </div>
 
+<!-- MODAL: Avisos viales del portal (js/inicio.js) -->
+<div class="modal-overlay" id="modal-avisos-viales">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Avisos viales del portal</div>
+      <button class="modal-close" onclick="closeModal('modal-avisos-viales')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div style="font-size:.78rem;color:var(--muted);line-height:1.5;margin-bottom:.8rem">Cierres de calles, desfiles, operativos o cambios de sentido. Aparecen en la consulta ciudadana y llegan al celular de quien activó avisos.</div>
+    <form onsubmit="event.preventDefault();publicarAvisoVial()">
+      <div class="form-field"><label for="av-titulo">Título</label><input id="av-titulo" class="form-input" type="text" maxlength="120" placeholder="Ej. Cierre de la calle Comonfort por desfile"/></div>
+      <div class="form-field"><label for="av-texto">Detalle <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><textarea id="av-texto" class="form-input" rows="2" maxlength="600" placeholder="Horario, calles alternas, qué hacer"></textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label for="av-desde">Desde</label><input id="av-desde" class="form-input" type="date"/></div>
+        <div class="form-field"><label for="av-hasta">Hasta <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><input id="av-hasta" class="form-input" type="date"/></div>
+      </div>
+      <div class="modal-actions" style="margin-top:0"><button type="submit" class="btn btn-primary">Publicar aviso</button></div>
+    </form>
+    <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:1rem">Publicados</div>
+    <div id="av-lista"></div>
+  </div>
+</div>
+
+<!-- MODAL: Enviar recibo digital (js/recibo.js) -->
+<div class="modal-overlay" id="modal-recibo">
+  <div class="modal" style="width:460px">
+    <div class="modal-header">
+      <div class="modal-title">Enviar recibo digital</div>
+      <button class="modal-close" onclick="closeModal('modal-recibo')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="rec-resumen" style="font-size:.84rem;background:var(--green-bg);color:var(--green);border-radius:8px;padding:.6rem .8rem;margin-bottom:.9rem"></div>
+    <div class="form-field"><label for="rec-telefono">WhatsApp del ciudadano</label>
+      <div style="display:flex;gap:.5rem"><input id="rec-telefono" class="form-input" type="tel" inputmode="numeric" maxlength="14" placeholder="10 dígitos" style="flex:1"/>
+      <button type="button" class="btn btn-sm" style="background:#128C7E;color:#fff;border:none;white-space:nowrap" onclick="reciboWhatsApp()">Enviar por WhatsApp</button></div></div>
+    <div class="form-field"><label for="rec-correo">Correo del ciudadano</label>
+      <div style="display:flex;gap:.5rem"><input id="rec-correo" class="form-input" type="email" placeholder="correo@ejemplo.com" style="flex:1"/>
+      <button type="button" id="rec-btn-correo" class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="reciboCorreo()">Enviar por correo</button></div></div>
+    <div id="rec-estado" role="status" style="font-size:.78rem;color:var(--muted);min-height:1.1rem;margin-bottom:.4rem"></div>
+    <div style="font-size:.74rem;color:var(--muted);line-height:1.45">El ciudadano recibe un enlace con su recibo y un código que confirma que es auténtico. No hace falta imprimirlo.</div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" onclick="reciboCopiarEnlace()">Copiar enlace</button>
+      <button type="button" class="btn btn-ghost" onclick="_reciboPago && printReciboPago(_reciboPago.id)">Imprimir</button>
+      <button type="button" class="btn btn-primary" onclick="closeModal('modal-recibo')">Listo</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Buscar infracción para pago -->
 <div class="modal-overlay" id="modal-buscar-pago">
   <div class="modal" style="width:580px">
@@ -2500,6 +2582,8 @@
 <script src="js/extras.js"></script>
 <script src="js/institucional.js"></script>
 <script src="js/alertas.js"></script>
+<script src="js/recibo.js"></script>
+<script src="js/inicio.js"></script>
 <script src="js/arranque.js"></script>
 </body>
 </html>

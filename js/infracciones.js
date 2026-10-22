@@ -333,7 +333,8 @@ async function submitInfraccion(e) {
       return;
     }
     _boletaGrupo = null;
-    printTicket80(data.id);
+    // Conductor ausente: aviso corto con QR para dejar en el parabrisas
+    if (payload.infractor_ausente) printParabrisas(data.id); else printTicket80(data.id);
     if (payload.telefono) notificarWhatsApp(data);
   }
 

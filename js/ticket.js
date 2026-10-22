@@ -161,18 +161,119 @@ function escposTicket(r, cfg, ancho = 48) {
   parrafo('Firma del infractor: ' + (r.firma_infractor ? 'capturada en el dispositivo' : r.firma_negada ? 'se nego a firmar' : '____________________'));
   raya(); parrafo(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocacion.');
   const url = asciiTicket(urlVerificacion(r.token_verificacion));
-  if (url) {
-    centro(); ln('Verifique su boleta:');
-    const datos = [...url].map(c => c.charCodeAt(0)), n = datos.length + 3;
-    cmd(0x1D, 0x28, 0x6B, 4, 0, 0x31, 0x41, 0x32, 0);          // QR modelo 2
-    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x43, ancho >= 48 ? 6 : 5); // tamaño de módulo
-    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x45, 0x31);              // corrección M
-    cmd(0x1D, 0x28, 0x6B, n & 0xFF, n >> 8, 0x31, 0x50, 0x30, ...datos);
-    cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x51, 0x30);              // imprimir
-    ln(); izq();
-  }
+  if (url) { centro(); ln('Verifique su boleta:'); escposQR(cmd, url, ancho >= 48 ? 6 : 5); ln(); izq(); }
   cmd(0x1B, 0x64, 3, 0x1D, 0x56, 0x42, 0);                       // avanzar y cortar
   return new Uint8Array(b);
+}
+
+function escposQR(cmd, url, modulo) {
+  const datos = [...url].map(c => c.charCodeAt(0)), n = datos.length + 3;
+  cmd(0x1D, 0x28, 0x6B, 4, 0, 0x31, 0x41, 0x32, 0);          // QR modelo 2
+  cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x43, modulo);           // tamaño de módulo
+  cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x45, 0x31);             // corrección M
+  cmd(0x1D, 0x28, 0x6B, n & 0xFF, n >> 8, 0x31, 0x50, 0x30, ...datos);
+  cmd(0x1D, 0x28, 0x6B, 3, 0, 0x31, 0x51, 0x30);             // imprimir
+}
+
+// ── Boleta para el parabrisas (conductor ausente) ────────
+// Aviso corto con un QR grande: el dueño lo escanea, ve la multa, por qué se
+// la pusieron y la paga desde su celular. La boleta completa queda en el sistema.
+const urlConsultaFolio = r => `${location.origin}/consulta?q=${encodeURIComponent(String(r.folio || r.placa || '').replace(/[^A-Za-z0-9]/g, ''))}`;
+
+function buildParabrisas(r, cfg, qrDataUrl) {
+  const f = new Date(r.fecha);
+  const { tramos, limFecha } = plazosPago(r, cfg, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return `<div class="t80 pb">
+    <div class="t-center"><!--ESCUDO:12mm:gris--></div>
+    <div class="t-center t-bold" style="font-size:7.5pt">${esc((cfg?.municipio || 'Municipio').toUpperCase())}</div>
+    <div class="t-center" style="font-size:6.5pt">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
+    <div class="t-invert">AVISO DE INFRACCIÓN</div>
+    <div class="t-center t-small">Su vehículo fue infraccionado en su ausencia</div>
+    <div class="t-center pb-placa">${esc(r.placa)}</div>
+    <div class="t-row"><span>FOLIO:</span><span class="t-bold">${esc(r.folio || '—')}</span></div>
+    <div class="t-row"><span>FECHA:</span><span>${f.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${f.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span></div>
+    ${r.ubicacion ? `<div class="t-small">LUGAR: ${esc(r.ubicacion)}</div>` : ''}
+    <div class="t-div"></div>
+    <div class="t-bold" style="font-size:7.5pt">MOTIVO:</div>
+    <div>${esc(r.tipo)}</div>
+    <div class="t-solid"></div>
+    <div class="t-row t-bold"><span>MONTO:</span><span>$${Number(r.monto).toLocaleString('es-MX')} MXN</span></div>
+    ${r._grave ? '<div class="t-small">Sin descuento por su gravedad.</div>' : tramos.map(x => `<div class="t-disc"><b>${x.pct}% de descuento</b> pagando a más tardar el ${x.hasta}: solo $${x.monto}</div>`).join('')}
+    <div class="t-small t-center" style="margin-top:1mm">Fecha límite: ${limFecha}</div>
+    ${qrDataUrl ? `<div class="pb-qr"><img src="${qrDataUrl}" alt=""/></div>` : ''}
+    <div class="t-center t-bold" style="font-size:9pt">ESCANEE CON SU CELULAR</div>
+    <div class="t-center t-small">Vea el detalle, por qué se le multó y pague en línea o en Tesorería.</div>
+    <div class="t-center t-small" style="margin-top:1mm;word-break:break-all">${esc(urlConsultaFolio(r).replace(/^https?:\/\//, ''))}</div>
+    <div class="t-div"></div>
+    <div class="t-small">Policía vial: ${esc(r.oficial || '—')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}</div>
+  </div>`;
+}
+
+function escposParabrisas(r, cfg, ancho = 48) {
+  const b = [], txt = s => { for (const ch of asciiTicket(s)) b.push(ch.charCodeAt(0)); };
+  const cmd = (...xs) => b.push(...xs), ln = (s = '') => { txt(s); cmd(0x0A); };
+  const centro = () => cmd(0x1B, 0x61, 1), izq = () => cmd(0x1B, 0x61, 0);
+  const negrita = on => cmd(0x1B, 0x45, on ? 1 : 0), grande = on => cmd(0x1D, 0x21, on ? 0x11 : 0);
+  const parrafo = t => envolverTexto(t, ancho).forEach(l => ln(l));
+  const f = new Date(r.fecha), fmtF = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const { tramos, limFecha } = plazosPago(r, cfg, fmtF);
+  cmd(0x1B, 0x40); centro();
+  negrita(true); parrafo((cfg?.municipio || 'Municipio').toUpperCase()); negrita(false);
+  parrafo('DIRECCION DE TRANSITO Y MOVILIDAD'); ln('='.repeat(ancho));
+  negrita(true); ln('AVISO DE INFRACCION'); negrita(false);
+  parrafo('Su vehiculo fue infraccionado en su ausencia');
+  grande(true); negrita(true); ln(r.placa || '-'); grande(false); negrita(false);
+  ln('Folio: ' + (r.folio || '-'));
+  ln(f.toLocaleDateString('es-MX', fmtF) + ' ' + f.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }));
+  izq(); ln('-'.repeat(ancho));
+  if (r.ubicacion) parrafo('Lugar: ' + r.ubicacion);
+  parrafo('Motivo: ' + (r.tipo || '-'));
+  negrita(true); parrafo('Monto: $' + Number(r.monto).toLocaleString('es-MX') + ' MXN'); negrita(false);
+  if (r._grave) parrafo('Sin descuento por su gravedad.');
+  else tramos.forEach(x => parrafo(`${x.pct}% de descuento pagando a mas tardar el ${x.hasta}: $${x.monto}`));
+  parrafo('Fecha limite: ' + limFecha);
+  centro(); ln(); escposQR(cmd, asciiTicket(urlConsultaFolio(r)), ancho >= 48 ? 8 : 6); ln();
+  negrita(true); ln('ESCANEE CON SU CELULAR'); negrita(false);
+  parrafo('Vea el detalle y pague en linea o en Tesoreria.');
+  izq(); parrafo('Policia vial: ' + (r.oficial || '-') + (r.oficial_placa ? ' - Placa ' + r.oficial_placa : ''));
+  cmd(0x1B, 0x64, 3, 0x1D, 0x56, 0x42, 0);
+  return new Uint8Array(b);
+}
+
+async function printParabrisas(id) {
+  if (!id) return;
+  const [{ data: r }, { data: cfg }] = await Promise.all([
+    _sb.from('infracciones').select('*').eq('id', id).single(),
+    _sb.from('configuracion').select('*').eq('id', 1).single()
+  ]);
+  if (!r) return;
+  await cargarCatalogo();
+  r._grave = !!catalogoPorNumero(r.catalogo_numero)?.grave;
+  if (await imprimirTermica(escposParabrisas(r, cfg, prefImpresora().ancho))) return;
+  let qr = '';
+  try { qr = new QRious({ value: urlConsultaFolio(r), size: 360, padding: 6, backgroundAlpha: 1 }).toDataURL(); } catch (_) {}
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Parabrisas ${esc(r.folio || '')}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:'Courier New',Courier,monospace}
+    .no-print{text-align:center;margin-bottom:4mm}
+    .no-print button{padding:6px 16px;background:#1A7A82;color:#fff;border:none;border-radius:5px;font-size:12px;cursor:pointer;margin:0 3px}
+    .t80{width:72mm;background:#fff;font-size:8.5pt;line-height:1.45;color:#000;padding:4mm 3mm}
+    .t-center{text-align:center}.t-bold{font-weight:700}.t-small{font-size:7pt}
+    .t-div{border-top:1px dashed #555;margin:1.5mm 0}.t-solid{border-top:2px solid #000;margin:1.5mm 0}
+    .t-row{display:flex;justify-content:space-between;gap:2mm}
+    .t-invert{background:#000;color:#fff;text-align:center;font-weight:700;font-size:10pt;padding:1.5mm 0;margin:1.5mm -3mm;letter-spacing:1px}
+    .t-disc{border:1px solid #555;text-align:center;padding:1mm;margin:1mm 0;font-size:7.5pt}
+    .pb-placa{font-size:20pt;font-weight:900;letter-spacing:2px;border:2px solid #000;border-radius:2mm;margin:2mm 6mm;padding:1mm 0}
+    .pb-qr{text-align:center;margin:3mm 0 1.5mm}.pb-qr img{width:52mm;height:52mm}
+    @media print{body{padding:0}.no-print{display:none!important}@page{margin:2mm;size:80mm auto}}
+  </style></head><body>
+  <div class="no-print"><button onclick="window.print()">Imprimir</button><button onclick="window.close()">Cerrar</button></div>
+  ${buildParabrisas(r, cfg, qr)}
+  <script>setTimeout(()=>window.print(),500)<\/script>
+  </body></html>`;
+  const win = window.open('', '_blank', 'width=340,height=750');
+  if (win) { win.document.write(conMarca(html)); win.document.close(); }
 }
 
 // ── Impresora Bluetooth (BLE) ──

@@ -51,6 +51,7 @@ const SESSION = {
 };
 const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
 const TOKEN = '11111111-2222-4333-8444-555555555555';
+const TOKEN_PAGO = '33333333-2222-4333-8444-555555555555';
 const storageUploads = [];
 const rpcCalls = [];
 const inserts = [];   // filas que la app insertó en infracciones
@@ -90,6 +91,10 @@ Object.assign(ADMIN, { token_credencial: TOKEN_CRED, foto: '', numero_placa: 'PV
 Object.assign(TABLES.configuracion[0], { escudo: ESCUDO, logo: '', color_institucional: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' });
 TABLES.vehiculos_reportados = [{ id: 1, placa: 'ROB123A', motivo: 'robo', detalle: XSS, reportado_por: XSS, activo: true, created_at: '2026-10-20T10:00:00Z' }];
 TABLES.alertas_placa = [];
+// Portal ciudadano (ciudadano.sql)
+TABLES.avisos_viales = [];
+const VAPID_PRUEBA = 'B' + 'A'.repeat(86);
+let placasPush = [];
 const alertas = [];   // alertas de placa que la app registró
 
 const LIBS_DIR = process.env.LIBS_DIR;
@@ -137,6 +142,11 @@ async function newPage(browser, { dbDown = false } = {}) {
       storageUploads.push(u.pathname);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ Key: u.pathname.replace('/storage/v1/object/', '') }) });
     }
+    if (u.pathname === '/functions/v1/recibo') {
+      if (req.method() === 'OPTIONS') return r.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' }, body: '' });
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'recibo', ...b, auth: req.headers()['authorization'] });
+      return r.fulfill({ status: 200, headers: { ...json, 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ok: true }) });
+    }
     if (u.pathname.startsWith('/functions/v1/reporte-mensual'))
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ ok: true, mes: '2026-09', enviado_a: ['director@municipio.gob.mx'] }) });
     const table = (u.pathname.split('/rest/v1/')[1] || '').split('?')[0];
@@ -149,6 +159,9 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (table === 'rpc/verificar_documento') {
       const t = JSON.parse(req.postData() || '{}').p_token;
       const i = TABLES.infracciones.find(x => x.token_verificacion === t);
+      const pg = TABLES.pagos.find(x => x.token_verificacion === t);
+      if (pg) return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ tipo: 'pago', folio: 'REC-000001', fecha: pg.created_at, folio_infraccion: pg.folio_inf, placa: 'ABC-123',
+        concepto: XSS, monto: 900, monto_original: 1000, metodo: 'efectivo', estado: 'pagado', infractor: 'J. P.', municipio: 'Prueba' }) });
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(i ? { tipo: 'infraccion', folio: i.folio, fecha: i.fecha, placa: i.placa, concepto: i.tipo, monto: i.monto, estado: i.estado, infractor: i.infractor, municipio: XSS } : null) });
     }
     if (table === 'rpc/verificar_oficial') {
@@ -162,6 +175,22 @@ async function newPage(browser, { dbDown = false } = {}) {
       let v = TABLES.vehiculos_reportados.find(x => x.placa === placa && x.activo);
       if (!v) { v = { id: 50 + TABLES.vehiculos_reportados.length, placa, motivo: 'robo', detalle: 'Reporte de robo en REPUVE. ' + (b.p_detalle || ''), reportado_por: ADMIN.nombre, activo: true, created_at: new Date().toISOString() }; TABLES.vehiculos_reportados.push(v); }
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(v) });
+    }
+    if (table === 'rpc/explicar_infraccion') {
+      const b = JSON.parse(req.postData() || '{}');
+      const i = TABLES.infracciones.find(x => x.id === b.p_id && (norm(x.placa) === norm(b.p_q) || norm(x.folio) === norm(b.p_q)));
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(i ? { conducta: 'Exceder los límites de velocidad establecidos.', categoria: 'Circulación', clasificacion: 'Leve',
+        por_que: 'Las reglas de circulación existen para que todos lleguemos a salvo.', nota: '', grave: false, cuotas_min: 5, cuotas_max: 15, uma: 117.31, fundamento: XSS,
+        articulos: [{ numero: '75', texto: XSS }] } : null) });
+    }
+    if (table === 'rpc/avisos_viales_vigentes')
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify([{ id: 1, titulo: XSS, texto: 'Desfile de 9 a 13 h.', desde: '2026-10-20', hasta: null }]) });
+    if (table === 'rpc/push_config') return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ publica: VAPID_PRUEBA }) });
+    if (table === 'rpc/placas_push') return r.fulfill({ status: 200, headers: json, body: JSON.stringify(placasPush) });
+    if (table === 'rpc/suscribir_push' || table === 'rpc/cancelar_push') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: table.slice(4), ...b });
+      placasPush = table === 'rpc/cancelar_push' ? [] : (b.p_placas || []).map(norm);
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(placasPush) });
     }
     if (table === 'rpc/portal_info')
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' }) });
@@ -193,7 +222,7 @@ async function newPage(browser, { dbDown = false } = {}) {
       const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'registrar_pago', ...b });
       const inf = TABLES.infracciones.find(i => i.id === b.p_infraccion_id) || {};
       const pct = b.p_aplicar_descuento ? TABLES.configuracion[0].descuento_pct : 0;
-      const pago = withIds({ infraccion_id: inf.id, folio_inf: inf.folio, monto_original: inf.monto, descuento_pct: pct, monto_final: Math.round(inf.monto * (1 - pct / 100)), metodo: b.p_metodo, cajero: ADMIN.nombre })[0];
+      const pago = withIds({ infraccion_id: inf.id, folio_inf: inf.folio, monto_original: inf.monto, descuento_pct: pct, monto_final: Math.round(inf.monto * (1 - pct / 100)), metodo: b.p_metodo, cajero: ADMIN.nombre, token_verificacion: TOKEN_PAGO })[0];
       TABLES.pagos.push(pago);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(pago) });
     }
@@ -214,6 +243,7 @@ async function newPage(browser, { dbDown = false } = {}) {
       if (table === 'infracciones' && req.method() === 'POST') inserts.push(body);
       if (table === 'alertas_placa' && req.method() === 'POST') alertas.push(body);
       rows = withIds(body);
+      if (table === 'avisos_viales' && req.method() === 'POST') TABLES.avisos_viales.push(...rows.map(x => ({ activo: true, desde: new Date().toISOString().slice(0, 10), hasta: null, creado_por: ADMIN.nombre, ...x })));
     }
     if ((req.headers()['accept'] || '').includes('vnd.pgrst.object')) {
       if (!rows.length) return r.fulfill({ status: 406, headers: json, body: JSON.stringify({ code: 'PGRST116', message: 'no rows' }) });
@@ -426,6 +456,19 @@ function check(name, errors, extra) {
     for (const p of popups.splice(0)) await p.close().catch(() => {});
     const cobro = rpcCalls.find(c => c.fn === 'registrar_pago');
     check('cobro con registrar_pago', errors, cobro && cobro.p_infraccion_id === pendId && cobro.p_metodo === 'efectivo' ? null : 'llamada: ' + JSON.stringify(cobro));
+    // Recibo digital por WhatsApp o correo (ciudadano.sql: función recibo)
+    await page.waitForTimeout(500);
+    const recibo = await page.evaluate(async () => {
+      const abierto = $('modal-recibo').style.display === 'flex';
+      let wa = ''; const abrir = window.open; window.open = u => { wa = u; return null; };
+      $('rec-telefono').value = '55 1234 5678'; reciboWhatsApp(); window.open = abrir;
+      $('rec-correo').value = 'ciudadano@correo.mx'; await reciboCorreo();
+      const estado = $('rec-estado').textContent; closeModal('modal-recibo');
+      return { abierto, wa: decodeURIComponent(wa), estado };
+    });
+    const envioRec = rpcCalls.find(c => c.fn === 'recibo');
+    check('recibo digital por WhatsApp y correo', errors, recibo.abierto && recibo.wa.startsWith('https://wa.me/525512345678') && recibo.wa.includes('/verificar?t=' + TOKEN_PAGO)
+      && /enviado a ciudadano@correo.mx/.test(recibo.estado) && envioRec && envioRec.correo === 'ciudadano@correo.mx' && /^Bearer ey/.test(envioRec.auth || '') ? null : JSON.stringify({ recibo, envioRec }).slice(0, 300));
 
     // QR de la boleta: apunta a /verificar?t=<token>
     const qrUrl = await page.evaluate(id => urlVerificacion(id), TOKEN);
@@ -467,6 +510,14 @@ function check(name, errors, extra) {
         enConfig && 'abrió configuración'
       ].filter(Boolean);
       check('rol ' + rol + ': menú y acciones', errors, fallas.length ? fallas.join(', ') : null);
+      // Inicio según el rol (js/inicio.js)
+      await page.evaluate(() => navigate('dashboard')); await page.waitForTimeout(900);
+      const inicio = await page.evaluate(() => ({ t: $('inicio-rol').textContent.replace(/\s+/g, ' '), visible: !$('inicio-rol').hidden,
+        barra: document.querySelector('#view-dashboard .quick-actions').style.display !== 'none' }));
+      const esperaInicio = { oficial: /Nueva boleta.*boletas? hoy/, cajero: /Cobrar.*cobrados hoy/, juridico: /por resolver/, corralon: /Ingresar vehículo.*corralón/,
+        supervisor: /Para atender hoy.*placas reportadas/, contraloria: /Para atender hoy/ }[rol];
+      check('rol ' + rol + ': inicio propio', errors, inicio.visible && esperaInicio.test(inicio.t) && inicio.barra === ['supervisor', 'contraloria'].includes(rol)
+        && (rol !== 'contraloria' || !/Avisos viales/.test(inicio.t)) ? null : JSON.stringify(inicio).slice(0, 220));
       await page.close();
     }
     ADMIN.rol = 'admin';
@@ -548,6 +599,25 @@ function check(name, errors, extra) {
     check('consulta REPUVE y reporte de robo con un toque', errors, /^https:\/\/.*repuve/.test(repuve.abierta) && repuve.panel && /RPV-77B/.test(repuve.msg) && repuve.oculto
       && /Vehículo reportado/.test(repuve.t) && /REPUVE/.test(repuve.t) && repuve.rep && rpcCalls.some(c => c.fn === 'reportar_robo_repuve' && c.p_placa === 'RPV-77B')
       && alertas.some(a => a.placa === 'RPV77B') ? null : JSON.stringify(repuve).slice(0, 300));
+    // Boleta para el parabrisas: aviso corto con QR a la consulta (conductor ausente)
+    const pbId = TABLES.infracciones.find(r => r.placa !== 'XSS-001' && r.estado === 'pendiente').id;
+    await page.evaluate(id => printParabrisas(id), pbId); await page.waitForTimeout(900);
+    let pb = ''; for (const p of popups2.splice(0)) { pb += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    const pbEsc = await page.evaluate(async id => {
+      const r = (await _sb.from('infracciones').select('*').eq('id', id).single()).data;
+      const b = escposParabrisas(r, _cachedConfig || {}, 32), t = String.fromCharCode(...b);
+      return { ascii: [...b].every(x => x < 128), qr: t.includes('\x1d(k'), consulta: t.includes('/consulta?q='), aviso: t.includes('AVISO DE INFRACCION') };
+    }, pbId);
+    check('boleta para el parabrisas con QR', errors, pb.includes('AVISO DE INFRACCIÓN') && pb.includes('ESCANEE CON SU CELULAR') && /<img src="data:image\/png/.test(pb)
+      && pbEsc.ascii && pbEsc.qr && pbEsc.consulta && pbEsc.aviso ? null : JSON.stringify(pbEsc) + ' html=' + pb.length);
+    // Avisos viales del portal (los publica el mando)
+    const av = await page.evaluate(async () => {
+      await abrirAvisosViales();
+      $('av-titulo').value = 'Cierre de la calle Comonfort'; $('av-texto').value = 'Por desfile, de 9 a 13 h.';
+      await publicarAvisoVial(); await new Promise(r => setTimeout(r, 400));
+      const t = $('av-lista').textContent; closeModal('modal-avisos-viales'); return t;
+    });
+    check('publicar aviso vial', errors, /Cierre de la calle Comonfort/.test(av) && TABLES.avisos_viales.length === 1 ? null : av.slice(0, 160));
     await page.evaluate(() => navigate('vehiculos')); await page.waitForTimeout(700);
     const repLista = await page.evaluate(() => ({ t: $('reportados-lista').textContent, btn: $('btn-nuevo-reporte').style.display }));
     check('padrón: vehículos reportados', errors, repLista.t.includes('ROB123A') && repLista.btn !== 'none' && !(await page.evaluate(() => window.__xss)) ? null : JSON.stringify(repLista).slice(0, 160));
@@ -621,6 +691,11 @@ function check(name, errors, extra) {
     await page.waitForTimeout(1200);
     txt = await page.textContent('#card');
     check('verificar: token inexistente', errors, /no válido/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
+    await page.goto(BASE + '/verificar?t=' + TOKEN_PAGO);
+    await page.waitForTimeout(1200);
+    txt = (await page.textContent('#card')).replace(/\s+/g, ' ');
+    check('verificar: recibo digital', errors, /Recibo de pago auténtico/.test(txt) && /Descuento por pronto pago/.test(txt) && /Total pagado/.test(txt) && /Guardar o imprimir/.test(txt)
+      && !(await page.evaluate(() => window.__xss)) ? null : 'texto: ' + txt.slice(0, 200));
     await page.goto(BASE + '/verificar?o=' + TOKEN_CRED);
     await page.waitForTimeout(1200);
     txt = await page.textContent('#card');
@@ -640,6 +715,28 @@ function check(name, errors, extra) {
     await page.waitForTimeout(1000);
     const resultado = await page.textContent('#result');
     check('consulta ciudadana', errors, resultado.includes('ABC-123') ? null : 'no mostró resultados');
+    // ¿Por qué me multaron?, avisos viales y avisos al celular (ciudadano.js)
+    const placaPend = TABLES.infracciones.find(r => r.estado === 'pendiente' && r.placa !== 'XSS-001').placa;
+    await page.goto(BASE + '/consulta?q=' + encodeURIComponent(placaPend)); await page.waitForTimeout(1500);
+    await page.click('.inf.pendiente .btn-pq, .inf.vencida .btn-pq'); await page.waitForTimeout(700);
+    const pq = await page.evaluate(() => document.querySelector('.btn-pq[aria-expanded="true"] + .pq').textContent.replace(/\s+/g, ' '));
+    check('¿por qué me multaron?', errors, /Qué pasó.*Exceder los límites/.test(pq) && /Por qué es importante/.test(pq) && /de 5 a 15 UMA/.test(pq) && /Cuánto pagas según cuándo/.test(pq)
+      && /Hoy estás aquí/.test(pq) && !(await page.evaluate(() => window.__xss)) ? null : pq.slice(0, 300));
+    const avisos = await page.evaluate(() => ({ visible: !$('avisos').hidden, t: $('avisos').textContent }));
+    check('avisos viales en el portal', errors, avisos.visible && /Desfile de 9 a 13/.test(avisos.t) && !(await page.evaluate(() => window.__xss)) ? null : JSON.stringify(avisos));
+    const app = await page.evaluate(async () => {
+      const antes = $('app-ciudadano').textContent.replace(/\s+/g, ' ');
+      Notification.requestPermission = async () => 'granted';
+      const sub = { endpoint: 'https://push.example.com/abc', toJSON: () => ({ endpoint: 'https://push.example.com/abc', keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) } }), unsubscribe: async () => true };
+      let suscrito = false;
+      _swCiudadano = Promise.resolve({ pushManager: { getSubscription: async () => suscrito ? sub : null, subscribe: async o => { suscrito = o.applicationServerKey.length === 65; return sub; } } });
+      await activarAvisos($('ap-placa').value);
+      const despues = $('app-ciudadano').textContent.replace(/\s+/g, ' ');
+      return { antes, despues, suscrito };
+    });
+    const sus = rpcCalls.find(c => c.fn === 'suscribir_push');
+    check('avisos al celular del ciudadano', errors, /Avisos en tu celular/.test(app.antes) && /Activar avisos/.test(app.antes) && app.suscrito
+      && sus && sus.p_placas.includes(placaPend.replace(/[^A-Z0-9]/gi, '').toUpperCase()) && sus.p_endpoint === 'https://push.example.com/abc' && app.despues.includes('recibe avisos de: ' + placaPend.replace(/[^A-Z0-9]/gi, '').toUpperCase()) ? null : JSON.stringify({ app, sus }).slice(0, 300));
     await page.goto(BASE + '/consulta?q=' + encodeURIComponent(XSS));
     await page.waitForTimeout(1500);
     check('consulta ciudadana escapa la búsqueda', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);

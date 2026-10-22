@@ -41,6 +41,21 @@
     .oficial-foto img{width:100%;height:100%;object-fit:cover;}
     .oficial h2{font-size:1.15rem;line-height:1.25;}
     .oficial .cargo{font-size:.78rem;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:.04em;margin-top:.2rem;}
+    .recibo{padding:1.1rem 1.25rem .4rem;}
+    .rec-tit{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+    .rec-total{font-size:2.3rem;font-weight:700;letter-spacing:-.03em;margin-top:.2rem;font-variant-numeric:tabular-nums;}
+    .rec-total.tachado{text-decoration:line-through;color:var(--muted);}
+    .rec-sub{font-size:.8rem;color:var(--muted);}
+    .rec-filas{margin-top:1rem;border-top:1px dashed var(--border);}
+    .rec-filas div{display:flex;justify-content:space-between;gap:1rem;padding:.5rem 0;border-bottom:1px solid var(--stone);font-size:.84rem;}
+    .rec-filas span{color:var(--muted);}
+    .rec-filas b{font-weight:600;text-align:right;}
+    .rec-filas .verde b{color:var(--green);}
+    .rec-filas .total{border-bottom:2px solid var(--ink);}
+    .rec-filas .total b{font-size:1rem;font-weight:700;}
+    .rec-acciones{padding:.8rem 1.25rem 1.2rem;}
+    .rec-acciones button{width:100%;padding:.7rem;border:1.5px solid var(--ac);background:#fff;color:var(--ac);border-radius:10px;font:700 .88rem 'DM Sans',sans-serif;cursor:pointer;}
+    @media print{ body{background:#fff} .rec-acciones,.note{display:none} .card{box-shadow:none} main{margin:0 auto} }
   </style>
 </head>
 <body>
@@ -141,6 +156,7 @@ async function verificar() {
     return;
   }
   const esPago = data.tipo === 'pago';
+  if (esPago) return mostrarRecibo(data);
   const [estLabel, estColor, estBg] = ESTADOS[data.estado] || [data.estado, 'var(--muted)', 'var(--stone)'];
   document.getElementById('card').innerHTML = `
     <div class="status ok">${ICON_OK}<div>
@@ -157,6 +173,34 @@ async function verificar() {
       <div class="f full"><label>Concepto</label><span>${esc(data.concepto || '—')}</span></div>
       ${data.infractor ? `<div class="f full"><label>A nombre de</label><span>${esc(data.infractor)}</span></div>` : ''}
     </div>`;
+}
+// Recibo de pago digital (ciudadano.sql): lo que recibe el ciudadano por WhatsApp o correo
+function mostrarRecibo(data) {
+  const anulado = data.estado === 'anulado';
+  const desc = Number(data.monto_original) - Number(data.monto);
+  const hora = data.fecha ? new Date(data.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
+  const metodos = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', en_linea: 'Pago en línea' };
+  document.title = `Recibo ${data.folio || ''} — Tránsito Municipal`;
+  document.getElementById('card').innerHTML = `
+    <div class="status ${anulado ? 'bad' : 'ok'}">${anulado ? ICON_BAD : ICON_OK}<div>
+      <h1>${anulado ? 'Recibo anulado' : 'Recibo de pago auténtico'}</h1>
+      <p>${anulado ? 'Este pago fue anulado por la Tesorería. La infracción puede seguir pendiente.' : 'Emitido por la Dirección de Tránsito' + (data.municipio ? ' de ' + esc(data.municipio) : '')}</p>
+    </div></div>
+    <div class="recibo">
+      <div class="rec-tit">Recibo de pago <span class="mono">${esc(data.folio || '—')}</span></div>
+      <div class="rec-total${anulado ? ' tachado' : ''}">${esc(fmt(data.monto))}</div>
+      <div class="rec-sub">${esc(fecha(data.fecha))}${hora ? ' · ' + esc(hora) : ''}</div>
+      <div class="rec-filas">
+        ${data.folio_infraccion ? `<div><span>Infracción</span><b class="mono">${esc(data.folio_infraccion)}</b></div>` : ''}
+        <div><span>Placa</span><b class="mono">${esc(data.placa || '—')}</b></div>
+        <div><span>Concepto</span><b>${esc(data.concepto || '—')}</b></div>
+        ${desc > 0 ? `<div><span>Monto de la multa</span><b>${esc(fmt(data.monto_original))}</b></div><div class="verde"><span>Descuento por pronto pago</span><b>− ${esc(fmt(desc))}</b></div>` : ''}
+        <div class="total"><span>Total pagado</span><b>${esc(fmt(data.monto))}</b></div>
+        <div><span>Forma de pago</span><b>${esc(metodos[data.metodo] || data.metodo || '—')}</b></div>
+        ${data.infractor ? `<div><span>A nombre de</span><b>${esc(data.infractor)}</b></div>` : ''}
+      </div>
+    </div>
+    <div class="rec-acciones"><button type="button" onclick="window.print()">Guardar o imprimir</button></div>`;
 }
 verificar();
 </script>

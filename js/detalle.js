@@ -115,6 +115,7 @@ async function viewDetail(tabla, id) {
       ${(r.estado==='pendiente'||r.estado==='vencida')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Recurso de revocación</button>`:''}
       ${r.estado==='impugnada'?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="resolverImpugnacion('${r.id}')">Resolver impugnación</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="printTicket80('${r.id}')">Ticket 80mm</button>
+      <button class="btn btn-ghost btn-sm" onclick="printParabrisas('${r.id}')" title="Aviso corto con QR para dejar en el parabrisas cuando el conductor no está">Parabrisas</button>
       <button class="btn btn-ghost btn-sm" onclick="printInfraccion('${r.id}')">Boleta carta</button>
       ${r.telefono?`<button class="btn btn-ghost btn-sm" style="color:#128C7E;border-color:#A7F3D0" onclick="notificarWhatsApp({telefono:${jsArg(r.telefono)},infractor:${jsArg(r.infractor)},folio:${jsArg(r.folio||'')},placa:${jsArg(r.placa)},tipo:${jsArg(r.tipo)},monto:${Number(r.monto)||0},ubicacion:${jsArg(r.ubicacion||'')},fecha:${jsArg(r.fecha||'')}})" >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>

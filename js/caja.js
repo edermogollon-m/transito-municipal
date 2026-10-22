@@ -382,6 +382,7 @@ async function renderCajaTable() {
       <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${esc(r.metodo||'—')}</span></td>
       <td style="font-size:.78rem;color:var(--muted)">${esc(r.cajero||'—')}</td>
       <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button>
+        <button class="btn btn-ghost btn-sm" style="color:#128C7E" onclick="ofrecerRecibo('${r.id}')" title="Enviar el recibo digital por WhatsApp o correo">Enviar</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="anularPago('${r.id}', ${jsArg(r.folio_inf||'')})" title="Anular este pago con motivo">Anular</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem">Sin pagos en este período</td></tr>`;

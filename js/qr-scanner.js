@@ -241,6 +241,7 @@ async function submitPago() {
   closeModal('modal-pago'); closeModal('modal-detail');
   showToast(`Pago registrado: ${fmt(final)} — ${metodo}`);
   printReciboPago(pago.id);
+  ofrecerRecibo(pago.id);
   renderInfracciones(); renderDashboard();
   if ($('view-caja')?.style.display==='block') { renderCajaStats(); renderPendientesTable(); renderCajaTable(); }
 }

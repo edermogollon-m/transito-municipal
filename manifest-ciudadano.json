@@ -1,0 +1,36 @@
+{
+  "name": "Consulta de Tránsito",
+  "short_name": "Tránsito",
+  "description": "Consulta tus infracciones, paga con descuento y recibe avisos de tu placa y avisos viales.",
+  "id": "/consulta",
+  "start_url": "/consulta",
+  "scope": "/consulta",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0F5F66",
+  "background_color": "#F3F5F7",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/icono-ciudadano-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icono-ciudadano-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icono-ciudadano-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": [
+    "government"
+  ]
+}
