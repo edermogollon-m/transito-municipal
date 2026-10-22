@@ -87,6 +87,16 @@ proyectos activos a la vez).
   liberación del corralón; no levanta infracciones). Quien levanta la multa
   no la cobra. Siempre queda al menos un administrador activo.
 
+- `tramites.sql` — retención de documentos (arts. 343-344) con devolución
+  firmada; recurso de revocación con expediente, plazo de 15 días hábiles y
+  resolución escrita; avisos automáticos al ciudadano por correo y WhatsApp
+  (función `avisos`, cada 15 minutos); pago en línea con Mercado Pago
+  (función `pago-mp`); firmas del infractor y del policía vial en la boleta.
+  Funciones en `supabase/functions/`. Secretos: `RESEND_API_KEY`,
+  `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_PLANTILLA`,
+  `MP_ACCESS_TOKEN` y, opcional, `MP_WEBHOOK_SECRET`. Se activan en
+  Configuración.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
 `cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql` → `inmutable.sql` → `roles.sql`. Todos son idempotentes y ya están aplicados en
