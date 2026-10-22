@@ -92,4 +92,3 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (typeof orig !== 'function' || puede(accion)) return;
   window[fn] = function () { showToast(`Tu rol (${_permisosRol.nombre}) no tiene permiso para esta acción`); };
 });
-

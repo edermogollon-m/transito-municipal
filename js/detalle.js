@@ -92,7 +92,6 @@ async function viewDetail(tabla, id) {
       <div style="flex:1;min-width:140px;text-align:center;font-size:.72rem;color:var(--muted)">${imgFirma(r.firma_oficial, 14) || '—'}<div>Firma del policía vial</div></div></div>` : ''}
     <div id="detail-recurso"></div>
     <div id="detail-boleta"></div>
-    <div id="detail-historial"></div>
 
     <!-- Cambiar estado (una impugnación la resuelve Jurídico o el Director) -->
     <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:${r.estado==='impugnada'&&!puede('resolver')?'none':'flex'};align-items:center;gap:.6rem;flex-wrap:wrap">
@@ -207,7 +206,6 @@ async function viewDetail(tabla, id) {
   })();
   openModal('modal-detail');
   hidratarFotos($('modal-detail'));
-  if (isInf) cargarHistorial('infracciones', r.id, $('detail-historial'));
   if (isInf && r.documento_retenido) mostrarDevolucion(r);
   if (isInf) mostrarRecurso(r);
   if (isInf && r.boleta) infraccionesDeBoleta(r).then(lista => {
@@ -226,7 +224,7 @@ async function saveDetailEstado(tabla, id) {
     return;
   }
   if (tabla==='infracciones' && estado==='cancelada') {
-    const motivo = prompt('Motivo de la cancelación (queda registrado en la bitácora):');
+    const motivo = prompt('Motivo de la cancelación:');
     if (!motivo || !motivo.trim()) return;
     cambios.cancelacion_motivo = motivo.trim();
   }
@@ -239,7 +237,7 @@ async function saveDetailEstado(tabla, id) {
 
 // Los registros no se borran (controles.sql): el permiso se cancela con motivo
 async function cancelarPermiso(id) {
-  const motivo = prompt('Motivo de la cancelación del permiso (queda registrado en la bitácora):');
+  const motivo = prompt('Motivo de la cancelación del permiso:');
   if (!motivo || !motivo.trim()) return;
   const { error } = await _sb.from('permisos').update({ estado: 'cancelado', cancelacion_motivo: motivo.trim() }).eq('id', id);
   if (error) { alert('Error: '+error.message); return; }

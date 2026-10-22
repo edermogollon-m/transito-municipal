@@ -23,7 +23,7 @@ es el que arranca la app.
 | `reportes.js` | Reportes (mensual y para Cabildo) |
 | `recursos.js` | Recurso de revocación y devolución de documentos |
 | `utilidades.js` | Corte de caja impreso, Excel, modales, paginación, WhatsApp |
-| `sesion.js` | Bitácora, errores, avisos, menú lateral, contraseña e inactividad |
+| `sesion.js` | Errores de la app, avisos, menú lateral, contraseña e inactividad |
 | `padron.js` | Padrón vehicular |
 | `grua.js` | Grúa / corralón |
 | `mapa.js` | Mapa de infracciones y zonas conflictivas |

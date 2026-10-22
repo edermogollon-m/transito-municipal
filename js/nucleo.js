@@ -17,13 +17,13 @@ const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'adm
 const ROLES = {
   admin: {
     nombre: 'Director de Tránsito', vistas: '*', acciones: '*',
-    resumen: 'Acceso total: usuarios, configuración, cobro, cancelaciones, impugnaciones y bitácora.'
+    resumen: 'Acceso total: usuarios, configuración, cobro, cancelaciones e impugnaciones.'
   },
   supervisor: {
     nombre: 'Supervisor de Tránsito',
-    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
     acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','reportes','caja_ver','turnos','devolver'],
-    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón, cierra turnos olvidados y revisa la bitácora. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
+    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón y cierra turnos olvidados. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
   },
   oficial: {
     nombre: 'Policía vial', soloMias: true,
@@ -51,9 +51,9 @@ const ROLES = {
   },
   contraloria: {
     nombre: 'Contraloría (solo lectura)',
-    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
     acciones: ['reportes','caja_ver'],
-    resumen: 'Ve todo, incluidas la caja, los cortes, los pagos anulados y la bitácora, y puede exportar. No puede cambiar nada.'
+    resumen: 'Ve todo, incluidas la caja, los cortes y los pagos anulados, y puede exportar. No puede cambiar nada.'
   }
 };
 const _permisosRol = ROLES[_rol] || ROLES.oficial;
@@ -158,7 +158,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','bitacora','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -299,18 +299,17 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', bitacora:'Bitácora', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', bitacora:'Bitácora', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
   if (view==='infracciones')  renderInfracciones();
   if (view==='permisos')      renderPermisos();
-  if (view==='configuracion') loadConfig();
+  if (view==='configuracion') { loadConfig(); if (_rol === 'admin') renderErroresApp(); }
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
-  if (view==='bitacora')      renderBitacora();
   if (view==='vehiculos')     renderVehiculos();
   if (view==='grua')          renderGrua();
   if (view==='reportes')      initReporteMensual();
