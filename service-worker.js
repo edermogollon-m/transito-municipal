@@ -1,10 +1,33 @@
-const CACHE = 'transito-v5';
+const CACHE = 'transito-v6';
 const PRECACHE = [
   '/',
   '/login',
   '/consulta',
   '/verificar',
-  '/app.js',
+  '/js/nucleo.js',
+  '/js/panel.js',
+  '/js/infracciones.js',
+  '/js/permisos.js',
+  '/js/detalle.js',
+  '/js/configuracion.js',
+  '/js/impresion.js',
+  '/js/placa.js',
+  '/js/caja.js',
+  '/js/qr-scanner.js',
+  '/js/usuarios.js',
+  '/js/ticket.js',
+  '/js/reportes.js',
+  '/js/recursos.js',
+  '/js/utilidades.js',
+  '/js/sesion.js',
+  '/js/padron.js',
+  '/js/grua.js',
+  '/js/mapa.js',
+  '/js/analisis.js',
+  '/js/accidentes.js',
+  '/js/turnos.js',
+  '/js/extras.js',
+  '/js/arranque.js',
   '/config.js',
   '/supabase.js',
   '/manifest.json'
@@ -33,7 +56,7 @@ const CDN = ['cdn.jsdelivr.net', 'unpkg.com', 'fonts.googleapis.com', 'fonts.gst
 
 // Estrategia "primero la red": con conexión siempre se usa la versión recién
 // publicada (antes se servía la copia en caché y un deploy nuevo podía mezclar
-// HTML nuevo con app.js viejo). La caché solo se usa sin conexión. Nunca se
+// HTML nuevo con módulos viejos). La caché solo se usa sin conexión. Nunca se
 // interceptan llamadas a Supabase: los datos son siempre en vivo.
 self.addEventListener('fetch', e => {
   const req = e.request;
