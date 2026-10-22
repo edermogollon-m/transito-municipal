@@ -179,6 +179,8 @@
     @media (prefers-reduced-motion: reduce){ .esqueleto{animation:none;} }
       .btn-pagar{display:flex;align-items:center;justify-content:center;gap:.45rem;width:calc(100% - 2rem);margin:.2rem 1rem .8rem;padding:.7rem 1rem;border:none;border-radius:10px;background:#009EE3;color:#fff;font:700 .9rem inherit;cursor:pointer}
     .btn-pagar:hover{background:#0087C2}.btn-pagar:disabled{opacity:.7;cursor:wait}
+    .btn-pagar[disabled]:not([onclick]){background:#9CA3AF;opacity:1;cursor:not-allowed}
+    .pagar-nota.pronto{color:var(--amber);font-weight:600}
     .pagar-nota{margin:-.45rem 1rem .85rem;font-size:.72rem;color:var(--muted);text-align:center}
     .pago-regreso{max-width:760px;margin:12px auto}
     .btn-recibo{display:inline-block;margin-top:.5rem;padding:.45rem .8rem;border-radius:8px;background:var(--green);color:#fff;font-weight:700;text-decoration:none}
@@ -503,10 +505,12 @@ function infCard(r) {
     </div>
     ${plazo}
     ${aviso}
-    ${activa && _params.pago_en_linea && r.estado !== 'impugnada' ? `<button type="button" class="btn-pagar" onclick="pagarEnLinea(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)">
+    ${activa && r.estado !== 'impugnada' ? `<button type="button" class="btn-pagar"${_params.pago_en_linea ? ` onclick="pagarEnLinea(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)"` : ' disabled aria-describedby="pago-pronto-' + Number(r.id) + '"'}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
       Pagar en línea ${montoFmt(p.tramo ? p.hoy : r.monto)}</button>
-    <div class="pagar-nota">Tarjeta de crédito o débito, OXXO o transferencia SPEI, con Mercado Pago.</div>` : ''}
+    ${_params.pago_en_linea
+      ? '<div class="pagar-nota">Tarjeta de crédito o débito, OXXO o transferencia SPEI, con Mercado Pago.</div>'
+      : `<div class="pagar-nota pronto" id="pago-pronto-${Number(r.id)}">Por el momento el pago en línea no está disponible. Puedes pagar en la Tesorería Municipal.</div>`}` : ''}
     ${r.estado !== 'cancelada' ? `<button type="button" class="btn-pq" aria-expanded="false" onclick="porQue(this, ${Number(r.id)})">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       ¿Por qué me multaron?</button><div class="pq" hidden></div>` : ''}
@@ -613,8 +617,9 @@ function showToast(msg) {
 let _params = { descuento_pct: 0, dias_descuento: 0, descuento2_pct: 0, dias_descuento2: 0, dias_limite: 30 };
 const _paramsListos = _sb.rpc('parametros_descuento').then(async ({ data }) => {
   if (data) _params = { ..._params, ...data };
-  // El botón de pago solo aparece si la cuenta de Mercado Pago está conectada
-  if (_params.pago_en_linea) _params.pago_en_linea = await estadoPagoEnLinea();
+  // El botón de pago funciona solo si la cuenta de Mercado Pago está conectada;
+  // si no, se ve desactivado con la leyenda "por el momento no está disponible"
+  _params.pago_en_linea = await estadoPagoEnLinea();
   const partes = [];
   if (_params.descuento_pct > 0) partes.push(`<strong>${_params.descuento_pct}%</strong> si pagas en los primeros ${_params.dias_descuento} días`);
   if (_params.descuento2_pct > 0 && _params.dias_descuento2) partes.push(`<strong>${_params.descuento2_pct}%</strong> hasta el día ${_params.dias_descuento2}`);

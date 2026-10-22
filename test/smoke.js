@@ -767,8 +767,8 @@ function check(name, errors, extra) {
     mpConectado = false;
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/consulta?q=ABC-123'); await page.waitForTimeout(1500);
-    const sinCuenta = await page.evaluate(() => !!document.querySelector('.btn-pagar'));
-    check('sin cuenta de Mercado Pago no hay botón de pago', errors, sinCuenta ? 'se mostró el botón' : null);
+    const sinCuenta = await page.evaluate(() => { const b = document.querySelector('.btn-pagar'); return { hay: !!b, desactivado: !!b?.disabled, leyenda: document.querySelector('.pagar-nota.pronto')?.textContent || '' }; });
+    check('sin cuenta de Mercado Pago el botón sale desactivado con leyenda', errors, sinCuenta.hay && sinCuenta.desactivado && sinCuenta.leyenda.includes('no está disponible') ? null : JSON.stringify(sinCuenta));
     await page.close();
     mpConectado = true;
     ({ page, errors } = await newPage(browser));

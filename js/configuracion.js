@@ -126,7 +126,7 @@ async function estadoMercadoPago() {
     });
     const d = await res.json();
     el.innerHTML = !d.conectado
-      ? '<span style="color:var(--amber)">● Falta conectar la cuenta de Mercado Pago.</span> Mientras tanto el botón de pago no aparece en el portal.'
+      ? '<span style="color:var(--amber)">● Falta conectar la cuenta de Mercado Pago.</span> Mientras tanto el portal muestra el botón desactivado con la leyenda "por el momento no está disponible".'
       : d.prueba
         ? '<span style="color:var(--blue)">● Cuenta conectada en modo de prueba:</span> los pagos no son reales.'
         : '<span style="color:var(--green)">● Cuenta de Mercado Pago conectada.</span>';
