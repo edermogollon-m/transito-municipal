@@ -729,6 +729,41 @@ function check(name, errors, extra) {
     check('verificar: credencial falsa', errors, /no es válida/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
     await page.close();
 
+    // 2b. Responsivo: en teléfono, tableta y escritorio ninguna vista ni ventana
+    // emergente se sale de la pantalla (ni hay que desplazarse de lado)
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/login');
+    await page.fill('#username', 'admin'); await page.fill('#password', 'x');
+    await Promise.all([page.waitForURL(BASE + '/', { timeout: 10000 }).catch(() => {}), page.click('.btn-login')]);
+    await page.waitForFunction(() => typeof navigate === 'function');
+    await page.waitForTimeout(1500);
+    for (const [w, h] of [[360, 640], [640, 360], [768, 1024], [1280, 800]]) {
+      await page.setViewportSize({ width: w, height: h });
+      const fuera = [];
+      for (const v of VIEWS) {
+        await page.evaluate(v => navigate(v), v);
+        await page.waitForTimeout(250);
+        const ancho = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+        if (ancho > 1) fuera.push(`vista ${v} +${ancho}px`);
+      }
+      fuera.push(...await page.evaluate(async () => {
+        const mal = [];
+        for (const ov of document.querySelectorAll('.modal-overlay')) {
+          ov.classList.add('open');
+          await new Promise(r => requestAnimationFrame(r));
+          const m = ov.querySelector('.modal, .modal-search-wrap') || ov.firstElementChild;
+          if (!m) { ov.classList.remove('open'); continue; }
+          const r = m.getBoundingClientRect();
+          if (r.left < -1 || r.right > innerWidth + 1 || r.top < -1 || r.bottom > innerHeight + 1) mal.push(`${ov.id} fuera de la pantalla`);
+          if (m.scrollWidth > m.clientWidth + 1) mal.push(`${ov.id} con desplazamiento lateral (+${m.scrollWidth - m.clientWidth}px)`);
+          ov.classList.remove('open');
+        }
+        return mal;
+      }));
+      check(`responsivo ${w}x${h}`, errors, fuera.length ? fuera.join('; ') : null);
+    }
+    await page.close();
+
     // 3. Portal ciudadano: búsqueda por placa
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/consulta');
