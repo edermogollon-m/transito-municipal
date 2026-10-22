@@ -76,7 +76,7 @@ async function renderUsuarios() {
       <td>${u.activo?'<span class="badge-green">Activo</span>':'<span class="badge-muted">Inactivo</span>'}</td>
       <td style="display:flex;gap:.4rem">
         <button class="btn btn-ghost btn-sm" onclick="editUsuario(${u.id})">Editar</button>
-        <button class="btn btn-ghost btn-sm" onclick="printCredencial('${u.id}')" title="Imprimir credencial">🪪</button>
+        <button class="btn btn-ghost btn-sm" onclick="printCredencial(${Number(u.id)})" title="Imprimir credencial con QR verificable">Credencial</button>
         <button class="btn btn-ghost btn-sm" onclick="restablecerContrasena(${u.id}, ${jsArg(u.nombre)})" title="Generar una contraseña temporal">Restablecer contraseña</button>
         ${u.usuario!=='admin'?`<button class="btn btn-ghost btn-sm" onclick="toggleUsuario(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>`:''}
       </td>
@@ -94,11 +94,14 @@ function openNewUsuario() {
   if ($('usr-rol')) $('usr-rol').value = 'oficial';
   if ($('usr-pass')) $('usr-pass').placeholder = 'Contraseña requerida';
   describirRol();
+  pintarFotoUsuario('');
+  if ($('usr-credencial')) $('usr-credencial').style.display = 'none';
   openModal('modal-usuario');
 }
 
 async function editUsuario(id) {
-  const { data } = await _sb.from('usuarios').select(USR_COLS).eq('id',id).single();
+  let { data, error } = await _sb.from('usuarios').select(USR_COLS + ',foto').eq('id',id).single();
+  if (error) ({ data } = await _sb.from('usuarios').select(USR_COLS).eq('id',id).single());   // sin institucional.sql
   if (!data) return;
   $('modal-usr-title').textContent = 'Editar usuario';
   $('usr-id').value        = data.id;
@@ -110,6 +113,9 @@ async function editUsuario(id) {
   if ($('usr-placa')) $('usr-placa').value = data.numero_placa||'';
   if ($('usr-adscripcion')) $('usr-adscripcion').value = data.adscripcion||'';
   describirRol();
+  pintarFotoUsuario(data.foto);
+  if ($('usr-credencial')) $('usr-credencial').style.display = '';
+  if ($('usr-reponer')) $('usr-reponer').onclick = () => reponerCredencial(data.id, data.nombre);
   if ($('usr-pass')) $('usr-pass').placeholder = 'Dejar vacío para no cambiar';
   openModal('modal-usuario');
 }

@@ -83,6 +83,14 @@ const TABLES = {
   ]
 };
 TABLES.auditoria.forEach(a => { a.registro_id = String(TABLES.infracciones.find(r => r.placa === 'XSS-001').id); });
+// Imagen institucional, credencial y placas reportadas (institucional.sql)
+const TOKEN_CRED = '99999999-8888-4777-8666-555555555555';
+const ESCUDO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+Object.assign(ADMIN, { token_credencial: TOKEN_CRED, foto: '', numero_placa: 'PV-001', adscripcion: 'Delegación Centro' });
+Object.assign(TABLES.configuracion[0], { escudo: ESCUDO, logo: '', color_institucional: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' });
+TABLES.vehiculos_reportados = [{ id: 1, placa: 'ROB123A', motivo: 'robo', detalle: XSS, reportado_por: XSS, activo: true, created_at: '2026-10-20T10:00:00Z' }];
+TABLES.alertas_placa = [];
+const alertas = [];   // alertas de placa que la app registró
 
 const LIBS_DIR = process.env.LIBS_DIR;
 const LOCAL_LIBS = LIBS_DIR && {
@@ -143,6 +151,13 @@ async function newPage(browser, { dbDown = false } = {}) {
       const i = TABLES.infracciones.find(x => x.token_verificacion === t);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(i ? { tipo: 'infraccion', folio: i.folio, fecha: i.fecha, placa: i.placa, concepto: i.tipo, monto: i.monto, estado: i.estado, infractor: i.infractor, municipio: XSS } : null) });
     }
+    if (table === 'rpc/verificar_oficial') {
+      const t = JSON.parse(req.postData() || '{}').p_token;
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(t === TOKEN_CRED ? { nombre: XSS, rol: 'oficial', numero_placa: 'PV-001', adscripcion: 'Delegación Centro',
+        activo: true, foto: '', municipio: 'Prueba', institucion: 'H. Ayuntamiento de Prueba', escudo: ESCUDO, color: '#7A1F3D' } : null) });
+    }
+    if (table === 'rpc/portal_info')
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' }) });
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
@@ -190,6 +205,7 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (!['GET', 'HEAD'].includes(req.method()) && !table.startsWith('rpc/')) {
       let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch {}
       if (table === 'infracciones' && req.method() === 'POST') inserts.push(body);
+      if (table === 'alertas_placa' && req.method() === 'POST') alertas.push(body);
       rows = withIds(body);
     }
     if ((req.headers()['accept'] || '').includes('vnd.pgrst.object')) {
@@ -488,6 +504,45 @@ function check(name, errors, extra) {
     await page.evaluate(id => printTicket80(id), ret.id); await page.waitForTimeout(900);
     let tk2 = ''; for (const p of popups2.splice(0)) { tk2 += await p.content().catch(() => ''); await p.close().catch(() => {}); }
     check('ticket con documento retenido y firmas', errors, tk2.includes('DOCUMENTO RETENIDO') && tk2.includes('VER-123456') && tk2.includes('Se negó a firmar') && tk2.includes('data:image/png;base64,iVBOR') ? null : 'falta retención o firmas');
+    // Placa reportada: alerta a pantalla completa y aviso a los mandos (institucional.sql)
+    const alertaRep = await page.evaluate(async () => {
+      await openNewInfraccion(); $('inf-placa').value = 'ROB-123-A'; await checkPlacaHistory();
+      const ov = $('alerta-placa'), t = ov ? ov.textContent : '';
+      ov?.querySelector('button').click();
+      return { t, quedo: !!$('alerta-placa') };
+    });
+    await page.waitForTimeout(400);
+    check('alerta: placa reportada', errors, /Vehículo reportado/.test(alertaRep.t) && /Reporte de robo/.test(alertaRep.t) && !alertaRep.quedo && alertas.some(a => a.placa === 'ROB123A') && !(await page.evaluate(() => window.__xss))
+      ? null : JSON.stringify(alertaRep).slice(0, 200) + ' alertas=' + alertas.length);
+    const alertaDeb = await page.evaluate(async () => {
+      $('inf-placa').value = 'GHI-012'; await checkPlacaHistory();
+      const t = $('alerta-placa')?.textContent || ''; $('alerta-placa')?.remove(); return t;
+    });
+    check('alerta: vehículo con muchos adeudos', errors, /Vehículo con adeudos/.test(alertaDeb) && /3 infracciones sin pagar/.test(alertaDeb) ? null : alertaDeb.slice(0, 160));
+    const alertaSinRed = await page.evaluate(async () => {
+      _reportados = null; _guardarLocal('tm_reportados', [{ placa: 'OFF999', motivo: 'retencion', detalle: '', reportado_por: 'X', created_at: new Date().toISOString() }]);
+      _alertaMostrada = ''; revisarAlertaPlaca('OFF-999', []);
+      const t = $('alerta-placa')?.textContent || ''; $('alerta-placa')?.remove();
+      await cargarReportados(); closeModal('modal-infraccion'); return t;
+    });
+    check('alerta sin señal (lista guardada)', errors, /Orden de retención/.test(alertaSinRed) ? null : alertaSinRed.slice(0, 160));
+    await page.evaluate(() => navigate('vehiculos')); await page.waitForTimeout(700);
+    const repLista = await page.evaluate(() => ({ t: $('reportados-lista').textContent, btn: $('btn-nuevo-reporte').style.display }));
+    check('padrón: vehículos reportados', errors, repLista.t.includes('ROB123A') && repLista.btn !== 'none' && !(await page.evaluate(() => window.__xss)) ? null : JSON.stringify(repLista).slice(0, 160));
+    // Credencial con QR, boleta con escudo y color del Ayuntamiento, Mi credencial y Configuración
+    const sello = await page.evaluate(() => !!document.querySelector('.sidebar-logo [data-escudo] img'));
+    check('escudo en el menú lateral', errors, sello ? null : 'sin escudo');
+    await page.evaluate(() => printCredencial(1)); await page.waitForTimeout(900);
+    let cred = ''; for (const p of popups2.splice(0)) { cred += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    check('credencial con foto, QR y escudo', errors, cred.includes('Credencial vigente') && cred.includes('cred-qr') && cred.includes('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB') && /#7a1f3d/i.test(cred) && cred.includes('PV-001') ? null : 'credencial: ' + cred.slice(0, 200));
+    await page.evaluate(id => printInfraccion(id), ret.id); await page.waitForTimeout(900);
+    let bol = ''; for (const p of popups2.splice(0)) { bol += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    check('boleta con escudo y color institucional', errors, /#7a1f3d/i.test(bol) && !/#1A7A82/i.test(bol) && !/class="seal">HCE/.test(bol) && bol.includes('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB') ? null : 'boleta sin marca');
+    const miCred = await page.evaluate(async () => { await abrirMiCredencial(); const t = $('mi-credencial')?.textContent || ''; $('mi-credencial')?.remove(); return t; });
+    check('mi credencial en pantalla', errors, /Credencial vigente/.test(miCred) && /Escanee para verificar/.test(miCred) ? null : miCred.slice(0, 160));
+    await page.evaluate(() => navigate('configuracion')); await page.waitForTimeout(700);
+    const cfgMarca = await page.evaluate(() => ({ img: !!$('cfg-escudo-prev').querySelector('img'), color: $('cfg-color').value, nombre: $('cfg-institucion').value }));
+    check('configuración: imagen institucional', errors, cfgMarca.img && cfgMarca.color === '#7a1f3d' && cfgMarca.nombre === 'H. Ayuntamiento de Prueba' ? null : JSON.stringify(cfgMarca));
     // Impresión en campo: ticket ESC/POS, RawBT y respaldo al navegador
     const esc = await page.evaluate(id => (async () => {
       const r = (await _sb.from('infracciones').select('*').eq('id', id).single()).data;
@@ -544,6 +599,16 @@ function check(name, errors, extra) {
     await page.waitForTimeout(1200);
     txt = await page.textContent('#card');
     check('verificar: token inexistente', errors, /no válido/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
+    await page.goto(BASE + '/verificar?o=' + TOKEN_CRED);
+    await page.waitForTimeout(1200);
+    txt = await page.textContent('#card');
+    check('verificar: credencial del oficial', errors, /en funciones/.test(txt) && txt.includes('PV-001') && !(await page.evaluate(() => window.__xss)) ? null : 'texto: ' + txt.slice(0, 120));
+    const marcaVer = await page.evaluate(() => ({ escudo: !!document.querySelector('[data-escudo] img'), ac: getComputedStyle(document.documentElement).getPropertyValue('--ac').trim() }));
+    check('verificar con escudo y color', errors, marcaVer.escudo && marcaVer.ac.toLowerCase() === '#7a1f3d' ? null : JSON.stringify(marcaVer));
+    await page.goto(BASE + '/verificar?o=00000000-0000-4000-8000-000000000000');
+    await page.waitForTimeout(1200);
+    txt = await page.textContent('#card');
+    check('verificar: credencial falsa', errors, /no es válida/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
     await page.close();
 
     // 3. Portal ciudadano: búsqueda por placa

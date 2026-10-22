@@ -120,6 +120,7 @@ function printCorteFormal(c) {
   table{width:100%;border-collapse:collapse}td{padding:7px 4px;border-bottom:1px solid #ddd}td:last-child{text-align:right}tr.b td{font-weight:bold;font-size:14px}
   .dif{margin-top:1rem;padding:.7rem;border:2px solid ${d===0?'#047857':d<0?'#B91C1C':'#B45309'};font-weight:bold;text-align:center}
   .firmas{display:flex;gap:2rem;margin-top:4rem}.firmas div{flex:1;border-top:1px solid #111;text-align:center;padding-top:.3rem;font-size:11px}</style></head><body>
+  <div style="float:right"><!--ESCUDO:52px--></div>
   <h1>Corte de caja — ${esc(cfg.municipio || 'Tránsito Municipal')}</h1>
   <h2>Folio CC-${String(c.id).padStart(5,'0')} · ${esc(c.cajero)}<br>Del ${fh(c.desde)} al ${fh(c.hasta)}</h2>
   <table>
@@ -136,7 +137,7 @@ function printCorteFormal(c) {
   </body></html>`;
   const win = window.open('', '_blank', 'width=700,height=700');
   if (!win) return;
-  win.document.write(html); win.document.close();
+  win.document.write(conMarca(html)); win.document.close();
   win.onload = () => { win.focus(); win.print(); };
 }
 

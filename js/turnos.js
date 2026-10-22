@@ -117,6 +117,6 @@ function printTurnoResumen(d) {
   </div>
   <div class="firma"><div class="firma-line">Firma del oficial</div><div class="firma-line">Vo.Bo. Supervisor</div></div>
   </body></html>`;
-  const w=window.open('','_blank','width=850,height=650');w.document.write(html);w.document.close();w.onload=()=>{w.focus();w.print();};
+  const w=window.open('','_blank','width=850,height=650');w.document.write(conMarca(html));w.document.close();w.onload=()=>{w.focus();w.print();};
 }
 

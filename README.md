@@ -15,8 +15,8 @@ Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
   tiempo real.
 - `consulta.html` — portal ciudadano: consulta de infracciones por placa o
   folio exactos, sin iniciar sesión.
-- `verificar.html` — página pública a la que apunta el QR de boletas, tickets
-  y recibos: confirma que el documento es auténtico y muestra su estado actual.
+- `verificar.html` — página pública a la que apunta el QR de boletas, tickets,
+  recibos, constancias y credenciales del personal: confirma que el documento es auténtico y muestra su estado actual.
 - `offline.html` — se muestra si la app se abre sin internet (PWA).
 
 ## Configuración
@@ -96,6 +96,15 @@ proyectos activos a la vez).
   `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_PLANTILLA`,
   `MP_ACCESS_TOKEN` y, opcional, `MP_WEBHOOK_SECRET`. Se activan en
   Configuración.
+
+- `institucional.sql` — credencial del oficial con foto y QR verificable
+  (`/verificar?o=…`, función pública `verificar_oficial`; "Reponer
+  credencial" invalida el QR anterior), placas reportadas
+  (`vehiculos_reportados`: robo, orden de retención, búsqueda) que alertan al
+  oficial a pantalla completa y avisan a los mandos en tiempo real
+  (`alertas_placa`), e imagen institucional en Configuración (escudo, logo,
+  nombre y color del Ayuntamiento en documentos impresos y en el portal).
+  Correr después de `mejoras2.sql`.
 
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →

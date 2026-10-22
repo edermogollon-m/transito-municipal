@@ -467,7 +467,7 @@
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-badge">HCE</div>
+      <div class="logo-badge" data-escudo>HCE</div>
       <div class="logo-text">
         <div class="logo-title">Tránsito</div>
         <div class="logo-sub">y Movilidad Municipal</div>
@@ -559,6 +559,10 @@
       <button onclick="abrirImpresora()" style="margin-top:.4rem;width:100%;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:none;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.35);transition:background .15s,color .15s;font-family:inherit" onmouseover="this.style.background='rgba(255,255,255,.06)';this.style.color='rgba(255,255,255,.75)'" onmouseout="this.style.background='none';this.style.color='rgba(255,255,255,.35)'">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Impresora del ticket
+      </button>
+      <button onclick="abrirMiCredencial()" style="margin-top:.4rem;width:100%;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:none;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.35);transition:background .15s,color .15s;font-family:inherit" onmouseover="this.style.background='rgba(255,255,255,.06)';this.style.color='rgba(255,255,255,.75)'" onmouseout="this.style.background='none';this.style.color='rgba(255,255,255,.35)'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2.5"/><line x1="13" y1="10" x2="18" y2="10"/><line x1="13" y1="14" x2="17" y2="14"/></svg>
+        Mi credencial
       </button>
       <button onclick="openCambiarContrasena()" style="margin-top:.4rem;width:100%;display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:none;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.35);transition:background .15s,color .15s;font-family:inherit" onmouseover="this.style.background='rgba(255,255,255,.06)';this.style.color='rgba(255,255,255,.75)'" onmouseout="this.style.background='none';this.style.color='rgba(255,255,255,.35)'">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -931,6 +935,42 @@
           </div>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
         </div>
+        <div class="card" id="marca-card">
+          <div class="card-title" style="margin-bottom:.35rem">Imagen institucional</div>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.5">El escudo, el logo y el color del Ayuntamiento aparecen en boletas, recibos, tickets, reportes, credenciales y en el portal ciudadano. El panel conserva sus colores.</p>
+          <div class="form-row">
+            <div class="form-field"><label for="cfg-institucion">Nombre de la institución</label><input class="form-input" id="cfg-institucion" type="text" placeholder="H. Ayuntamiento de Misantla" oninput="pintarMarcaConfig()"/></div>
+            <div class="form-field"><label for="cfg-color">Color institucional</label>
+              <div style="display:flex;gap:.5rem;align-items:center"><input id="cfg-color" type="color" value="#1A7A82" oninput="pintarMarcaConfig()" style="width:52px;height:38px;border:1px solid var(--border);border-radius:8px;background:none;padding:2px;cursor:pointer"/><button type="button" class="btn btn-ghost btn-sm" onclick="restablecerColorMarca()">Usar el color original</button></div>
+            </div>
+          </div>
+          <div class="marca-imgs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin-bottom:1rem">
+            <div class="form-field" style="margin:0"><label>Escudo del municipio</label>
+              <div style="display:flex;gap:.75rem;align-items:center">
+                <div id="cfg-escudo-prev" style="width:72px;height:72px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:var(--muted);text-align:center;padding:4px;flex-shrink:0">Sin imagen</div>
+                <div style="display:flex;flex-direction:column;gap:.35rem;align-items:flex-start">
+                  <label class="btn btn-ghost btn-sm" style="cursor:pointer">Subir escudo<input type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="elegirImagenMarca('escudo', this)"/></label>
+                  <button type="button" id="cfg-escudo-quitar" class="btn btn-ghost btn-sm" onclick="quitarImagenMarca('escudo')" style="display:none">Quitar</button>
+                </div>
+              </div>
+            </div>
+            <div class="form-field" style="margin:0"><label>Logo de la administración <span style="font-weight:400;color:var(--muted)">(opcional)</span></label>
+              <div style="display:flex;gap:.75rem;align-items:center">
+                <div id="cfg-logo-prev" style="width:72px;height:72px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:var(--muted);text-align:center;padding:4px;flex-shrink:0">Sin imagen</div>
+                <div style="display:flex;flex-direction:column;gap:.35rem;align-items:flex-start">
+                  <label class="btn btn-ghost btn-sm" style="cursor:pointer">Subir logo<input type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="elegirImagenMarca('logo', this)"/></label>
+                  <button type="button" id="cfg-logo-quitar" class="btn btn-ghost btn-sm" onclick="quitarImagenMarca('logo')" style="display:none">Quitar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.4rem">Así se verá el encabezado</div>
+          <div id="cfg-marca-muestra" style="background:#1A7A82;color:#fff;border-radius:10px;padding:.75rem 1rem;display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+            <div data-muestra-escudo style="width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center"></div>
+            <div><div data-muestra-nombre style="font-weight:800;font-size:.9rem">H. Ayuntamiento</div><div style="font-size:.72rem;opacity:.85">Dirección de Tránsito y Movilidad</div></div>
+          </div>
+          <button class="btn btn-primary" id="btn-guardar-marca" onclick="guardarMarcaInstitucional()">Guardar imagen institucional</button>
+        </div>
         <div class="card">
           <div class="card-title" style="margin-bottom:1rem">Pago por transferencia</div>
           <div class="form-row">
@@ -1298,6 +1338,15 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Registrar vehículo
           </button>
+        </div>
+
+        <!-- Placas reportadas (alertan al oficial al capturarlas) -->
+        <div class="card" id="reportados-card" style="margin-bottom:1rem;border-left:3px solid var(--red)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.6rem">
+            <div><div class="card-title">Vehículos reportados</div><div id="reportados-cuenta" style="font-size:.75rem;color:var(--muted)"></div></div>
+            <button class="btn btn-ghost btn-sm" id="btn-nuevo-reporte" onclick="openNuevoReporte()">Reportar placa</button>
+          </div>
+          <div id="reportados-lista" class="table-wrap"></div>
         </div>
 
         <!-- Mini stats -->
@@ -1847,6 +1896,19 @@
       <div class="form-field"><label>Número de placa (policía vial)</label><input id="usr-placa" class="form-input" type="text" placeholder="Ej. PV-123"/></div>
       <div class="form-field"><label>Adscripción</label><input id="usr-adscripcion" class="form-input" type="text" placeholder="Ej. Delegación Misantla"/></div>
     </div>
+    <div class="form-field" id="usr-credencial" style="display:none">
+      <label>Credencial con QR</label>
+      <div style="display:flex;gap:.85rem;align-items:center">
+        <div id="usr-foto-prev" style="width:60px;height:76px;border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.66rem;color:var(--muted);overflow:hidden;flex-shrink:0">Sin foto</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem;align-items:flex-start">
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer">Subir foto<input type="file" accept="image/*" capture="user" hidden onchange="subirFotoCredencial(this)"/></label>
+            <button type="button" class="btn btn-ghost btn-sm" id="usr-reponer">Reponer credencial</button>
+          </div>
+          <div style="font-size:.73rem;color:var(--muted);line-height:1.45">La foto sale en la credencial y en la verificación pública. "Reponer" invalida el QR de una credencial perdida.</div>
+        </div>
+      </div>
+    </div>
     <div class="form-field">
       <label>Rol</label>
       <select id="usr-rol" class="form-select" onchange="describirRol()">
@@ -1864,6 +1926,33 @@
       <button type="button" class="btn btn-ghost" onclick="closeModal('modal-usuario')">Cancelar</button>
       <button type="button" class="btn btn-primary" onclick="submitUsuario()">Guardar usuario</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: Reportar placa -->
+<div class="modal-overlay" id="modal-reporte">
+  <div class="modal" style="width:440px">
+    <div class="modal-header">
+      <div class="modal-title">Reportar placa</div>
+      <button class="modal-close" onclick="closeModal('modal-reporte')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="event.preventDefault();submitReporte()">
+      <div class="form-field"><label for="rep-placa">Placa</label><input id="rep-placa" class="form-input" type="text" placeholder="ABC-123-D" oninput="this.value=this.value.toUpperCase()" style="font-family:monospace;font-weight:700;letter-spacing:.05em"/></div>
+      <div class="form-field"><label for="rep-motivo">Motivo</label>
+        <select id="rep-motivo" class="form-select">
+          <option value="robo">Reporte de robo</option>
+          <option value="retencion">Orden de retención</option>
+          <option value="busqueda">En búsqueda u operativo</option>
+          <option value="otro">Otro motivo</option>
+        </select>
+      </div>
+      <div class="form-field"><label for="rep-detalle">Detalle para el oficial <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><textarea id="rep-detalle" class="form-input" rows="3" placeholder="Ej. Tsuru blanco, denuncia FGE 123/2026. Avisar a la Fiscalía."></textarea></div>
+      <div style="font-size:.75rem;color:var(--muted);line-height:1.45;margin-bottom:.4rem">Cuando un oficial capture esta placa verá una alerta a pantalla completa y tú recibirás un aviso.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-reporte')">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Reportar placa</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -2369,6 +2458,7 @@
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <!-- La app, por módulos (el orden importa: arranque.js va al final) -->
+<script src="marca.js"></script>
 <script src="js/nucleo.js"></script>
 <script src="js/panel.js"></script>
 <script src="js/infracciones.js"></script>
@@ -2392,6 +2482,8 @@
 <script src="js/accidentes.js"></script>
 <script src="js/turnos.js"></script>
 <script src="js/extras.js"></script>
+<script src="js/institucional.js"></script>
+<script src="js/alertas.js"></script>
 <script src="js/arranque.js"></script>
 </body>
 </html>

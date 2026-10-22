@@ -112,10 +112,10 @@
   <!-- Form panel -->
   <div class="login-panel">
     <div class="login-logo">
-      <div class="logo-badge">HCE</div>
+      <div class="logo-badge" data-escudo>HCE</div>
       <div class="logo-info">
         <div class="logo-title">Tránsito Municipal</div>
-        <div class="logo-sub">Sistema de Movilidad · HCE Consultoría</div>
+        <div class="logo-sub" data-institucion>Sistema de Movilidad · HCE Consultoría</div>
       </div>
     </div>
 
@@ -174,7 +174,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script src="supabase.js"></script>
+<script src="marca.js"></script>
 <script>
+// Escudo y color del Ayuntamiento (institucional.sql)
+aplicarMarca(marcaGuardada());
+_sb.rpc('portal_info').then(({ data }) => { const d = Array.isArray(data) ? data[0] : data; if (d && 'escudo' in d) aplicarMarca(guardarMarca(d)); }).catch(() => {});
   _sb.auth.getSession().then(({ data }) => {
     if (data.session && localStorage.getItem('tm_session')) window.location.replace('/');
   });

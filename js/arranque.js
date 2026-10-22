@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
   }
   initUI();
+  iniciarMarcaPanel();
   actualizarIndicadorCola();
   actualizarIndicadorCobros();
   if (!(await checkConexion())) {
@@ -69,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
   try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
   setupPushNotifications().catch(()=>{});
+  escucharAlertasPlaca();
   const repMes = new URLSearchParams(location.search).get('reporte');
   if (repMes && /^\d{4}-\d{2}$/.test(repMes)) {
     // Enlace del correo mensual: abre Reportes con ese mes elegido

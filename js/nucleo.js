@@ -310,7 +310,7 @@ function navigate(view, btn) {
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
-  if (view==='vehiculos')     renderVehiculos();
+  if (view==='vehiculos')     { renderVehiculos(); renderReportados(); }
   if (view==='grua')          renderGrua();
   if (view==='reportes')      initReporteMensual();
   if (view==='mapa')          renderMapa();

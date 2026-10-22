@@ -316,6 +316,6 @@ async function printReciboPago(pagoId) {
   <script>setTimeout(()=>window.print(),600)<\/script>
   </body></html>`;
   const win = window.open('','_blank','width=900,height=700');
-  if (win) { win.document.write(html); win.document.close(); }
+  if (win) { win.document.write(conMarca(html)); win.document.close(); }
 }
 

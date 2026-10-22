@@ -36,12 +36,17 @@
     .pill{display:inline-block;font-size:.72rem;font-weight:700;padding:.2rem .65rem;border-radius:20px;}
     .note{font-size:.72rem;color:var(--muted);text-align:center;margin-top:1rem;line-height:1.5;}
     .spinner{padding:2.5rem;text-align:center;color:var(--muted);font-size:.85rem;}
+    .oficial{display:flex;gap:1rem;align-items:center;padding:1.1rem 1.25rem .4rem;}
+    .oficial-foto{width:84px;height:104px;border-radius:10px;background:var(--stone);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:800;color:var(--ac);overflow:hidden;flex-shrink:0;}
+    .oficial-foto img{width:100%;height:100%;object-fit:cover;}
+    .oficial h2{font-size:1.15rem;line-height:1.25;}
+    .oficial .cargo{font-size:.78rem;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:.04em;margin-top:.2rem;}
   </style>
 </head>
 <body>
   <div class="topbar">
-    <div class="badge">HCE</div>
-    <div><div class="tb-title">Tránsito y Movilidad Municipal</div><div class="tb-sub">Verificación de documentos</div></div>
+    <div class="badge" data-escudo>HCE</div>
+    <div><div class="tb-title" data-institucion>Tránsito y Movilidad Municipal</div><div class="tb-sub">Verificación de documentos</div></div>
   </div>
   <main>
     <div class="card" id="card"><div class="spinner">Verificando…</div></div>
@@ -51,7 +56,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script src="supabase.js"></script>
+<script src="marca.js"></script>
 <script>
+aplicarMarca(marcaGuardada());
+_sb.rpc('portal_info').then(({ data }) => { const d = Array.isArray(data) ? data[0] : data; if (d && 'escudo' in d) aplicarMarca(guardarMarca(d)); }).catch(() => {});
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
@@ -72,7 +80,40 @@ function noValido(msg) {
   document.getElementById('card').innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>Documento no válido</h1><p>${esc(msg)}</p></div></div>`;
 }
 
+// Credencial del oficial (institucional.sql): /verificar?o=<token>
+const CARGOS = { admin: 'Director de Tránsito', supervisor: 'Supervisor de Tránsito', oficial: 'Policía vial', cajero: 'Caja · Tesorería',
+  juridico: 'Jurídico · Juez calificador', corralon: 'Encargado de corralón', contraloria: 'Contraloría' };
+async function verificarOficial(token) {
+  document.querySelector('.note').textContent = 'Esta página confirma que la persona de la credencial pertenece a la Dirección de Tránsito. Compare la foto y el nombre con quien la porta.';
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return noValido('El código no corresponde a ninguna credencial de Tránsito.');
+  let data = null, error = null;
+  try { ({ data, error } = await _sb.rpc('verificar_oficial', { p_token: token })); } catch (e) { error = e; }
+  if (error) {
+    document.getElementById('card').innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>No se pudo verificar</h1><p>El servicio no está disponible en este momento. Intente de nuevo en unos minutos.</p></div></div>`;
+    return;
+  }
+  if (!data) return noValido('Esta credencial no es válida: es falsa o fue reemplazada por una nueva. No entregue documentos ni dinero y repórtelo a la Dirección de Tránsito.');
+  aplicarMarca(guardarMarca({ ...(marcaGuardada() || {}), escudo: data.escudo, color: data.color, institucion: data.institucion }));
+  const activo = !!data.activo, foto = marcaImagen(data.foto);
+  const ini = String(data.nombre || '').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  document.getElementById('card').innerHTML = `
+    <div class="status ${activo ? 'ok' : 'bad'}">${activo ? ICON_OK : ICON_BAD}<div>
+      <h1>${activo ? 'Personal de Tránsito en funciones' : 'Credencial no vigente'}</h1>
+      <p>${activo ? 'Credencial auténtica' : 'Esta persona ya no está en funciones'} · Dirección de Tránsito${data.municipio ? ' de ' + esc(data.municipio) : ''}</p>
+    </div></div>
+    <div class="oficial">
+      <div class="oficial-foto">${foto ? `<img src="${foto}" alt="Foto de ${esc(data.nombre)}">` : esc(ini)}</div>
+      <div><h2>${esc(data.nombre)}</h2><div class="cargo">${esc(CARGOS[data.rol] || data.rol)}</div></div>
+    </div>
+    <div class="grid">
+      <div class="f"><label>Número de placa</label><span class="mono">${esc(data.numero_placa || '—')}</span></div>
+      <div class="f"><label>Adscripción</label><span>${esc(data.adscripcion || '—')}</span></div>
+    </div>`;
+}
+
 async function verificar() {
+  const oficial = new URLSearchParams(location.search).get('o');
+  if (oficial !== null) return verificarOficial(oficial);
   const token = new URLSearchParams(location.search).get('t') || '';
   if (!/^[0-9a-f-]{36}$/i.test(token)) return noValido('El código no corresponde a ningún documento emitido por Tránsito.');
   let data = null, error = null;

@@ -61,6 +61,7 @@ async function printReporteMensual() {
     @media print{button{display:none}body{margin:0 auto}}
   </style></head><body>
   <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div style="float:right;margin-left:1rem"><!--ESCUDO:56px--></div>
   <div class="k">Dirección de Tránsito y Movilidad · ${esc(r.municipio || '')}${r.estado_mun ? ', ' + esc(r.estado_mun) : ''}</div>
   <h1>Reporte mensual · ${esc(nombre)}</h1>
   <div class="sub">Generado el ${new Date().toLocaleString('es-MX')}</div>
@@ -84,7 +85,7 @@ async function printReporteMensual() {
   <div class="pie">Sistema de Tránsito y Movilidad Municipal</div>
   </body></html>`;
   if (!win) { alert('Permite las ventanas emergentes para ver el reporte'); return; }
-  win.document.write(html); win.document.close();
+  win.document.write(conMarca(html)); win.document.close();
 }
 
 // ── Reporte trimestral para Cabildo (comparado con el mismo trimestre del año anterior) ──
@@ -173,6 +174,7 @@ async function printReporteCabildo() {
     @media print{button{display:none}body{margin:0 auto}h3{break-after:avoid}svg,table{break-inside:avoid}}
   </style></head><body>
   <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div style="float:right;margin-left:1rem"><!--ESCUDO:56px--></div>
   <div class="k">Dirección de Tránsito y Movilidad · ${esc(cfg?.municipio || '')}${cfg?.estado ? ', ' + esc(cfg.estado) : ''}</div>
   <h1>Informe trimestral al H. Cabildo</h1>
   <div class="sub">${esc(nombreTri)} · comparado con el mismo periodo de ${y - 1} · generado el ${new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
@@ -195,7 +197,7 @@ async function printReporteCabildo() {
   <div class="pie">Cifras del Sistema de Tránsito y Movilidad Municipal al ${new Date().toLocaleDateString('es-MX')}. Recaudación = pagos registrados en Caja dentro del trimestre.</div>
   </body></html>`;
   if (!win) { alert('Permite las ventanas emergentes para ver el reporte'); return; }
-  win.document.write(html); win.document.close();
+  win.document.write(conMarca(html)); win.document.close();
 }
 
 async function enviarReporteMensual() {
@@ -235,7 +237,7 @@ async function generateReport(tipo) {
     : rows.map(r=>`<tr><td>${esc(r.num||'—')}</td><td>${esc(r.titular)}</td><td>${esc(r.tipo)}</td><td>${esc(r.placa||'—')}</td><td>${esc(r.ruta||'—')}</td><td>${fmtDateShort(r.vencimiento)}</td><td>${r.estado}</td></tr>`).join('');
 
   const win = window.open('','_blank','width=900,height=700');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+  win.document.write(conMarca(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
   <style>
     body{font-family:Arial,sans-serif;margin:2rem;color:#222}
     h2{font-size:1.3rem;margin-bottom:.3rem}
@@ -252,7 +254,7 @@ async function generateReport(tipo) {
   <button onclick="window.print()" style="margin-bottom:1rem;padding:.4rem 1rem;background:#1A7A82;color:#fff;border:none;border-radius:6px;cursor:pointer">Imprimir / PDF</button>
   <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table>
   <div class="footer">Sistema de Tránsito y Movilidad Municipal — HCE Consultoría</div>
-  </body></html>`);
+  </body></html>`));
   win.document.close();
 }
 
