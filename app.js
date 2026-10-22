@@ -17,13 +17,13 @@ const _rol = _session?.rol || (_session?.role === 'Director de Tránsito' ? 'adm
 const ROLES = {
   admin: {
     nombre: 'Director de Tránsito', vistas: '*', acciones: '*',
-    resumen: 'Acceso total: usuarios, configuración, cobro, cancelaciones, impugnaciones y bitácora.'
+    resumen: 'Acceso total: usuarios, configuración, cobro, cancelaciones e impugnaciones.'
   },
   supervisor: {
     nombre: 'Supervisor de Tránsito',
-    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
     acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','reportes','caja_ver','turnos','devolver'],
-    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón, cierra turnos olvidados y revisa la bitácora. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
+    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón y cierra turnos olvidados. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
   },
   oficial: {
     nombre: 'Policía vial', soloMias: true,
@@ -51,9 +51,9 @@ const ROLES = {
   },
   contraloria: {
     nombre: 'Contraloría (solo lectura)',
-    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
     acciones: ['reportes','caja_ver'],
-    resumen: 'Ve todo, incluidas la caja, los cortes, los pagos anulados y la bitácora, y puede exportar. No puede cambiar nada.'
+    resumen: 'Ve todo, incluidas la caja, los cortes y los pagos anulados, y puede exportar. No puede cambiar nada.'
   }
 };
 const _permisosRol = ROLES[_rol] || ROLES.oficial;
@@ -158,7 +158,7 @@ async function logActivity(tipo, texto) {
 }
 
 // ── Navigation ────────────────────────────────────────────
-const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','bitacora','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
+const VIEWS = ['dashboard','infracciones','permisos','reportes','configuracion','caja','oficiales','usuarios','vehiculos','grua','accidentes','mapa','rendimiento','calendario'];
 
 // ── Fotos (compresión client-side) ───────────────────────
 async function compressPhoto(file, maxPx = 1000) {
@@ -299,18 +299,17 @@ function navigate(view, btn) {
     const match = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
     if (match) match.classList.add('active');
   }
-  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', bitacora:'Bitácora', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
-  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', bitacora:'Bitácora', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
+  const titles = { dashboard:'Panel general', infracciones:'Control de Infracciones', permisos:'Permisos de Circulación', reportes:'Reportes', configuracion:'Configuración', caja:'Pagos / Caja', oficiales:'Desempeño de Oficiales', usuarios:'Gestión de Usuarios', vehiculos:'Padrón Vehicular', grua:'Grúa / Corralón', accidentes:'Accidentes Viales', mapa:'Mapa de Infracciones', rendimiento:'Rendimiento por Oficial', calendario:'Calendario de Infracciones' };
+  const crumbs = { dashboard:'Dashboard', infracciones:'Infracciones', permisos:'Permisos', reportes:'Reportes', configuracion:'Configuración', caja:'Caja', oficiales:'Oficiales', usuarios:'Usuarios', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', mapa:'Mapa', rendimiento:'Rendimiento', calendario:'Calendario' };
   if($('topbar-title')) $('topbar-title').textContent = titles[view] || view;
   if($('topbar-crumb')) $('topbar-crumb').textContent = crumbs[view] || view;
   if (view==='dashboard')     renderDashboard();
   if (view==='infracciones')  renderInfracciones();
   if (view==='permisos')      renderPermisos();
-  if (view==='configuracion') loadConfig();
+  if (view==='configuracion') { loadConfig(); if (_rol === 'admin') renderErroresApp(); }
   if (view==='caja')          renderCaja();
   if (view==='oficiales')     renderOficiales();
   if (view==='usuarios')      renderUsuarios();
-  if (view==='bitacora')      renderBitacora();
   if (view==='vehiculos')     renderVehiculos();
   if (view==='grua')          renderGrua();
   if (view==='reportes')      initReporteMensual();
@@ -1933,7 +1932,7 @@ async function saveDetailEstado(tabla, id) {
     return;
   }
   if (tabla==='infracciones' && estado==='cancelada') {
-    const motivo = prompt('Motivo de la cancelación (queda registrado en la bitácora):');
+    const motivo = prompt('Motivo de la cancelación:');
     if (!motivo || !motivo.trim()) return;
     cambios.cancelacion_motivo = motivo.trim();
   }
@@ -1946,7 +1945,7 @@ async function saveDetailEstado(tabla, id) {
 
 // Los registros no se borran (controles.sql): el permiso se cancela con motivo
 async function cancelarPermiso(id) {
-  const motivo = prompt('Motivo de la cancelación del permiso (queda registrado en la bitácora):');
+  const motivo = prompt('Motivo de la cancelación del permiso:');
   if (!motivo || !motivo.trim()) return;
   const { error } = await _sb.from('permisos').update({ estado: 'cancelado', cancelacion_motivo: motivo.trim() }).eq('id', id);
   if (error) { alert('Error: '+error.message); return; }
@@ -4586,64 +4585,6 @@ function _waFromBtn(btn) {
   notificarWhatsApp({ telefono:d.tel, infractor:d.nombre, folio:d.folio,
     placa:d.placa, tipo:d.tipo, monto:d.monto, ubicacion:d.ubicacion, fecha:d.fecha,
     descPct:Number(d.descPct)||0, descHasta:d.descHasta||'' });
-}
-
-// ══════════════════════════════════════════════════════════
-// BITÁCORA (tabla auditoria, la llenan triggers en el servidor)
-// ══════════════════════════════════════════════════════════
-const BIT_MODULOS = { infracciones:'Infracciones', pagos:'Pagos', permisos:'Permisos', vehiculos:'Vehículos', grua:'Grúa', accidentes:'Accidentes', usuarios:'Usuarios', configuracion:'Configuración', turnos:'Turnos' };
-const BIT_ACCIONES = { alta:['Alta','badge-green'], cambio:['Cambio','badge-blue'], baja:['Baja','badge-red'] };
-const BIT_CAMPOS = { estado:'Estado', monto:'Monto', placa:'Placa', infractor:'Infractor', tipo:'Tipo', ubicacion:'Ubicación', obs:'Observaciones', oficial:'Oficial', fecha:'Fecha', licencia:'Licencia', vehiculo:'Vehículo', color_vehiculo:'Color', telefono:'Teléfono', impugnacion_motivo:'Motivo de impugnación', monto_final:'Total cobrado', monto_original:'Monto original', descuento_pct:'Descuento %', metodo:'Método', cajero:'Cajero', rol:'Rol', activo:'Activo', nombre:'Nombre', usuario:'Usuario', vencimiento:'Vencimiento', titular:'Titular', propietario:'Propietario', fecha_liberacion:'Liberación', montos:'Tarifas', descripcion:'Descripción', valor_uma:'Valor UMA', correo_reporte:'Correo del reporte', infractor_domicilio:'Domicilio del infractor', infractor_correo:'Correo del infractor', infractor_ausente:'Infractor ausente', licencia_tipo:'Tipo de licencia', circunstancias:'Circunstancias (art. 331)', numero_placa:'Placa del policía vial', adscripcion:'Adscripción', leyenda_recurso:'Medio de defensa', documento_retenido:'Documento retenido', documento_numero:'Número del documento', firma_negada:'Se negó a firmar', resguardo_lugar:'Lugar de resguardo', avisos_correo:'Avisos por correo', avisos_whatsapp:'Avisos por WhatsApp', pago_en_linea:'Pago en línea' };
-let _bitDesde = 0;
-
-function _bitValor(v) {
-  if (v === null || v === undefined || v === '') return '—';
-  if (typeof v === 'object') return JSON.stringify(v);
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return fmtDateShort(v);
-  return String(v);
-}
-
-function _bitDetalle(e) {
-  const c = e.cambios || {};
-  if (e.accion === 'cambio') {
-    return Object.entries(c).map(([k, v]) =>
-      `<div><span style="color:var(--muted)">${esc(BIT_CAMPOS[k] || k)}:</span> ${esc(_bitValor(v.antes))} → <strong>${esc(_bitValor(v.despues))}</strong></div>`).join('');
-  }
-  const clave = ['tipo','placa','infractor','monto','monto_final','estado','titular','nombre','rol'].filter(k => c[k] !== undefined && c[k] !== '');
-  return clave.slice(0, 4).map(k => `<span style="color:var(--muted)">${esc(BIT_CAMPOS[k] || k)}:</span> ${esc(_bitValor(c[k]))}`).join(' · ');
-}
-
-async function renderBitacora(mas) {
-  const tbody = $('bitacora-table'); if (!tbody) return;
-  if (!mas && _rol === 'admin') renderErroresApp();
-  if (!mas) { _bitDesde = 0; tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>'; }
-  const PAG = 100;
-  let q = _sb.from('auditoria').select('*').order('ts', { ascending: false }).range(_bitDesde, _bitDesde + PAG - 1);
-  const tabla = $('bit-tabla')?.value, accion = $('bit-accion')?.value;
-  const desde = $('bit-desde')?.value, hasta = $('bit-hasta')?.value;
-  const buscar = ($('bit-buscar')?.value || '').trim().replace(/[,()"'\\%*]/g, ' ').trim();
-  if (tabla)  q = q.eq('tabla', tabla);
-  if (accion) q = q.eq('accion', accion);
-  if (desde)  q = q.gte('ts', desde + 'T00:00:00');
-  if (hasta)  q = q.lte('ts', hasta + 'T23:59:59');
-  if (buscar) q = q.or(`usuario_nombre.ilike.%${buscar}%,resumen.ilike.%${buscar}%`);
-  const { data, error } = await q;
-  if (error) { tbody.innerHTML = `<tr><td colspan="6" style="color:red">${esc(error.message)}</td></tr>`; return; }
-  const filas = (data || []).map(e => {
-    const [acc, cls] = BIT_ACCIONES[e.accion] || [e.accion, 'badge-muted'];
-    return `<tr>
-      <td style="white-space:nowrap">${esc(new Date(e.ts).toLocaleString('es-MX', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))}</td>
-      <td style="font-weight:600">${esc(e.usuario_nombre || '—')}</td>
-      <td><span class="${cls}">${esc(acc)}</span></td>
-      <td>${esc(BIT_MODULOS[e.tabla] || e.tabla)}</td>
-      <td class="mono">${esc(e.resumen || e.registro_id || '—')}</td>
-      <td style="font-size:.78rem;line-height:1.5">${_bitDetalle(e)}</td>
-    </tr>`;
-  }).join('');
-  if (!mas) tbody.innerHTML = filas || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin movimientos con estos filtros</td></tr>';
-  else tbody.insertAdjacentHTML('beforeend', filas);
-  _bitDesde += (data || []).length;
-  const btnMas = $('bit-mas'); if (btnMas) btnMas.style.display = (data || []).length === PAG ? '' : 'none';
 }
 
 // Errores que reportó la app en los navegadores del personal (solo el Director)

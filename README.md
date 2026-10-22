@@ -40,8 +40,8 @@ proyectos activos a la vez).
   Ya está aplicado en el proyecto `transito-municipal`.
 - `auditoria.sql` — bitácora: triggers que registran cada alta, cambio o baja
   (quién, cuándo, campo por campo) en `auditoria`. Solo admin y supervisor la
-  leen; nadie puede editarla desde la app. Pantalla **Bitácora** y sección
-  "Historial" en el detalle de cada infracción.
+  leen; nadie puede editarla. La app ya no la muestra (se quitó la pantalla
+  Bitácora); se consulta directo en la base si hace falta.
 - `evidencias_storage.sql` — bucket privado `evidencias` en Supabase Storage.
   Las fotos ya no se guardan dentro de la base: la columna `fotos` guarda las
   rutas y la app muestra enlaces firmados de 1 hora.
