@@ -308,10 +308,8 @@ function check(name, errors, extra) {
       rutas.length === 1 && /^infracciones\/\d{4}\/[0-9a-f-]{36}\.jpg$/.test(rutas[0]) && storageUploads.some(p => p.includes('/evidencias/infracciones/'))
         ? null : 'rutas: ' + JSON.stringify(rutas));
 
-    // Bitácora: historial dentro del detalle (solo mandos)
-    const hist = await page.evaluate(() => document.getElementById('detail-historial')?.textContent || '');
-    check('historial en el detalle', errors, /Cambio/.test(hist) ? null : 'no mostró el historial');
-    check('historial escapa los textos', errors, await page.evaluate(() => window.__xss) ? 'se ejecutó HTML inyectado' : null);
+    // El detalle ya no muestra el historial; los cambios se consultan en la Bitácora
+    check('detalle sin historial', errors, await page.evaluate(() => !!document.getElementById('detail-historial')) ? 'sigue el bloque de historial' : null);
 
     // Boleta y ticket usan el descuento de Configuración (10%), no un 20% fijo
     const pendId = TABLES.infracciones.find(r => r.placa !== 'XSS-001').id;

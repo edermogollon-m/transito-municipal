@@ -1801,7 +1801,6 @@ async function viewDetail(tabla, id) {
       <div style="flex:1;min-width:140px;text-align:center;font-size:.72rem;color:var(--muted)">${imgFirma(r.firma_oficial, 14) || '—'}<div>Firma del policía vial</div></div></div>` : ''}
     <div id="detail-recurso"></div>
     <div id="detail-boleta"></div>
-    <div id="detail-historial"></div>
 
     <!-- Cambiar estado (una impugnación la resuelve Jurídico o el Director) -->
     <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:${r.estado==='impugnada'&&!puede('resolver')?'none':'flex'};align-items:center;gap:.6rem;flex-wrap:wrap">
@@ -1916,7 +1915,6 @@ async function viewDetail(tabla, id) {
   })();
   openModal('modal-detail');
   hidratarFotos($('modal-detail'));
-  if (isInf) cargarHistorial('infracciones', r.id, $('detail-historial'));
   if (isInf && r.documento_retenido) mostrarDevolucion(r);
   if (isInf) mostrarRecurso(r);
   if (isInf && r.boleta) infraccionesDeBoleta(r).then(lista => {
@@ -4662,20 +4660,6 @@ async function renderErroresApp() {
       <td style="font-size:.78rem;line-height:1.5"><div style="font-weight:600">${esc(e.mensaje)}</div>
         ${e.detalle ? `<details><summary style="cursor:pointer;color:var(--muted)">Detalle</summary><pre style="white-space:pre-wrap;font-size:.7rem;margin:.3rem 0 0">${esc(e.detalle)}</pre><div style="color:var(--muted);font-size:.7rem">${esc(e.navegador)}</div></details>` : ''}</td>
     </tr>`).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted)">Sin errores registrados. Todo en orden.</td></tr>';
-}
-
-// Historial de un registro dentro de su detalle (solo lo ven mandos: RLS).
-async function cargarHistorial(tabla, id, cont) {
-  if (!cont || (_rol !== 'admin' && _rol !== 'supervisor')) return;
-  const { data } = await _sb.from('auditoria').select('*').eq('tabla', tabla).eq('registro_id', String(id)).order('ts', { ascending: true });
-  if (!data || !data.length) return;
-  cont.innerHTML = `<div style="margin-top:1rem">
-    <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.5rem">Historial</div>
-    ${data.map(e => `<div style="font-size:.78rem;padding:.4rem 0;border-top:1px solid var(--border)">
-      <div><strong>${esc((BIT_ACCIONES[e.accion] || [e.accion])[0])}</strong> · ${esc(e.usuario_nombre || '—')} · <span style="color:var(--muted)">${esc(new Date(e.ts).toLocaleString('es-MX'))}</span></div>
-      ${e.accion === 'cambio' ? `<div style="margin-top:.2rem">${_bitDetalle(e)}</div>` : ''}
-    </div>`).join('')}
-  </div>`;
 }
 
 // ── Registro de errores (mejoras.sql: errores_app) ────────
