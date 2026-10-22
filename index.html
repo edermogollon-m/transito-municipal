@@ -991,12 +991,17 @@
             <textarea class="form-input" id="cfg-recurso" rows="4"></textarea>
           </div>
           <div class="form-field"><label>Lugar de resguardo de documentos retenidos</label><input class="form-input" id="cfg-resguardo" type="text" placeholder="Ej. Delegación de Tránsito, Misantla"/></div>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Las multas del tabulador se expresan en cuotas: el monto permitido es cuotas × UMA. Actualiza la UMA cada año cuando el INEGI publique el nuevo valor (DOF, enero; vigente desde el 1 de febrero).</p>
+          <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:1rem">Avisos y pago en línea</div>
           <div class="form-field" style="display:flex;flex-direction:column;gap:.35rem;font-size:.82rem">
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-correo"/> Enviar avisos por correo al ciudadano</label>
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-whatsapp"/> Enviar avisos por WhatsApp al ciudadano</label>
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-pago-linea"/> Permitir el pago en línea (Mercado Pago) en el portal ciudadano</label>
           </div>
-          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Las multas del tabulador se expresan en cuotas: el monto permitido es cuotas × UMA. Actualiza la UMA cada año cuando el INEGI publique el nuevo valor (DOF, enero; vigente desde el 1 de febrero).</p>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Los avisos llegan al ciudadano al registrar su infracción, un día antes de que venza cada descuento y cuando la infracción vence. El pago en línea muestra el botón "Pagar en línea" en la consulta ciudadana.</p>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
         </div>
         <div class="card">
