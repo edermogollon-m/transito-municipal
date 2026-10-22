@@ -452,7 +452,14 @@
 
     /* INF STATS STRIP (override) */
     .inf-stats-strip { display:flex; gap:.45rem; flex-wrap:wrap; }
-  </style>
+  .heatmap{display:grid;grid-template-columns:2.4rem repeat(24,minmax(14px,1fr));gap:2px;min-width:520px}
+  .heatmap .hm-c{height:20px;border-radius:3px}
+  .heatmap .hm-h{font-size:.62rem;color:var(--muted);text-align:center}
+  .heatmap .hm-d{font-size:.7rem;color:var(--muted);display:flex;align-items:center}
+  .aviso-inactividad{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px}
+  .aviso-inactividad>div{background:var(--surface,#fff);color:var(--ink);border-radius:12px;padding:1.4rem 1.5rem;max-width:340px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+  .aviso-inactividad strong{font-size:1.05rem}.aviso-inactividad p{font-size:.85rem;color:var(--muted);margin:.4rem 0 1rem}
+</style>
 </head>
 <body>
 <div class="app">
@@ -861,6 +868,15 @@
           </div>
           <div id="rep-estado" role="status" style="font-size:.75rem;color:var(--muted);margin-top:.5rem;min-height:1rem"></div>
         </div>
+        <div class="card" id="reporte-cabildo-card">
+          <div class="card-title" style="margin-bottom:.3rem">Reporte trimestral para Cabildo</div>
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:.85rem">Recaudación, infracciones y accidentes del trimestre comparados con el mismo trimestre del año anterior, con gráficas, motivos y calles más frecuentes. Listo para imprimir o guardar en PDF.</p>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <label for="rep-trimestre" class="sr-only">Trimestre</label>
+            <select id="rep-trimestre" class="filter-select" style="min-width:200px"></select>
+            <button type="button" class="btn btn-primary" onclick="printReporteCabildo()">Generar reporte</button>
+          </div>
+        </div>
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1rem">
           <div class="card" style="cursor:pointer" onclick="generateReport('infracciones')">
             <div style="width:42px;height:42px;border-radius:9px;background:#FEF2F2;display:flex;align-items:center;justify-content:center;margin-bottom:.9rem"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
@@ -1060,6 +1076,7 @@
 
         <!-- PENDIENTES section -->
         <div id="caja-section-pendientes">
+          <div id="pend-offline" role="status" style="display:none;background:var(--amber-bg);color:#92400E;border:1px solid #FCD34D;border-radius:8px;padding:.55rem .8rem;font-size:.78rem;font-weight:600;margin-bottom:.6rem"></div>
           <div class="filter-bar">
             <div class="search-wrap" style="flex:1;min-width:180px">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1412,10 +1429,13 @@
           </select>
           <select id="mapa-mes" class="filter-select" onchange="renderMapa()">
             <option value="">Todos los meses</option>
-            <option value="2026-06">Jun 2026</option>
-            <option value="2026-05">May 2026</option>
-            <option value="2026-04">Abr 2026</option>
-            <option value="2026-03">Mar 2026</option>
+          </select>
+          <select id="mapa-hora" class="filter-select" onchange="renderMapa()" aria-label="Franja horaria">
+            <option value="">Todo el día</option>
+            <option value="0-6">Madrugada (0–6 h)</option>
+            <option value="6-12">Mañana (6–12 h)</option>
+            <option value="12-18">Tarde (12–18 h)</option>
+            <option value="18-24">Noche (18–24 h)</option>
           </select>
           <span id="mapa-count" style="font-size:.8rem;color:var(--muted);margin-left:auto"></span>
         </div>
@@ -1430,6 +1450,35 @@
             <span style="display:flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border-radius:50%;background:#059669;display:inline-block"></span>Pagada</span>
             <span style="display:flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border-radius:50%;background:#2563EB;display:inline-block"></span>Impugnada</span>
             <span style="display:flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border-radius:50%;background:#DC2626;display:inline-block"></span>Vencida</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.9rem">
+            <div>
+              <div class="card-title">Zonas conflictivas por horario</div>
+              <div style="font-size:.78rem;color:var(--muted)">Para planear operativos: qué días, a qué horas y en qué calles se concentran los hechos.</div>
+            </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+              <select id="zonas-fuente" class="filter-select" onchange="renderZonas()" aria-label="Qué contar">
+                <option value="ambos">Infracciones y accidentes</option>
+                <option value="infracciones">Solo infracciones</option>
+                <option value="accidentes">Solo accidentes</option>
+              </select>
+              <select id="zonas-periodo" class="filter-select" onchange="renderZonas()" aria-label="Periodo">
+                <option value="30">Últimos 30 días</option>
+                <option value="90" selected>Últimos 90 días</option>
+                <option value="365">Últimos 12 meses</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap"><div id="zonas-heatmap"></div></div>
+          <div class="card-title" style="margin:1.2rem 0 .6rem;font-size:.85rem">Calles con más hechos</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Calle o lugar</th><th style="text-align:right">Infracciones</th><th style="text-align:right">Accidentes</th><th>Hora más cargada</th><th>Día más cargado</th></tr></thead>
+              <tbody id="zonas-calles"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1671,6 +1720,9 @@
       <div class="form-field"><label>Titular / Empresa *</label><input id="per-titular" class="form-input" placeholder="Nombre completo o razón social" type="text" required/></div>
       <div class="form-row">
         <div class="form-field"><label>Teléfono de contacto</label><input id="per-telefono" class="form-input" type="tel" placeholder="10 dígitos" maxlength="15"/></div>
+        <div class="form-field"><label for="per-correo">Correo (aviso de vencimiento)</label><input id="per-correo" class="form-input" type="email" placeholder="titular@correo.com"/></div>
+      </div>
+      <div class="form-row">
         <div class="form-field"><label>Núm. de unidades</label><input id="per-unidades" class="form-input" type="number" min="1" placeholder="1"/></div>
       </div>
 
