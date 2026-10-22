@@ -1,5 +1,6 @@
 // Pago en línea con Mercado Pago (Checkout Pro).
 //
+//   POST { accion: "estado" }  → { disponible, prueba }   (portal y Configuración)
 //   POST { accion: "crear", infraccion_id, placa }  → { url }   (portal ciudadano)
 //   POST ?accion=webhook   (notificación de Mercado Pago)
 //
@@ -60,9 +61,15 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
+  const { data: cfg } = await admin.from("configuracion").select("pago_en_linea,municipio,app_url").eq("id", 1).single();
+
+  // ── ¿Está listo? El botón solo aparece con la cuenta conectada y el permiso activo ──
+  if (body?.accion === "estado") {
+    return json({ disponible: !!(cfg?.pago_en_linea && token), conectado: !!token, prueba: !!token?.startsWith("TEST-") });
+  }
+
   // ── Crear el cobro desde el portal ciudadano ──
   if (body?.accion !== "crear") return json({ error: "Acción no válida" }, 400);
-  const { data: cfg } = await admin.from("configuracion").select("pago_en_linea,municipio,app_url").eq("id", 1).single();
   if (!cfg?.pago_en_linea || !token) return json({ error: "El pago en línea no está disponible por ahora" }, 503);
 
   const id = Number(body.infraccion_id);
@@ -75,7 +82,7 @@ Deno.serve(async (req) => {
   if (count) return json({ error: `La infracción ${cobro.folio} ya está pagada` }, 409);
 
   const base = String(cfg.app_url || "").replace(/\/$/, "");
-  const regreso = (estado: string) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}`;
+  const regreso = (estado: string) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`;
   const vence = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
   const r = await fetch(`${MP}/checkout/preferences`, {
     method: "POST",

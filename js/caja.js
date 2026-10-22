@@ -281,6 +281,7 @@ async function renderCajaStats() {
   const efect   = h.filter(r=>r.metodo==='efectivo').reduce((a,r)=>a+Number(r.monto_final),0);
   const tarj    = h.filter(r=>r.metodo==='tarjeta').reduce((a,r)=>a+Number(r.monto_final),0);
   const transf  = h.filter(r=>r.metodo==='transferencia').reduce((a,r)=>a+Number(r.monto_final),0);
+  const enLinea = h.filter(r=>r.metodo==='en_linea').reduce((a,r)=>a+Number(r.monto_final),0);
   const totalMes  = (mesData||[]).reduce((a,r)=>a+Number(r.monto_final),0);
   const montoPend = (pendData||[]).reduce((a,r)=>a+Number(r.monto),0);
 
@@ -309,7 +310,9 @@ async function renderCajaStats() {
     card(fmt(tarj), 'Tarjeta hoy', '',
       `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>`, 'var(--blue-bg)') +
     card(fmt(transf), 'Transferencia hoy', '',
-      `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>`, 'var(--amber-bg)');
+      `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>`, 'var(--amber-bg)') +
+    (enLinea > 0 ? card(fmt(enLinea), 'En línea hoy', 'Mercado Pago',
+      `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0284C7" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>`, 'rgba(2,132,199,.1)') : '');
 
   // Distribución visual
   const distEl = $('caja-distribucion');
@@ -329,6 +332,7 @@ async function renderCajaStats() {
         ${bar('Efectivo', efect, '#059669')}
         ${bar('Tarjeta', tarj, '#2563EB')}
         ${bar('Transferencia', transf, '#D97706')}
+        ${bar('En línea', enLinea, '#0284C7')}
       </div>`;
     } else {
       distEl.innerHTML = '';
@@ -368,7 +372,8 @@ async function renderCajaTable() {
   if (_cajaPage>pages) _cajaPage=pages;
   const rows = all.slice((_cajaPage-1)*CAJA_PAGE_SIZE, _cajaPage*CAJA_PAGE_SIZE);
 
-  const metodoIcon = { efectivo:'💵', tarjeta:'💳', transferencia:'🏦' };
+  const metodoIcon = { efectivo:'💵', tarjeta:'💳', transferencia:'🏦', en_linea:'🌐' };
+  const metodoNombre = { en_linea: 'en línea' };
   tbody.innerHTML = rows.length ? rows.map(r=>{
     const inf = r.infracciones||{};
     return `<tr>
@@ -379,7 +384,7 @@ async function renderCajaTable() {
       <td style="color:var(--muted)">${fmt(r.monto_original)}</td>
       <td>${r.descuento_pct>0?`<span style="background:var(--green-bg);color:var(--green);padding:.15rem .5rem;border-radius:12px;font-size:.72rem;font-weight:700">${r.descuento_pct}%</span>`:'—'}</td>
       <td style="font-weight:800;color:var(--green)">${fmt(r.monto_final)}</td>
-      <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${esc(r.metodo||'—')}</span></td>
+      <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${esc(metodoNombre[r.metodo]||r.metodo||'—')}</span></td>
       <td style="font-size:.78rem;color:var(--muted)">${esc(r.cajero||'—')}</td>
       <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button>
         <button class="btn btn-ghost btn-sm" style="color:#128C7E" onclick="ofrecerRecibo('${r.id}')" title="Enviar el recibo digital por WhatsApp o correo">Enviar</button>

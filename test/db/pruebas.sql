@@ -984,6 +984,16 @@ do $$ declare n int; tipos text[]; begin
   assert placas_push('https://push.example.com/abc') = '{}', 'suscripción cancelada';
 end $$;
 reset role;
+-- Pago en línea: el portal confirma el pago y obtiene el recibo
+select set_config('prueba.tra003', id::text, false), set_config('prueba.def456', (select min(id) from infracciones where placa = 'DEF-456')::text, false) from infracciones where placa = 'TRA-003';
+set role anon;
+do $$ declare v_id bigint := current_setting('prueba.tra003')::bigint; v jsonb; begin
+  v := pago_en_linea_estado(v_id, 'tra 003');
+  assert (v ->> 'pagado')::boolean and v ->> 'estado' = 'pagada' and v ->> 'token' is not null, 'pago en línea confirmado: ' || coalesce(v::text, 'nulo');
+  assert pago_en_linea_estado(v_id, 'OTRA99') is null, 'otra placa no ve el pago';
+  assert (pago_en_linea_estado(current_setting('prueba.def456')::bigint, 'DEF-456') ->> 'pagado')::boolean is not null, 'estado de una infracción';
+end $$;
+reset role;
 do $$ begin
   assert not exists (select 1 from auditoria where tabla = 'configuracion' and cambios ? 'escudo'), 'la bitácora copia el escudo';
 end $$;

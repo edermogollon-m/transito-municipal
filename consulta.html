@@ -179,6 +179,9 @@
     @media (prefers-reduced-motion: reduce){ .esqueleto{animation:none;} }
       .btn-pagar{display:flex;align-items:center;justify-content:center;gap:.45rem;width:calc(100% - 2rem);margin:.2rem 1rem .8rem;padding:.7rem 1rem;border:none;border-radius:10px;background:#009EE3;color:#fff;font:700 .9rem inherit;cursor:pointer}
     .btn-pagar:hover{background:#0087C2}.btn-pagar:disabled{opacity:.7;cursor:wait}
+    .pagar-nota{margin:-.45rem 1rem .85rem;font-size:.72rem;color:var(--muted);text-align:center}
+    .pago-regreso{max-width:760px;margin:12px auto}
+    .btn-recibo{display:inline-block;margin-top:.5rem;padding:.45rem .8rem;border-radius:8px;background:var(--green);color:#fff;font-weight:700;text-decoration:none}
 
     /* ¿Por qué me multaron? (ciudadano.js) */
     .btn-pq{display:flex;align-items:center;gap:.45rem;width:calc(100% - 2rem);margin:0 1rem .7rem;padding:.6rem .8rem;border:1.5px solid var(--ac);border-radius:10px;background:var(--ac-bg);color:var(--ac-dk);font:700 .86rem inherit;cursor:pointer;text-align:left}
@@ -502,7 +505,8 @@ function infCard(r) {
     ${aviso}
     ${activa && _params.pago_en_linea && r.estado !== 'impugnada' ? `<button type="button" class="btn-pagar" onclick="pagarEnLinea(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-      Pagar en línea ${montoFmt(p.tramo ? p.hoy : r.monto)}</button>` : ''}
+      Pagar en línea ${montoFmt(p.tramo ? p.hoy : r.monto)}</button>
+    <div class="pagar-nota">Tarjeta de crédito o débito, OXXO o transferencia SPEI, con Mercado Pago.</div>` : ''}
     ${r.estado !== 'cancelada' ? `<button type="button" class="btn-pq" aria-expanded="false" onclick="porQue(this, ${Number(r.id)})">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       ¿Por qué me multaron?</button><div class="pq" hidden></div>` : ''}
@@ -607,8 +611,10 @@ function showToast(msg) {
 
 // Descuento y plazos vigentes (Configuración del municipio)
 let _params = { descuento_pct: 0, dias_descuento: 0, descuento2_pct: 0, dias_descuento2: 0, dias_limite: 30 };
-const _paramsListos = _sb.rpc('parametros_descuento').then(({ data }) => {
+const _paramsListos = _sb.rpc('parametros_descuento').then(async ({ data }) => {
   if (data) _params = { ..._params, ...data };
+  // El botón de pago solo aparece si la cuenta de Mercado Pago está conectada
+  if (_params.pago_en_linea) _params.pago_en_linea = await estadoPagoEnLinea();
   const partes = [];
   if (_params.descuento_pct > 0) partes.push(`<strong>${_params.descuento_pct}%</strong> si pagas en los primeros ${_params.dias_descuento} días`);
   if (_params.descuento2_pct > 0 && _params.dias_descuento2) partes.push(`<strong>${_params.descuento2_pct}%</strong> hasta el día ${_params.dias_descuento2}`);
@@ -631,7 +637,35 @@ _sb.rpc('portal_info').then(({ data }) => {
 }).catch(() => {});
 
 // Pago en línea (Mercado Pago): el monto lo calcula el servidor
+async function estadoPagoEnLinea() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/pago-mp`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ accion: 'estado' })
+    });
+    return res.ok && (await res.json()).disponible === true;
+  } catch { return false; }
+}
+
+// Al regresar de Mercado Pago: esperar a que se acredite y dar el recibo
+async function confirmarPagoEnLinea(id, q, caja) {
+  const pintar = (cls, html) => { caja.className = 'aviso pago-regreso ' + cls; caja.innerHTML = html; };
+  for (let i = 0; i < 15; i++) {
+    let data = null;
+    try { ({ data } = await _sb.rpc('pago_en_linea_estado', { p_id: id, p_q: q })); } catch { /* reintenta */ }
+    if (data?.pagado) {
+      const recibo = data.token ? `<a class="btn-recibo" href="/verificar?t=${encodeURIComponent(data.token)}">Ver mi recibo de pago</a>` : '';
+      pintar('verde', `<div><strong>¡Pago recibido!</strong> La infracción ${esc(data.folio || '')} quedó pagada${data.monto != null ? ' (' + montoFmt(data.monto) + ')' : ''}. Guarda tu recibo como comprobante.${recibo}</div>`);
+      buscar();
+      return;
+    }
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  pintar('azul', '<div><strong>Estamos confirmando tu pago con Mercado Pago.</strong> Puede tardar unos minutos; vuelve a consultar tu placa más tarde. Si ya te cobraron, no pagues de nuevo.</div>');
+}
+
 async function pagarEnLinea(id, placa, btn) {
+  const antes = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…'; }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/pago-mp`, {
@@ -642,8 +676,8 @@ async function pagarEnLinea(id, placa, btn) {
     if (!res.ok || !d.url) throw new Error(d.error || 'No se pudo iniciar el pago');
     location.href = d.url;
   } catch (err) {
-    alert(err.message + '. Puedes pagar en la Tesorería Municipal.');
-    if (btn) { btn.disabled = false; btn.textContent = 'Pagar en línea'; }
+    showToast(err.message + '. Puedes pagar en la Tesorería Municipal.');
+    if (btn) { btn.disabled = false; btn.innerHTML = antes; }
   }
 }
 
@@ -653,8 +687,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const q = params.get('q');
   const pago = params.get('pago');
   if (pago) {
-    const txt = { ok: '¡Pago recibido! En unos minutos la infracción aparecerá como pagada.', pendiente: 'Tu pago está en proceso (OXXO o transferencia). Se reflejará cuando Mercado Pago lo acredite.', error: 'El pago no se completó. Puedes intentarlo de nuevo.' }[pago];
-    if (txt) { const b = document.createElement('div'); b.className = 'aviso ' + (pago === 'error' ? 'rojo' : 'verde'); b.setAttribute('role', 'status'); b.style.cssText = 'max-width:760px;margin:12px auto'; b.textContent = txt; document.querySelector('main, body').prepend(b); }
+    const txt = { ok: 'Confirmando tu pago con Mercado Pago…', pendiente: 'Tu pago está en proceso (OXXO o transferencia). La infracción aparecerá como pagada cuando Mercado Pago lo acredite, normalmente el mismo día.', error: 'El pago no se completó y no se hizo ningún cargo. Puedes intentarlo de nuevo.' }[pago];
+    if (txt) {
+      const b = document.createElement('div'); b.className = 'aviso pago-regreso ' + (pago === 'error' ? 'rojo' : pago === 'ok' ? 'gris' : 'azul');
+      b.setAttribute('role', 'status'); b.textContent = txt; document.querySelector('main, body').prepend(b);
+      const inf = Number(params.get('inf'));
+      if (pago === 'ok' && inf && q) confirmarPagoEnLinea(inf, q, b);
+    }
   }
   if (q) { $('q').value = q; buscar(); }
 });
