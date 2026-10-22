@@ -1100,6 +1100,7 @@
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-correo"/> Enviar avisos por correo al ciudadano</label>
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-avisos-whatsapp"/> Enviar avisos por WhatsApp al ciudadano</label>
             <label style="display:flex;gap:.45rem;align-items:center;cursor:pointer"><input type="checkbox" id="cfg-pago-linea"/> Permitir el pago en línea (Mercado Pago) en el portal ciudadano</label>
+            <div id="cfg-mp-estado" style="font-size:.75rem;color:var(--muted);margin:.25rem 0 0 1.6rem"></div>
           </div>
           <p style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">Los avisos llegan al ciudadano al registrar su infracción, un día antes de que venza cada descuento y cuando la infracción vence. El pago en línea muestra el botón "Pagar en línea" en la consulta ciudadana.</p>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
@@ -1249,6 +1250,7 @@
               <option value="efectivo">Efectivo</option>
               <option value="tarjeta">Tarjeta</option>
               <option value="transferencia">Transferencia</option>
+              <option value="en_linea">En línea</option>
             </select>
             <select class="filter-select" id="caja-cajero-filter" onchange="filterCaja()">
               <option value="">Todos los cajeros</option>

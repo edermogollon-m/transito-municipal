@@ -52,6 +52,7 @@ const SESSION = {
 const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
 const TOKEN = '11111111-2222-4333-8444-555555555555';
 const TOKEN_PAGO = '33333333-2222-4333-8444-555555555555';
+let mpConectado = true;   // ¿la función pago-mp tiene la cuenta de Mercado Pago?
 const storageUploads = [];
 const rpcCalls = [];
 const inserts = [];   // filas que la app insertó en infracciones
@@ -126,7 +127,9 @@ async function newPage(browser, { dbDown = false } = {}) {
     if (u.pathname.startsWith('/auth/v1/token')) return r.fulfill({ status: 200, headers: json, body: JSON.stringify(SESSION) });
     if (u.pathname === '/functions/v1/pago-mp') {
       const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'pago-mp', ...b });
-      return r.fulfill({ status: 200, headers: { ...json, 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ url: BASE + '/consulta?q=' + b.placa + '&pago=ok' }) });
+      const cuerpo = b.accion === 'estado' ? { disponible: mpConectado && !!TABLES.configuracion[0].pago_en_linea, conectado: mpConectado, prueba: true }
+        : { url: BASE + '/consulta?q=' + b.placa + '&pago=ok&inf=' + b.infraccion_id };
+      return r.fulfill({ status: 200, headers: { ...json, 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(cuerpo) });
     }
     if (u.pathname.startsWith('/auth/v1/')) return r.fulfill({ status: 204, body: '' });
     // Storage: subida de fotos y enlaces firmados
@@ -175,6 +178,11 @@ async function newPage(browser, { dbDown = false } = {}) {
       let v = TABLES.vehiculos_reportados.find(x => x.placa === placa && x.activo);
       if (!v) { v = { id: 50 + TABLES.vehiculos_reportados.length, placa, motivo: 'robo', detalle: 'Reporte de robo en REPUVE. ' + (b.p_detalle || ''), reportado_por: ADMIN.nombre, activo: true, created_at: new Date().toISOString() }; TABLES.vehiculos_reportados.push(v); }
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(v) });
+    }
+    if (table === 'rpc/pago_en_linea_estado') {
+      const b = JSON.parse(req.postData() || '{}');
+      const i = TABLES.infracciones.find(x => x.id === b.p_id && (norm(x.placa) === norm(b.p_q) || norm(x.folio) === norm(b.p_q)));
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(i ? { estado: 'pagada', folio: i.folio, pagado: true, monto: i.monto, token: TOKEN_PAGO } : null) });
     }
     if (table === 'rpc/explicar_infraccion') {
       const b = JSON.parse(req.postData() || '{}');
@@ -634,6 +642,9 @@ function check(name, errors, extra) {
       return { grupos, cerrado, abierto, items, vacio, caja: !!$('badge-caja-pend') };
     });
     check('menú lateral agrupado y Mi cuenta', errors, menu.grupos.join('|') === 'Operación|Caja y trámites|Consulta|Resultados|Administración' && menu.cerrado && menu.abierto && menu.items.length === 4 && menu.items[3] === 'Cerrar sesión' && !menu.vacio && menu.caja ? null : JSON.stringify(menu).slice(0, 200));
+    await page.evaluate(() => navigate('configuracion')); await page.waitForTimeout(900);
+    const mpCfg = await page.evaluate(() => $('cfg-mp-estado')?.textContent || '');
+    check('estado de Mercado Pago en Configuración', errors, mpCfg.includes('modo de prueba') ? null : mpCfg.slice(0, 120));
     await page.evaluate(() => printCredencial(1)); await page.waitForTimeout(900);
     let cred = ''; for (const p of popups2.splice(0)) { cred += await p.content().catch(() => ''); await p.close().catch(() => {}); }
     check('credencial con foto, QR y escudo', errors, cred.includes('Credencial vigente') && cred.includes('cred-qr') && cred.includes('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB') && /#7a1f3d/i.test(cred) && cred.includes('PV-001') ? null : 'credencial: ' + cred.slice(0, 200));
@@ -753,13 +764,20 @@ function check(name, errors, extra) {
     await page.close();
     // Pago en línea (Mercado Pago) desde el portal
     TABLES.configuracion[0].pago_en_linea = true;
+    mpConectado = false;
+    ({ page, errors } = await newPage(browser));
+    await page.goto(BASE + '/consulta?q=ABC-123'); await page.waitForTimeout(1500);
+    const sinCuenta = await page.evaluate(() => !!document.querySelector('.btn-pagar'));
+    check('sin cuenta de Mercado Pago no hay botón de pago', errors, sinCuenta ? 'se mostró el botón' : null);
+    await page.close();
+    mpConectado = true;
     ({ page, errors } = await newPage(browser));
     await page.goto(BASE + '/consulta?q=ABC-123'); await page.waitForTimeout(1500);
     const hayBoton = await page.evaluate(() => !!document.querySelector('.btn-pagar'));
-    if (hayBoton) { await Promise.all([page.waitForURL(/pago=ok/, { timeout: 8000 }).catch(() => {}), page.click('.btn-pagar')]); await page.waitForTimeout(800); }
-    const mp = rpcCalls.find(c => c.fn === 'pago-mp');
-    const avisoPago = await page.evaluate(() => document.body.textContent.includes('Pago recibido'));
-    check('pago en línea desde el portal', errors, hayBoton && mp && mp.accion === 'crear' && avisoPago ? null : JSON.stringify({ hayBoton, mp, avisoPago }));
+    if (hayBoton) { await Promise.all([page.waitForURL(/pago=ok/, { timeout: 8000 }).catch(() => {}), page.click('.btn-pagar')]); await page.waitForTimeout(1500); }
+    const mp = rpcCalls.find(c => c.fn === 'pago-mp' && c.accion === 'crear');
+    const avisoPago = await page.evaluate(() => ({ ok: document.body.textContent.includes('Pago recibido'), recibo: document.querySelector('.btn-recibo')?.getAttribute('href') || '' }));
+    check('pago en línea desde el portal', errors, hayBoton && mp && avisoPago.ok && avisoPago.recibo === '/verificar?t=' + TOKEN_PAGO ? null : JSON.stringify({ hayBoton, mp, avisoPago }));
     TABLES.configuracion[0].pago_en_linea = false;
     await page.close();
 
