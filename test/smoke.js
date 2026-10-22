@@ -156,6 +156,13 @@ async function newPage(browser, { dbDown = false } = {}) {
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(t === TOKEN_CRED ? { nombre: XSS, rol: 'oficial', numero_placa: 'PV-001', adscripcion: 'Delegación Centro',
         activo: true, foto: '', municipio: 'Prueba', institucion: 'H. Ayuntamiento de Prueba', escudo: ESCUDO, color: '#7A1F3D' } : null) });
     }
+    if (table === 'rpc/reportar_robo_repuve') {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'reportar_robo_repuve', ...b });
+      const placa = norm(b.p_placa);
+      let v = TABLES.vehiculos_reportados.find(x => x.placa === placa && x.activo);
+      if (!v) { v = { id: 50 + TABLES.vehiculos_reportados.length, placa, motivo: 'robo', detalle: 'Reporte de robo en REPUVE. ' + (b.p_detalle || ''), reportado_por: ADMIN.nombre, activo: true, created_at: new Date().toISOString() }; TABLES.vehiculos_reportados.push(v); }
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(v) });
+    }
     if (table === 'rpc/portal_info')
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' }) });
     let rows = TABLES[table] || [];
@@ -526,6 +533,21 @@ function check(name, errors, extra) {
       await cargarReportados(); closeModal('modal-infraccion'); return t;
     });
     check('alerta sin señal (lista guardada)', errors, /Orden de retención/.test(alertaSinRed) ? null : alertaSinRed.slice(0, 160));
+    // Consulta REPUVE: abre la página oficial y, si tiene robo, la registra para todos (repuve.sql)
+    const repuve = await page.evaluate(async () => {
+      let abierta = ''; const abrir = window.open; window.open = u => { abierta = u; return null; };
+      await openNewInfraccion(); $('inf-placa').value = 'rpv-77b';
+      await consultarRepuve(); window.open = abrir;
+      const panel = !$('repuve-panel').hidden, msg = $('repuve-msg').textContent;
+      await marcarRoboRepuve(); await new Promise(r => setTimeout(r, 300));
+      const t = $('alerta-placa')?.textContent || ''; $('alerta-placa')?.remove();
+      const res = { abierta, panel, msg, oculto: $('repuve-panel').hidden, t, rep: !!reportadoDe('RPV77B') };
+      $('inf-placa').value = 'x'; await consultarRepuve(); res.corta = $('repuve-panel').hidden;
+      closeModal('modal-infraccion'); return res;
+    });
+    check('consulta REPUVE y reporte de robo con un toque', errors, /^https:\/\/.*repuve/.test(repuve.abierta) && repuve.panel && /RPV-77B/.test(repuve.msg) && repuve.oculto
+      && /Vehículo reportado/.test(repuve.t) && /REPUVE/.test(repuve.t) && repuve.rep && rpcCalls.some(c => c.fn === 'reportar_robo_repuve' && c.p_placa === 'RPV-77B')
+      && alertas.some(a => a.placa === 'RPV77B') ? null : JSON.stringify(repuve).slice(0, 300));
     await page.evaluate(() => navigate('vehiculos')); await page.waitForTimeout(700);
     const repLista = await page.evaluate(() => ({ t: $('reportados-lista').textContent, btn: $('btn-nuevo-reporte').style.display }));
     check('padrón: vehículos reportados', errors, repLista.t.includes('ROB123A') && repLista.btn !== 'none' && !(await page.evaluate(() => window.__xss)) ? null : JSON.stringify(repLista).slice(0, 160));

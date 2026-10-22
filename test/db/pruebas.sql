@@ -869,6 +869,39 @@ do $$ declare v jsonb; begin
   assert (portal_info() ->> 'institucion') = 'H. Ayuntamiento', 'portal con imagen institucional';
 end $$;
 reset role;
+-- Consulta REPUVE (repuve.sql): el oficial registra el robo con un toque
+select pg_temp.como('ofi');
+set role authenticated;
+do $$ declare r vehiculos_reportados; r2 vehiculos_reportados; begin
+  r := reportar_robo_repuve('rpv-77 b', 'Consultado hoy.');
+  assert r.placa = 'RPV77B' and r.motivo = 'robo' and r.activo and r.reportado_por = 'Oficial', 'reporte REPUVE del oficial';
+  assert r.detalle like 'Reporte de robo en REPUVE.%Consultado hoy.', 'detalle del reporte REPUVE';
+  r2 := reportar_robo_repuve('RPV77B');
+  assert r2.id = r.id, 'el reporte REPUVE se duplicó';
+  begin
+    perform reportar_robo_repuve('a');
+    raise exception 'placa corta aceptada';
+  exception when others then if sqlerrm = 'placa corta aceptada' then raise; end if;
+  end;
+  assert (select repuve_url from configuracion where id = 1) like 'https://%', 'página del REPUVE por omisión';
+end $$;
+reset role;
+select pg_temp.como('caja');
+set role authenticated;
+do $$ begin
+  perform reportar_robo_repuve('CAJ123');
+  raise exception 'caja reportó una placa';
+exception when others then if sqlerrm = 'caja reportó una placa' then raise; end if;
+end $$;
+reset role;
+do $$ begin
+  begin
+    update configuracion set repuve_url = 'javascript:alert(1)' where id = 1;
+    raise exception 'página REPUVE no segura aceptada';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
 do $$ begin
   assert not exists (select 1 from auditoria where tabla = 'configuracion' and cambios ? 'escudo'), 'la bitácora copia el escudo';
 end $$;

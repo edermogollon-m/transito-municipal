@@ -8,6 +8,7 @@ async function loadConfig() {
   if($('cfg-director'))  $('cfg-director').value  = data.director||'';
   if($('cfg-correo'))    $('cfg-correo').value     = data.correo||'';
   if($('cfg-correo-reporte')) $('cfg-correo-reporte').value = data.correo_reporte||'';
+  if($('cfg-repuve-url')) $('cfg-repuve-url').value = data.repuve_url||'';
   if($('cfg-descuento-pct'))  $('cfg-descuento-pct').value  = data.descuento_pct  ?? 20;
   if($('cfg-dias-descuento')) $('cfg-dias-descuento').value = data.dias_descuento ?? 15;
   if($('cfg-dias-limite'))    $('cfg-dias-limite').value    = data.dias_limite    ?? 30;
@@ -58,6 +59,11 @@ async function saveConfig() {
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
+  if ($('cfg-repuve-url')) {
+    const url = $('cfg-repuve-url').value.trim() || REPUVE_URL;
+    if (!/^https:\/\/[^\s"'<>]+$/.test(url)) { alert('La página del REPUVE debe empezar con https://'); return; }
+    payload.repuve_url = url;
+  }
   if ($('cfg-folio-prefijo')) {
     const pre = $('cfg-folio-prefijo').value.trim().toUpperCase();
     if (!/^[A-Z]{2,5}$/.test(pre)) { alert('El prefijo de los folios debe tener de 2 a 5 letras.'); return; }
