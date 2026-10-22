@@ -114,6 +114,21 @@ proyectos activos a la vez).
   tiene servicio público y su consulta pide captcha. Correr después de
   `institucional.sql`.
 
+- `ciudadano.sql` — lo que ve y recibe el ciudadano: "¿Por qué me multaron?"
+  en el portal (`explicaciones_categoria`, función pública
+  `explicar_infraccion`: la falta en palabras sencillas, el artículo y cuánto
+  ahorra pagando a tiempo), avisos viales que publican los mandos
+  (`avisos_viales`), recibo de pago digital (`datos_recibo`, solo caja) y
+  avisos al celular por notificación web (`suscripciones_push`,
+  `push_enviados`, `tomar_push`): multa nueva en sus placas, un día antes de
+  que se acabe el descuento y avisos viales. El cron `enviar-push` llama cada
+  15 minutos a la función `push` con el secreto de Vault `push_cron`.
+  Requiere `configuracion.push_publica` y los secretos `VAPID_PUBLICA` y
+  `VAPID_PRIVADA` en las funciones. En iPhone los avisos solo llegan con el
+  portal instalado en la pantalla de inicio. La función `recibo` manda el
+  recibo por correo con Resend (`RESEND_API_KEY`). Correr después de
+  `repuve.sql`.
+
 Orden para una base nueva: `schema.sql` → `security_auth.sql` →
 `auditoria.sql` → `evidencias_storage.sql` → `verificacion.sql` →
 `cobros.sql` → `articulos.sql` → `veracruz.sql` → `boleta.sql` → `inmutable.sql` → `roles.sql`. Todos son idempotentes y ya están aplicados en

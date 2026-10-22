@@ -13,6 +13,7 @@ async function renderDashboard() {
   if ($('dash-fecha-hoy')) {
     $('dash-fecha-hoy').textContent = now.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   }
+  renderInicioRol();
   const h = now.getHours();
   const nombre = (_session?.name || '').split(' ')[0];
   if ($('dash-saludo')) $('dash-saludo').textContent = `${h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'}${nombre ? ', ' + nombre : ''}`;

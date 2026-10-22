@@ -902,6 +902,88 @@ do $$ begin
   end;
 end $$;
 reset role;
+-- Portal ciudadano (ciudadano.sql): explicación, recibo, avisos viales y avisos al celular
+insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha)
+  select 'PQR-901', 'Ciudadano Prueba', 'Abandonar a personas lesionadas', 1000, 1001,
+         now() - make_interval(days => dias_descuento) + interval '2 hours' from configuracion where id = 1;
+insert into pagos (infraccion_id, folio_inf, monto_original, descuento_pct, monto_final, metodo, cajero)
+  select id, folio, 900, 0, 900, 'efectivo', 'Caja' from infracciones where placa = 'ABC-123' limit 1;
+set role anon;
+do $$ declare v jsonb; id_inf bigint; r text[]; begin
+  select id into id_inf from consulta_ciudadana('PQR901', true) limit 1;
+  v := explicar_infraccion(id_inf, 'pqr 901');
+  assert v ->> 'conducta' like 'Abandonar a personas lesionadas%', 'explicación: conducta';
+  assert v ->> 'por_que' like '%auxiliar a los lesionados%', 'explicación: por qué importa';
+  assert v ->> 'categoria' = 'Accidentes' and (v ->> 'cuotas_min')::int = 31, 'explicación: categoría y cuotas';
+  assert explicar_infraccion(id_inf, 'ABC123') is null, 'explicación con otra placa';
+  assert (select count(*) from explicaciones_categoria) = 0, 'anon lee la tabla de explicaciones';
+  r := suscribir_push('https://push.example.com/abc', repeat('B', 87), repeat('a', 22), array['pqr-901', 'abc 123', 'x', 'PQR901']);
+  assert r @> array['PQR901', 'ABC123'] and cardinality(r) = 2, 'placas del celular normalizadas';
+  assert placas_push('https://push.example.com/abc') = r, 'placas registradas';
+  begin
+    perform suscribir_push('https://push.example.com/abc', repeat('B', 87), repeat('a', 22), array['AAA1','BBB2','CCC3','DDD4','EEE5','FFF6']);
+    raise exception 'más de 5 placas';
+  exception when others then if sqlerrm = 'más de 5 placas' then raise; end if;
+  end;
+  begin
+    perform suscribir_push('http://inseguro', repeat('B', 87), repeat('a', 22), array['AAA1']);
+    raise exception 'endpoint sin https';
+  exception when check_violation then null;
+  end;
+  assert (select count(*) from suscripciones_push) = 0, 'anon lee las suscripciones';
+  begin
+    perform tomar_push(10);
+    raise exception 'anon tomó avisos';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+select pg_temp.como('ofi');
+set role authenticated;
+do $$ begin
+  begin
+    insert into avisos_viales (titulo) values ('Cierre');
+    raise exception 'el oficial publicó un aviso vial';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform datos_recibo((select max(id) from pagos));
+    raise exception 'el oficial leyó un recibo';
+  exception when others then if sqlerrm = 'el oficial leyó un recibo' then raise; end if;
+  end;
+end $$;
+reset role;
+select pg_temp.como('sup');
+set role authenticated;
+do $$ declare a avisos_viales; begin
+  insert into avisos_viales (titulo, texto, creado_por) values ('Cierre de la calle Comonfort', 'Por desfile, de 9 a 13 h.', 'Otro') returning * into a;
+  assert a.creado_por = 'Supervisor', 'autor del aviso vial';
+  insert into avisos_viales (titulo, desde) values ('Aviso futuro', current_date + 5);
+end $$;
+reset role;
+select pg_temp.como('caja');
+set role authenticated;
+do $$ declare v jsonb; begin
+  v := datos_recibo((select max(id) from pagos));
+  assert v ->> 'recibo' like 'REC-%' and (v ->> 'monto')::numeric = 900 and v ->> 'token' is not null, 'datos del recibo';
+end $$;
+reset role;
+set role anon;
+do $$ begin
+  assert (select count(*) from avisos_viales_vigentes()) = 1, 'avisos viales vigentes';
+end $$;
+reset role;
+do $$ declare n int; tipos text[]; begin
+  select count(*), array_agg(tipo order by tipo) into n, tipos from tomar_push(50);
+  assert tipos @> array['aviso', 'descuento', 'multa'], 'avisos al celular: ' || coalesce(array_to_string(tipos, ','), 'ninguno');
+  assert (select count(*) from tomar_push(50)) = 0, 'avisos al celular repetidos';
+  perform desactivar_push('https://push.example.com/abc');
+  assert not (select activo from suscripciones_push where endpoint = 'https://push.example.com/abc'), 'suscripción desactivada';
+  perform suscribir_push('https://push.example.com/abc', repeat('B', 87), repeat('a', 22), array['PQR901']);
+  perform cancelar_push('https://push.example.com/abc');
+  assert placas_push('https://push.example.com/abc') = '{}', 'suscripción cancelada';
+end $$;
+reset role;
 do $$ begin
   assert not exists (select 1 from auditoria where tabla = 'configuracion' and cambios ? 'escudo'), 'la bitácora copia el escudo';
 end $$;
