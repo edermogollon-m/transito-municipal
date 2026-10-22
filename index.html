@@ -717,6 +717,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input class="search-input" id="inf-search" type="text" placeholder="Folio, placa o nombre del infractor…" oninput="filterInfracciones()">
           </div>
+          <select class="filter-select" id="inf-alcance" onchange="filterInfracciones()" style="display:none" title="Mis boletas o todas">
+            <option value="mias">Mis boletas</option>
+            <option value="todas">Todas las boletas</option>
+          </select>
           <select class="filter-select" id="inf-estado-filter" onchange="filterInfracciones()">
             <option value="">Todos los estados</option>
             <option value="pendiente">Pendiente</option>
@@ -979,6 +983,10 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
               Corte de caja
             </button>
+            <button class="btn btn-ghost btn-sm" onclick="openCorteCaja()" title="Cuenta el efectivo y cierra tu corte">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              Cerrar mi corte
+            </button>
             <button class="btn btn-ghost btn-sm" onclick="exportExcel('pagos')">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Excel
@@ -1004,6 +1012,10 @@
           <button class="caja-tab" id="tab-pagos" onclick="switchCajaTab('pagos')">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             Historial de pagos
+          </button>
+          <button class="caja-tab" id="tab-cortes" onclick="switchCajaTab('cortes')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            Cortes y anulaciones
           </button>
         </div>
 
@@ -1085,11 +1097,37 @@
             </div>
           </div>
         </div>
+
+        <!-- CORTES Y ANULACIONES section -->
+        <div id="caja-section-cortes" style="display:none">
+          <div class="card" style="padding:0;margin-bottom:1rem">
+            <div style="padding:.8rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:1px solid var(--border)">Cortes de caja</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Cerrado</th><th>Cajero</th><th>Pagos</th><th>Total</th><th>Efectivo sistema</th><th>Efectivo contado</th><th>Diferencia</th><th>Notas</th><th></th></tr></thead>
+                <tbody id="cortes-table"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" style="padding:0">
+            <div style="padding:.8rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:1px solid var(--border)">Pagos anulados</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Anulado</th><th>Folio inf.</th><th>Monto</th><th>Cobró</th><th>Anuló</th><th>Motivo</th></tr></thead>
+                <tbody id="anulados-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- OFICIALES -->
       <div class="view" id="view-oficiales">
         <div class="page-header"><h2>Desempeño de Oficiales</h2><p>Infracciones levantadas por cada agente de tránsito</p></div>
+        <div class="card" id="turnos-activos-card" style="display:none;margin-bottom:1rem;padding:1rem 1.2rem">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.3rem">Turnos activos</div>
+          <div id="turnos-activos"></div>
+        </div>
         <div class="card" style="padding:0">
           <div class="table-wrap">
             <table>
@@ -1102,7 +1140,7 @@
 
       <!-- BITÁCORA -->
       <div class="view" id="view-bitacora">
-        <div class="page-header"><h2>Bitácora</h2><p>Quién dio de alta, modificó o eliminó cada registro (solo director y supervisores)</p></div>
+        <div class="page-header"><h2>Bitácora</h2><p>Quién dio de alta, modificó o eliminó cada registro (Director, supervisores y Contraloría)</p></div>
         <div class="filter-bar">
           <div class="search-wrap">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1713,7 +1751,10 @@
       <select id="usr-rol" class="form-select" onchange="describirRol()">
         <option value="oficial">Policía vial</option>
         <option value="cajero">Caja · Tesorería</option>
+        <option value="corralon">Encargado de corralón</option>
+        <option value="juridico">Jurídico · Juez calificador</option>
         <option value="supervisor">Supervisor</option>
+        <option value="contraloria">Contraloría (solo lectura)</option>
         <option value="admin">Director (administrador)</option>
       </select>
       <div id="usr-rol-desc" style="font-size:.75rem;color:var(--muted);margin-top:.35rem;line-height:1.45"></div>
@@ -1729,14 +1770,38 @@
 <div class="modal-overlay" id="modal-buscar-pago">
   <div class="modal" style="width:580px">
     <div class="modal-header">
-      <div class="modal-title">Seleccionar infracción a pagar</div>
+      <div class="modal-title">Cobrar o reimprimir recibo</div>
       <button class="modal-close" onclick="closeModal('modal-buscar-pago')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="search-wrap" style="margin-bottom:.85rem">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input class="search-input" id="buscar-pago-input" type="text" placeholder="Buscar por folio, placa o infractor…" oninput="buscarInfPago()">
+      <input class="search-input" id="buscar-pago-input" type="text" placeholder="Placa, folio o infractor…" oninput="buscarInfPago()" onkeydown="if(event.key==='Enter'){event.preventDefault();document.querySelector('#buscar-pago-results .bp-item')?.click();}">
     </div>
     <div id="buscar-pago-results" style="max-height:320px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- MODAL: Corte de caja -->
+<div class="modal-overlay" id="modal-corte">
+  <div class="modal" style="width:440px">
+    <div class="modal-header">
+      <div class="modal-title">Cerrar corte de caja</div>
+      <button class="modal-close" onclick="closeModal('modal-corte')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="corte-resumen" style="margin-bottom:.8rem"></div>
+    <div class="form-field">
+      <label>Efectivo que contaste en caja</label>
+      <input id="corte-contado" class="form-input" type="number" min="0" step="0.5" inputmode="decimal" placeholder="0" oninput="calcularDiferenciaCorte()"/>
+      <div id="corte-diferencia" style="font-size:.85rem;font-weight:700;margin-top:.4rem"></div>
+    </div>
+    <div class="form-field">
+      <label>Notas (opcional)</label>
+      <textarea id="corte-notas" class="form-input" rows="2" placeholder="Ej. faltaron $50 por cambio" style="resize:vertical;font-family:inherit"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-corte')">Cancelar</button>
+      <button class="btn btn-primary" id="corte-submit" onclick="cerrarCorte()">Cerrar corte e imprimir</button>
+    </div>
   </div>
 </div>
 

@@ -22,35 +22,63 @@ const ROLES = {
   supervisor: {
     nombre: 'Supervisor de Tránsito',
     vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
-    acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','borrar','reportes','caja_ver'],
-    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, resuelve impugnaciones, emite permisos, libera el corralón y revisa la bitácora. No cobra ni administra usuarios o configuración.'
+    acciones: ['infraccion','estado','impugnar','permisos','grua','liberar','accidentes','padron','reportes','caja_ver','turnos'],
+    resumen: 'Opera todo el día a día: levanta infracciones, cambia estados, cancela con motivo, registra impugnaciones, emite permisos, libera el corralón, cierra turnos olvidados y revisa la bitácora. No resuelve impugnaciones, no cobra ni administra usuarios o configuración.'
   },
   oficial: {
-    nombre: 'Policía vial',
-    vistas: ['dashboard','infracciones','permisos','oficiales','vehiculos','grua','accidentes','calendario'],
+    nombre: 'Policía vial', soloMias: true,
+    vistas: ['dashboard','infracciones','permisos','vehiculos','grua','accidentes','calendario'],
     acciones: ['infraccion','grua','accidentes','padron'],
-    resumen: 'Levanta infracciones, envía vehículos al corralón, registra accidentes y actualiza el padrón. Consulta permisos e infracciones. No cobra, no cambia estados ni libera vehículos.'
+    resumen: 'Levanta infracciones ("Mis boletas"), envía vehículos al corralón, registra accidentes (edita los suyos mientras están en proceso) y actualiza el padrón. No cobra, no cambia estados ni libera vehículos.'
   },
   cajero: {
     nombre: 'Caja · Tesorería',
     vistas: ['dashboard','infracciones','caja','grua','calendario'],
     acciones: ['cobrar','liberar','caja_ver'],
-    resumen: 'Cobra multas (con el descuento que corresponda), emite recibos, hace el corte de caja y libera vehículos del corralón. No levanta infracciones.'
+    resumen: 'Cobra multas (con el descuento que corresponda), emite y reimprime recibos, cierra su corte de caja con el efectivo contado y libera vehículos del corralón. No levanta infracciones.'
+  },
+  juridico: {
+    nombre: 'Jurídico · Juez calificador',
+    vistas: ['dashboard','infracciones','reportes','calendario'],
+    acciones: ['impugnar','resolver','reportes'],
+    resumen: 'Registra y resuelve impugnaciones (procede: se cancela; no procede: vuelve a pendiente). No levanta infracciones, no cobra ni cambia otros estados.'
+  },
+  corralon: {
+    nombre: 'Encargado de corralón',
+    vistas: ['dashboard','grua','vehiculos','calendario'],
+    acciones: ['grua','liberar'],
+    resumen: 'Registra las entradas al corralón y libera vehículos. Consulta el padrón. No ve caja ni infracciones.'
+  },
+  contraloria: {
+    nombre: 'Contraloría (solo lectura)',
+    vistas: ['dashboard','infracciones','permisos','reportes','caja','oficiales','bitacora','vehiculos','grua','accidentes','mapa','rendimiento','calendario'],
+    acciones: ['reportes','caja_ver'],
+    resumen: 'Ve todo, incluidas la caja, los cortes, los pagos anulados y la bitácora, y puede exportar. No puede cambiar nada.'
   }
 };
 const _permisosRol = ROLES[_rol] || ROLES.oficial;
 function puede(accion) { return _permisosRol.acciones === '*' || _permisosRol.acciones.includes(accion); }
 function vistaPermitida(v) { return _permisosRol.vistas === '*' || _permisosRol.vistas.includes(v); }
 
+// "Mis boletas": lo que capturó el usuario en sesión (capturo_auth, controles.sql)
+// o lo que lleva su nombre como oficial (registros anteriores a esa columna)
+let _authUid = null;
+const _authListo = _sb.auth.getSession().then(({ data }) => { _authUid = data?.session?.user?.id || null; }).catch(() => {});
+function esMio(r) { return (!!_authUid && r.capturo_auth === _authUid) || (!!_session?.name && r.oficial === _session.name); }
+function filtroMios() { return `oficial.eq.${JSON.stringify(_session?.name || '')}` + (_authUid ? `,capturo_auth.eq.${_authUid}` : ''); }
+
 // Botones que llevan a una acción restringida (se reconocen por su onclick)
 const ACCION_DE_BOTON = [
   [/\bopenNewInfraccion\(/, 'infraccion'],
   [/\bopenRegistrarPago\(/, 'cobrar'],
   [/\bsaveDetailEstado\('infracciones'/, 'estado', true],
-  [/\b(impugnarInfraccion|resolverImpugnacion)\(/, 'impugnar'],
+  [/\bimpugnarInfraccion\(/, 'impugnar'],
+  [/\bresolverImpugnacion\(/, 'resolver'],
   [/\bsaveDetailEstado\('permisos'/, 'permisos', true],
-  [/\b(openNewPermiso|editPermiso|renovarPermiso)\(/, 'permisos'],
-  [/\b(deleteDetail|delete[A-Z]\w*)\(/, 'borrar'],
+  [/\b(openNewPermiso|editPermiso|renovarPermiso|cancelarPermiso)\(/, 'permisos'],
+  [/\banularPago\(/, 'anular'],
+  [/\bcerrarTurnoDe\(/, 'turnos'],
+  [/\bopenCorteCaja\(/, 'cobrar'],
   [/\bopenNewGrua\(/, 'grua'],
   [/\b(editGrua|liberarVehiculo)\(/, 'liberar'],
   [/\b(openNewAccidente|editAccidente)\(/, 'accidentes'],
@@ -100,7 +128,7 @@ function estadoBadge(e) {
   const map = {
     pagada:'badge-green', vigente:'badge-green', activa:'badge-green',
     pendiente:'badge-yellow', suspendido:'badge-yellow', 'por-vencer':'badge-yellow',
-    cancelada:'badge-red', vencido:'badge-red', vencida:'badge-red',
+    cancelada:'badge-red', cancelado:'badge-red', vencido:'badge-red', vencida:'badge-red',
     impugnada:'badge-blue'
   };
   return `<span class="${map[e]||'badge-muted'}">${esc(e)||'—'}</span>`;
@@ -317,14 +345,16 @@ async function renderDashboard() {
     { data: gruaRet },
     { data: turnosAct }
   ] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial'),
+    _sb.from('infracciones').select('id,folio,placa,monto,estado,fecha,tipo,oficial,capturo_auth'),
     _sb.from('pagos').select('monto_final,created_at').gte('created_at', mesInicio).lt('created_at', mesFin),
     _sb.from('pagos').select('monto_final').gte('created_at', pmInicio).lt('created_at', pmCorte),
     _sb.from('grua').select('id').eq('estado','retenido'),
     _sb.from('turnos').select('id').eq('estado','activo')
   ]);
 
-  const inf = infAll || [];
+  await _authListo;
+  // El policía vial ve en su panel solo sus boletas
+  const inf = (infAll || []).filter(r => !_permisosRol.soloMias || esMio(r));
   const enMes = r => r.fecha >= mesInicio && r.fecha < mesFin;
   const infM = inf.filter(enMes);
   const prevCount = inf.filter(r => r.fecha >= pmInicio && r.fecha < pmCorte).length;
@@ -520,6 +550,7 @@ async function renderBarChart(infAll) {
 
 // ── Infracciones ──────────────────────────────────────────
 let _infPage = 1, _infSearch = '', _infEstado = '', _infTipo = '', _infPeriodo = '', _infSort = 'fecha_desc';
+let _infMias = !!_permisosRol.soloMias;   // el policía vial ve primero sus boletas
 const INF_PAGE_SIZE = 15;
 
 function _periodoRango(periodo) {
@@ -555,6 +586,7 @@ async function renderInfracciones() {
   }
 
   let q = _sb.from('infracciones').select('*');
+  if (_infMias) { await _authListo; q = q.or(filtroMios()); }
   if (_infEstado)  q = q.eq('estado', _infEstado);
   if (_infTipo)    q = q.eq('tipo', _infTipo);
   if (_infSearch)  q = q.or(`placa.ilike.%${_infSearch}%,infractor.ilike.%${_infSearch}%,folio.ilike.%${_infSearch}%`);
@@ -685,6 +717,7 @@ function filterInfracciones() {
   _infEstado  = ($('inf-estado-filter')||{}).value||'';
   _infTipo    = ($('inf-tipo-filter')||{}).value||'';
   _infPeriodo = ($('inf-periodo-filter')||{}).value||'';
+  if ($('inf-alcance')) _infMias = $('inf-alcance').value === 'mias';
   _infPage = 1;
   renderInfracciones();
 }
@@ -1557,8 +1590,8 @@ async function viewDetail(tabla, id) {
     <div id="detail-boleta"></div>
     <div id="detail-historial"></div>
 
-    <!-- Cambiar estado -->
-    <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+    <!-- Cambiar estado (una impugnación la resuelve Jurídico o el Director) -->
+    <div style="background:var(--stone);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;display:${r.estado==='impugnada'&&!puede('resolver')?'none':'flex'};align-items:center;gap:.6rem;flex-wrap:wrap">
       <span style="font-size:.75rem;font-weight:600;color:var(--muted)">Cambiar estado:</span>
       <select id="detail-estado" class="form-select" style="width:auto;min-width:130px;flex-shrink:0">
         <option value="pendiente"  ${r.estado==='pendiente'?'selected':''}>Pendiente</option>
@@ -1577,7 +1610,7 @@ async function viewDetail(tabla, id) {
         Cobrar
       </button>`:''}
       ${(r.estado==='pendiente'||r.estado==='impugnada')?`<button class="btn btn-ghost btn-sm" style="color:var(--blue);border-color:#BFDBFE" onclick="impugnarInfraccion('${r.id}','${r.estado}')">Impugnar</button>`:''}
-      ${(r.estado==='impugnada'&&(_rol==='admin'||_rol==='supervisor'))?`
+      ${r.estado==='impugnada'?`
         <button class="btn btn-ghost btn-sm" style="color:var(--green);border-color:#A7F3D0" onclick="resolverImpugnacion('${r.id}','cancelada')">✓ Procede</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:#FECACA" onclick="resolverImpugnacion('${r.id}','pendiente')">✕ No procede</button>
       `:''}
@@ -1668,7 +1701,7 @@ async function viewDetail(tabla, id) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
         WhatsApp
       </a>`:''}
-      <button class="btn btn-danger btn-sm" onclick="deleteDetail('permisos','${r.id}')">Eliminar</button>
+      ${r.estado!=='cancelado'?`<button class="btn btn-danger btn-sm" onclick="cancelarPermiso('${r.id}')">Cancelar permiso</button>`:''}
     </div>`;
   })();
   openModal('modal-detail');
@@ -1701,13 +1734,16 @@ async function saveDetailEstado(tabla, id) {
   else renderPermisos();
 }
 
-async function deleteDetail(tabla, id) {
-  if (!confirm('¿Eliminar este registro? Esta acción no se puede deshacer.')) return;
-  const { error } = await _sb.from(tabla).delete().eq('id', id);
+// Los registros no se borran (controles.sql): el permiso se cancela con motivo
+async function cancelarPermiso(id) {
+  const motivo = prompt('Motivo de la cancelación del permiso (queda registrado en la bitácora):');
+  if (!motivo || !motivo.trim()) return;
+  const { error } = await _sb.from('permisos').update({ estado: 'cancelado', cancelacion_motivo: motivo.trim() }).eq('id', id);
   if (error) { alert('Error: '+error.message); return; }
+  await logActivity('permiso', `Permiso cancelado: ${motivo.trim()}`);
   closeModal('modal-detail');
-  if (tabla==='infracciones') { renderInfracciones(); renderDashboard(); }
-  else renderPermisos();
+  renderPermisos();
+  showToast('Permiso cancelado');
 }
 
 // ── Configuración ─────────────────────────────────────────
@@ -2518,8 +2554,8 @@ const PEND_PAGE_SIZE = 15;
 
 function switchCajaTab(tab) {
   _cajaTab = tab;
-  ['pendientes','pagos'].forEach(t => {
-    const btn = $('tab-'+t), sec = $('caja-section-'+(t==='pagos'?'pagos':t));
+  ['pendientes','pagos','cortes'].forEach(t => {
+    const btn = $('tab-'+t), sec = $('caja-section-'+t);
     if (btn) btn.classList.toggle('active', t===tab);
     if (sec) sec.style.display = t===tab ? 'block' : 'none';
   });
@@ -2527,6 +2563,128 @@ function switchCajaTab(tab) {
     if (!_cajaFecha) _cajaFecha = new Date().toISOString().slice(0,10);
     renderCajaTable();
   }
+  if (tab==='cortes') renderCortes();
+}
+
+// ── Anulación de pagos (solo el Director, con motivo: controles.sql) ──
+async function anularPago(id, folio) {
+  const motivo = prompt(`Motivo para anular el pago de ${folio || 'la infracción'}.\nLa infracción vuelve a quedar por cobrar y el recibo queda marcado como anulado.`);
+  if (!motivo || !motivo.trim()) return;
+  const { error } = await _sb.rpc('anular_pago', { p_pago_id: Number(id), p_motivo: motivo.trim() });
+  if (error) { alert('Error: '+error.message); return; }
+  await logActivity('caja', `Pago anulado — ${folio || 'infracción'}: ${motivo.trim()}`);
+  showToast('Pago anulado');
+  renderCajaStats(); renderCajaTable(); renderPendientesTable();
+}
+
+// ── Corte de caja formal (controles.sql) ──────────────────
+// El cajero cuenta el efectivo; el sistema guarda la diferencia contra lo cobrado
+let _resumenCorte = null;
+async function openCorteCaja() {
+  const { data, error } = await _sb.rpc('resumen_corte');
+  if (error) { alert('Error: '+error.message); return; }
+  _resumenCorte = data;
+  const fh = d => new Date(d).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  const fila = (k, v, fuerte) => `<div style="display:flex;justify-content:space-between;padding:.3rem 0;font-size:.84rem;${fuerte?'font-weight:700;color:var(--ink)':'color:var(--text)'}"><span>${k}</span><span>${v}</span></div>`;
+  $('corte-resumen').innerHTML = `
+    <div style="font-size:.76rem;color:var(--muted);margin-bottom:.5rem">${esc(data.cajero)} · del ${fh(data.desde)} a ahora</div>
+    ${fila('Pagos cobrados', data.num_pagos)}
+    ${fila('Tarjeta', fmt(data.tarjeta))}
+    ${fila('Transferencia', fmt(data.transferencia))}
+    ${fila('Total cobrado', fmt(data.total))}
+    <div style="border-top:1px solid var(--border);margin-top:.35rem;padding-top:.35rem">${fila('Efectivo que debe haber en caja', fmt(data.efectivo), true)}</div>`;
+  $('corte-contado').value = ''; $('corte-notas').value = '';
+  calcularDiferenciaCorte();
+  openModal('modal-corte');
+}
+
+function calcularDiferenciaCorte() {
+  const el = $('corte-diferencia'), v = $('corte-contado').value;
+  if (!el) return;
+  if (v === '') { el.innerHTML = ''; return; }
+  const dif = Number(v) - Number(_resumenCorte?.efectivo || 0);
+  el.innerHTML = dif === 0
+    ? '<span style="color:var(--green)">✓ Cuadra exacto</span>'
+    : `<span style="color:${dif < 0 ? 'var(--red)' : 'var(--amber)'}">${dif < 0 ? 'Faltante' : 'Sobrante'}: ${fmt(Math.abs(dif))}</span>`;
+}
+
+async function cerrarCorte() {
+  const v = $('corte-contado').value;
+  if (v === '' || Number(v) < 0) { alert('Captura el efectivo que contaste en caja'); return; }
+  const btn = $('corte-submit'); if (btn) btn.disabled = true;
+  const { data: c, error } = await _sb.rpc('cerrar_corte', { p_efectivo_contado: Number(v), p_notas: $('corte-notas').value.trim() });
+  if (btn) btn.disabled = false;
+  if (error) { alert('Error: '+error.message); return; }
+  await logActivity('caja', `Corte de caja de ${c.cajero}: ${fmt(c.total)} cobrado, diferencia en efectivo ${fmt(c.diferencia)}`);
+  closeModal('modal-corte');
+  showToast('Corte de caja cerrado');
+  printCorteFormal(c);
+  if (_cajaTab === 'cortes') renderCortes();
+}
+
+let _cortes = {};
+async function renderCortes() {
+  const tb = $('cortes-table'), ta = $('anulados-table'); if (!tb) return;
+  tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
+  const [{ data: cortes, error }, { data: anul }] = await Promise.all([
+    _sb.from('cortes_caja').select('*').order('created_at', { ascending: false }).limit(60),
+    _sb.from('pagos_anulados').select('id,folio_inf,monto_final,metodo,cajero,created_at,anulacion_motivo,anulado_por,anulado_at').order('anulado_at', { ascending: false }).limit(60)
+  ]);
+  if (error) { tb.innerHTML = `<tr><td colspan="9" style="color:red">${esc(error.message)}</td></tr>`; return; }
+  _cortes = Object.fromEntries((cortes || []).map(c => [c.id, c]));
+  const fh = d => new Date(d).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  const dif = n => Number(n) === 0 ? '<span class="badge-green">Cuadra</span>'
+    : `<span class="${Number(n) < 0 ? 'badge-red' : 'badge-yellow'}">${Number(n) < 0 ? 'Falta' : 'Sobra'} ${fmt(Math.abs(n))}</span>`;
+  tb.innerHTML = (cortes || []).length ? cortes.map(c => `<tr>
+      <td style="white-space:nowrap;font-size:.78rem">${fh(c.created_at)}</td>
+      <td>${esc(c.cajero)}</td>
+      <td style="text-align:center">${c.num_pagos}</td>
+      <td style="font-weight:700">${fmt(c.total)}</td>
+      <td>${fmt(c.efectivo)}</td>
+      <td>${fmt(c.efectivo_contado)}</td>
+      <td>${dif(c.diferencia)}</td>
+      <td style="max-width:180px;font-size:.76rem;color:var(--muted)">${esc(c.notas || '')}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="printCorteFormal(_cortes[${Number(c.id)}])">Imprimir</button></td>
+    </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:1.5rem">Todavía no hay cortes cerrados</td></tr>';
+  if (ta) ta.innerHTML = (anul || []).length ? anul.map(a => `<tr>
+      <td style="white-space:nowrap;font-size:.78rem">${fh(a.anulado_at)}</td>
+      <td class="mono" style="font-size:.73rem;font-weight:700">${esc(a.folio_inf || '—')}</td>
+      <td>${fmt(a.monto_final)}</td>
+      <td style="font-size:.78rem">${esc(a.cajero || '—')} · ${fh(a.created_at)}</td>
+      <td style="font-size:.78rem">${esc(a.anulado_por || '—')}</td>
+      <td style="font-size:.78rem">${esc(a.anulacion_motivo)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.2rem">Ningún pago ha sido anulado</td></tr>';
+}
+
+function printCorteFormal(c) {
+  if (!c) return;
+  const cfg = _cachedConfig || {};
+  const fh = d => new Date(d).toLocaleString('es-MX',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const fila = (k, v, b) => `<tr${b?' class="b"':''}><td>${k}</td><td>${v}</td></tr>`;
+  const d = Number(c.diferencia);
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Corte de caja ${esc(c.cajero)}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:560px;margin:2rem auto;color:#111;font-size:13px}h1{font-size:17px;margin:0}h2{font-size:12px;font-weight:normal;color:#555;margin:.2rem 0 1.2rem}
+  table{width:100%;border-collapse:collapse}td{padding:7px 4px;border-bottom:1px solid #ddd}td:last-child{text-align:right}tr.b td{font-weight:bold;font-size:14px}
+  .dif{margin-top:1rem;padding:.7rem;border:2px solid ${d===0?'#047857':d<0?'#B91C1C':'#B45309'};font-weight:bold;text-align:center}
+  .firmas{display:flex;gap:2rem;margin-top:4rem}.firmas div{flex:1;border-top:1px solid #111;text-align:center;padding-top:.3rem;font-size:11px}</style></head><body>
+  <h1>Corte de caja — ${esc(cfg.municipio || 'Tránsito Municipal')}</h1>
+  <h2>Folio CC-${String(c.id).padStart(5,'0')} · ${esc(c.cajero)}<br>Del ${fh(c.desde)} al ${fh(c.hasta)}</h2>
+  <table>
+    ${fila('Pagos cobrados', c.num_pagos)}
+    ${fila('Tarjeta', fmt(c.tarjeta))}
+    ${fila('Transferencia', fmt(c.transferencia))}
+    ${fila('Total cobrado', fmt(c.total), true)}
+    ${fila('Efectivo según el sistema', fmt(c.efectivo))}
+    ${fila('Efectivo contado', fmt(c.efectivo_contado), true)}
+  </table>
+  <div class="dif">${d === 0 ? 'El efectivo cuadra' : (d < 0 ? 'Faltante: ' : 'Sobrante: ') + fmt(Math.abs(d))}</div>
+  ${c.notas ? `<p><strong>Notas:</strong> ${esc(c.notas)}</p>` : ''}
+  <div class="firmas"><div>Cajero(a)</div><div>Recibe / Tesorería</div></div>
+  </body></html>`;
+  const win = window.open('', '_blank', 'width=700,height=700');
+  if (!win) return;
+  win.document.write(html); win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
 }
 
 async function renderCaja() {
@@ -2751,7 +2909,8 @@ async function renderCajaTable() {
       <td style="font-weight:800;color:var(--green)">${fmt(r.monto_final)}</td>
       <td><span style="font-size:.8rem">${metodoIcon[r.metodo]||''} ${esc(r.metodo||'—')}</span></td>
       <td style="font-size:.78rem;color:var(--muted)">${esc(r.cajero||'—')}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="printReciboPago('${r.id}')">Recibo</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="anularPago('${r.id}', ${jsArg(r.folio_inf||'')})" title="Anular este pago con motivo">Anular</button></td>
     </tr>`;
   }).join('') : `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem">Sin pagos en este período</td></tr>`;
 
@@ -2906,7 +3065,7 @@ async function handleQRResult(data) {
 
 async function openBuscarParaPago() {
   if ($('buscar-pago-input')) $('buscar-pago-input').value = '';
-  if ($('buscar-pago-results')) $('buscar-pago-results').innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe para buscar una infracción pendiente</div>';
+  if ($('buscar-pago-results')) $('buscar-pago-results').innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe la placa o el folio para cobrar o reimprimir un recibo</div>';
   openModal('modal-buscar-pago');
 }
 
@@ -2915,11 +3074,17 @@ async function buscarInfPago() {
   const el = $('buscar-pago-results'); if (!el) return;
   if (q.length < 2) { el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Escribe al menos 2 caracteres</div>'; return; }
   const qf = q.replace(/[,()"'\\%*]/g, ' ').trim();
-  const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado')
-    .in('estado',['pendiente','vencida']).or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(10);
+  // También las pagadas, para reimprimir su recibo
+  const { data } = await _sb.from('infracciones').select('id,folio,placa,infractor,tipo,monto,fecha,estado,pagos(id)')
+    .in('estado',['pendiente','vencida','pagada']).or(`placa.ilike.%${qf}%,infractor.ilike.%${qf}%,folio.ilike.%${qf}%`).order('fecha',{ascending:false}).limit(12);
   const rows = data||[];
+  const accion = r => {
+    const pagoId = r.estado === 'pagada' ? (Array.isArray(r.pagos) ? r.pagos[0]?.id : r.pagos?.id) : null;
+    if (r.estado === 'pagada') return pagoId ? `closeModal('modal-buscar-pago');printReciboPago('${pagoId}')` : `showToast('Pagada: el recibo no está disponible')`;
+    return `closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')`;
+  };
   el.innerHTML = rows.length ? rows.map(r=>`
-    <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="closeModal('modal-buscar-pago');openRegistrarPago('${r.id}')">
+    <div class="bp-item" style="display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--stone)'" onmouseleave="this.style.background=''" onclick="${accion(r)}">
       <div style="flex:1">
         <div style="font-size:.82rem;font-weight:700;font-family:monospace">${esc(r.folio||'—')}</div>
         <div style="font-size:.78rem;color:var(--text)">${esc(r.infractor)} · ${esc(r.placa)}</div>
@@ -2928,8 +3093,9 @@ async function buscarInfPago() {
       <div style="text-align:right">
         <div style="font-size:.9rem;font-weight:700;color:var(--ac)">${fmt(r.monto)}</div>
         ${estadoBadge(r.estado)}
+        <div style="font-size:.7rem;font-weight:700;color:${r.estado==='pagada'?'var(--muted)':'var(--green)'};margin-top:.2rem">${r.estado==='pagada'?'Reimprimir recibo':'Cobrar'} →</div>
       </div>
-    </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados pendientes</div>';
+    </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:.82rem">Sin resultados</div>';
 }
 
 async function asegurarConfig() {
@@ -3103,6 +3269,7 @@ async function printReciboPago(pagoId) {
 
 // ── Oficiales ─────────────────────────────────────────────
 async function renderOficiales() {
+  renderTurnosActivos();
   const tbody = $('oficiales-table'); if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
   const { data, error } = await _sb.from('infracciones').select('oficial,monto,estado,fecha');
@@ -3129,6 +3296,35 @@ async function renderOficiales() {
     </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted)">Sin datos — agrega el nombre del oficial al registrar infracciones</td></tr>';
 }
 
+// Turnos abiertos ahora; el supervisor puede cerrar el que un oficial olvidó
+async function renderTurnosActivos() {
+  const card = $('turnos-activos-card'), el = $('turnos-activos'); if (!card || !el) return;
+  card.style.display = '';
+  const { data, error } = await _sb.from('turnos').select('id,oficial_nombre,inicio').eq('estado','activo').order('inicio');
+  if (error) { el.innerHTML = `<div style="color:red;font-size:.8rem">${esc(error.message)}</div>`; return; }
+  el.innerHTML = (data||[]).length ? data.map(t => {
+    const min = Math.max(0, Math.floor((Date.now() - new Date(t.inicio).getTime()) / 60000)), largo = min > 12*60;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.55rem 0;border-top:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600;font-size:.85rem">${esc(t.oficial_nombre || '—')}</div>
+        <div style="font-size:.74rem;color:${largo?'var(--red)':'var(--muted)'}">Desde ${new Date(t.inicio).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})} · ${Math.floor(min/60)} h ${min%60} min${largo?' · ¿se le olvidó cerrarlo?':''}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="cerrarTurnoDe('${t.id}', ${jsArg(t.oficial_nombre)})">Cerrar turno</button>
+    </div>`;
+  }).join('') : '<div style="font-size:.8rem;color:var(--muted);padding-top:.3rem">No hay oficiales en turno.</div>';
+}
+
+async function cerrarTurnoDe(id, nombre) {
+  if (!confirm(`¿Cerrar el turno de ${nombre}? Úsalo cuando se le olvidó cerrarlo.`)) return;
+  const { data, error } = await _sb.from('turnos')
+    .update({ estado: 'cerrado', fin: new Date().toISOString(), notas: `Cerrado por ${_session?.name || 'supervisor'}` })
+    .eq('id', id).select('id');
+  if (error || !data?.length) { alert('No se pudo cerrar el turno' + (error ? ': ' + error.message : '')); return; }
+  await logActivity('turno', `Turno de ${nombre} cerrado por ${_session?.name || 'supervisor'}`);
+  showToast('Turno cerrado');
+  renderTurnosActivos();
+}
+
 // ── Usuarios ──────────────────────────────────────────────
 async function renderUsuarios() {
   const tbody = $('usuarios-table'); if (!tbody) return;
@@ -3150,6 +3346,7 @@ async function renderUsuarios() {
       <td style="display:flex;gap:.4rem">
         <button class="btn btn-ghost btn-sm" onclick="editUsuario(${u.id})">Editar</button>
         <button class="btn btn-ghost btn-sm" onclick="printCredencial('${u.id}')" title="Imprimir credencial">🪪</button>
+        <button class="btn btn-ghost btn-sm" onclick="restablecerContrasena(${u.id}, ${jsArg(u.nombre)})" title="Generar una contraseña temporal">Restablecer contraseña</button>
         ${u.usuario!=='admin'?`<button class="btn btn-ghost btn-sm" onclick="toggleUsuario(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>`:''}
       </td>
     </tr>`).join('');
@@ -3210,6 +3407,15 @@ async function submitUsuario() {
   closeModal('modal-usuario');
   renderUsuarios();
   showToast('Usuario '+(id?'actualizado':'creado')+' correctamente');
+}
+
+// Contraseña temporal generada en el servidor (controles.sql)
+async function restablecerContrasena(id, nombre) {
+  if (!confirm(`¿Generar una contraseña temporal para ${nombre}? La actual dejará de funcionar.`)) return;
+  const { data, error } = await _sb.rpc('admin_restablecer_contrasena', { p_id: id });
+  if (error) { alert('Error: '+error.message); return; }
+  await logActivity('usuario', `Contraseña restablecida para ${nombre}`);
+  prompt(`Contraseña temporal de ${nombre}. Entrégasela en persona:`, data);
 }
 
 async function toggleUsuario(id, activo) {
@@ -3882,6 +4088,7 @@ function initUI() {
     if (!visible) sec.style.display = 'none';
   });
   aplicarPermisosUI();
+  if (_permisosRol.soloMias && $('inf-alcance')) $('inf-alcance').style.display = '';
 
   // ── Realtime: refrescar dashboard al recibir cambios ─────
   _sb.channel('rt-infracciones')
@@ -4632,6 +4839,13 @@ let _accPage=1, _accSearch='', _accTipo='', _accEstado='';
 const ACC_PAGE=20;
 let _accPartes=[];
 
+// El policía vial edita solo sus accidentes y mientras sigan en proceso (controles.sql)
+function puedeEditarAccidente(r) {
+  if (!puede('accidentes')) return false;
+  if (_rol !== 'oficial') return true;
+  return r.estado === 'en_proceso' && (esMio(r));
+}
+
 async function renderAccidentes() {
   const tbody=$('accidentes-table'); if(!tbody) return;
   tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted)">Cargando…</td></tr>';
@@ -4664,8 +4878,8 @@ async function renderAccidentes() {
     <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.ubicacion||'—')}</td>
     <td style="text-align:center">${r.lesionados||0}${r.fallecidos>0?` / <span style="color:var(--red);font-weight:700">${r.fallecidos} fall.</span>`:''}</td>
     <td>${esc(r.oficial||'—')}</td>
-    <td>${esc(estadoAcc[r.estado]||r.estado)}</td>
-    <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editAccidente('${r.id}')">Editar</button></td>
+    <td>${estadoAcc[r.estado]||esc(r.estado)}</td>
+    <td>${puedeEditarAccidente(r)?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editAccidente('${r.id}')">Editar</button>`:''}</td>
   </tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--muted)">Sin accidentes registrados</td></tr>';
   renderPager('accidentes-pager',_accPage,pages,'goAccPage');
 }
@@ -4790,7 +5004,7 @@ async function viewAccidenteDetalle(id){
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Imprimir parte
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="editAccidente('${r.id}');closeModal('modal-detail')">Editar</button>
+      ${puedeEditarAccidente(r)?`<button class="btn btn-secondary btn-sm" onclick="editAccidente('${r.id}');closeModal('modal-detail')">Editar</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail')">Cerrar</button>
     </div>`;
   openModal('modal-detail');
@@ -4815,6 +5029,17 @@ function checkTurnoActivo() {
     dot.className='turno-dot off';
     label.textContent='Iniciar turno';
   }
+}
+
+// Si un supervisor cerró el turno, el teléfono del oficial también lo suelta
+async function verificarTurnoEnServidor() {
+  const turno = JSON.parse(localStorage.getItem('tm_turno')||'null');
+  if (!turno?.inicio) return;
+  const { data, error } = await _sb.from('turnos').select('id').eq('oficial_nombre', turno.oficial).eq('estado','activo').limit(1);
+  if (error || !Array.isArray(data) || data.length) return;
+  localStorage.removeItem('tm_turno');
+  checkTurnoActivo();
+  showToast('Tu turno fue cerrado por un supervisor');
 }
 
 async function toggleTurno() {
@@ -5064,6 +5289,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(sincronizarCola, 120000);
   checkTurnoActivo();
   setInterval(checkTurnoActivo, 60000);
+  verificarTurnoEnServidor().catch(() => {});
   try { await initData(); } catch(err) { console.warn('initData:', err.message); }
   try { await checkAndUpdateVencidos(); } catch(err) { console.warn('vencidos:', err.message); }
   setupPushNotifications().catch(()=>{});
@@ -5079,9 +5305,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Si una acción restringida se llama sin pasar por un botón (atajo, consola),
 // se avisa en lugar de dejar que la base de datos la rechace con un error.
 [['openNewInfraccion','infraccion'], ['openRegistrarPago','cobrar'], ['submitPago','cobrar'],
- ['impugnarInfraccion','impugnar'], ['resolverImpugnacion','impugnar'],
- ['openNewPermiso','permisos'], ['editPermiso','permisos'], ['renovarPermiso','permisos'],
- ['deleteDetail','borrar'], ['openNewGrua','grua'], ['editGrua','liberar'], ['liberarVehiculo','liberar'],
+ ['impugnarInfraccion','impugnar'], ['resolverImpugnacion','resolver'],
+ ['openNewPermiso','permisos'], ['editPermiso','permisos'], ['renovarPermiso','permisos'], ['cancelarPermiso','permisos'],
+ ['anularPago','anular'], ['cerrarTurnoDe','turnos'], ['openCorteCaja','cobrar'], ['cerrarCorte','cobrar'],
+ ['openNewGrua','grua'], ['editGrua','liberar'], ['liberarVehiculo','liberar'],
  ['openNewAccidente','accidentes'], ['editAccidente','accidentes'], ['openNewVehiculo','padron'], ['editVehiculo','padron'],
  ['printCorteCaja','caja_ver']
 ].forEach(([fn, accion]) => {
