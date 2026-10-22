@@ -1,4 +1,5 @@
 // ── Configuración ─────────────────────────────────────────
+const PRIVACIDAD_CAMPOS = [['cfg-domicilio-transito', 'domicilio_transito'], ['cfg-ut-domicilio', 'ut_domicilio'], ['cfg-ut-telefono', 'ut_telefono'], ['cfg-ut-correo', 'ut_correo']];
 async function loadConfig() {
   const { data } = await _sb.from('configuracion').select('*').eq('id',1).single();
   if (!data) return;
@@ -26,6 +27,8 @@ async function loadConfig() {
   if($('cfg-avisos-correo'))  $('cfg-avisos-correo').checked   = !!data.avisos_correo;
   if($('cfg-avisos-whatsapp'))$('cfg-avisos-whatsapp').checked = !!data.avisos_whatsapp;
   if($('cfg-pago-linea'))     $('cfg-pago-linea').checked      = !!data.pago_en_linea;
+  PRIVACIDAD_CAMPOS.forEach(([id, col]) => { if ($(id)) $(id).value = data[col] || ''; });
+  if ($('cfg-privacidad-fecha')) $('cfg-privacidad-fecha').textContent = data.privacidad_actualizado ? 'Última actualización del aviso: ' + fmtDateShort(String(data.privacidad_actualizado).slice(0, 10) + 'T12:00:00') : '';
   estadoMercadoPago();
   if($('cfg-tipos-extra')) {
     const extras = data.tipos_extra || [];
@@ -60,6 +63,13 @@ async function saveConfig() {
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
+  // Aviso de privacidad (privacidad.sql): si cambian sus datos, cambia su fecha de actualización
+  if ($('cfg-ut-correo')) {
+    let cambio = false;
+    PRIVACIDAD_CAMPOS.forEach(([id, col]) => { payload[col] = $(id).value.trim(); cambio ||= payload[col] !== (_cachedConfig?.[col] || ''); });
+    if (payload.ut_correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.ut_correo)) { alert('El correo de la Unidad de Transparencia no es válido.'); return; }
+    if (cambio) payload.privacidad_actualizado = fmtDateInput(new Date());
+  }
   if ($('cfg-repuve-url')) {
     const url = $('cfg-repuve-url').value.trim() || REPUVE_URL;
     if (!/^https:\/\/[^\s"'<>]+$/.test(url)) { alert('La página del REPUVE debe empezar con https://'); return; }

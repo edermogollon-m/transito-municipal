@@ -1019,6 +1019,18 @@
           </div>
           <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
         </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:.35rem">Aviso de privacidad</div>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.5">Estos datos completan el <a href="/privacidad" target="_blank" rel="noopener">aviso de privacidad</a> (Ley 316 de Veracruz) que se enlaza desde la boleta, el ticket y el portal ciudadano. Ante la Unidad de Transparencia el ciudadano ejerce sus derechos ARCO. Pide a esa Unidad que revise el texto antes de usar el sistema con ciudadanos.</p>
+          <div class="form-field"><label for="cfg-domicilio-transito">Domicilio de la Dirección de Tránsito</label><input class="form-input" id="cfg-domicilio-transito" type="text" placeholder="Calle, número, colonia, código postal, Misantla, Ver."/></div>
+          <div class="form-field"><label for="cfg-ut-domicilio">Domicilio de la Unidad de Transparencia</label><input class="form-input" id="cfg-ut-domicilio" type="text" placeholder="Palacio Municipal, planta baja…"/></div>
+          <div class="form-row">
+            <div class="form-field"><label for="cfg-ut-telefono">Teléfono de la Unidad</label><input class="form-input" id="cfg-ut-telefono" type="tel" placeholder="235 323 0000"/></div>
+            <div class="form-field"><label for="cfg-ut-correo">Correo de la Unidad</label><input class="form-input" id="cfg-ut-correo" type="email" placeholder="transparencia@misantla.gob.mx"/></div>
+          </div>
+          <p id="cfg-privacidad-fecha" style="font-size:.76rem;color:var(--muted);margin-bottom:.8rem"></p>
+          <button class="btn btn-primary" onclick="saveConfig()">Guardar cambios</button>
+        </div>
         <div class="card" id="marca-card">
           <div class="card-title" style="margin-bottom:.35rem">Imagen institucional</div>
           <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem;line-height:1.5">El escudo, el logo y el color del Ayuntamiento aparecen en boletas, recibos, tickets, reportes, credenciales y en el portal ciudadano. El panel conserva sus colores.</p>
