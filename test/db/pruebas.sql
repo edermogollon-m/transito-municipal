@@ -4,7 +4,7 @@
 -- Folios automáticos
 insert into infracciones (placa, infractor, tipo) values ('ABC-123', 'Prueba', 'Exceso de velocidad');
 do $$ begin
-  assert (select folio from infracciones order by id desc limit 1) like 'INF-____-0001', 'folio de infracción';
+  assert (select folio from infracciones order by id desc limit 1) ~ '^MIS-\d{2}-[2-9A-HJKMNP-Z]{6}$', 'folio de infracción no consecutivo';
 end $$;
 
 -- Migración de usuarios: misma contraseña, ahora con bcrypt en auth.users
@@ -115,7 +115,7 @@ reset role;
 do $$ declare v text := (select id::text from infracciones where placa = 'AUD-001'); begin
   assert (select count(*) from auditoria where tabla = 'infracciones' and registro_id = v) = 2, 'alta + 1 cambio';
   assert (select usuario_nombre from auditoria where registro_id = v and accion = 'alta') = 'Oficial', 'autor del alta';
-  assert (select resumen from auditoria where registro_id = v and accion = 'alta') like 'INF-%', 'resumen con folio';
+  assert (select resumen from auditoria where registro_id = v and accion = 'alta') like 'MIS-%', 'resumen con folio';
   assert (select cambios -> 'estado' from auditoria where registro_id = v and accion = 'cambio')
          = '{"antes": "pendiente", "despues": "impugnada"}'::jsonb, 'detalle del cambio';
 end $$;
@@ -649,4 +649,11 @@ do $$ begin
   assert portal_info() ->> 'pago_clabe' = '012345678901234567', 'CLABE en el portal';
 end $$;
 reset role;
+
+-- El folio lo pone siempre el servidor, nunca se repite
+insert into infracciones (placa, infractor, tipo, folio) values ('FOL-001', 'Prueba', 'Exceso de velocidad', 'INF-2026-0001');
+do $$ begin
+  assert (select folio from infracciones where placa = 'FOL-001') like 'MIS-%', 'el cliente no elige el folio';
+  assert (select count(distinct public.nuevo_folio_inf()) from generate_series(1, 200)) = 200, 'folios distintos';
+end $$;
 \echo 'OK   pruebas de base de datos'

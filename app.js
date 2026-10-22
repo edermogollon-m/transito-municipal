@@ -603,7 +603,7 @@ async function renderInfracciones() {
   const [sortCol, sortDir] = _infSort.split('_');
   const asc = sortDir === 'asc';
   if (sortCol === 'monto') q = q.order('monto', {ascending: asc});
-  else if (sortCol === 'folio') q = q.order('folio', {ascending: asc});
+  else if (sortCol === 'folio') q = q.order('id', {ascending: asc});   // los folios son aleatorios (folios.sql)
   else q = q.order('fecha', {ascending: asc});
 
   const { data, error } = await q;
@@ -1765,6 +1765,7 @@ async function loadConfig() {
   if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
   if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
   if($('cfg-recurso'))        $('cfg-recurso').value        = data.leyenda_recurso || '';
+  if($('cfg-folio-prefijo'))  $('cfg-folio-prefijo').value  = data.folio_prefijo || 'MIS';
   if($('cfg-pago-banco'))     $('cfg-pago-banco').value     = data.pago_banco || '';
   if($('cfg-pago-clabe'))     $('cfg-pago-clabe').value     = data.pago_clabe || '';
   if($('cfg-pago-beneficiario')) $('cfg-pago-beneficiario').value = data.pago_beneficiario || '';
@@ -1796,6 +1797,11 @@ async function saveConfig() {
     tipos_extra:    tiposExtra
   };
   if ($('cfg-correo-reporte')) payload.correo_reporte = $('cfg-correo-reporte').value.trim();
+  if ($('cfg-folio-prefijo')) {
+    const pre = $('cfg-folio-prefijo').value.trim().toUpperCase();
+    if (!/^[A-Z]{2,5}$/.test(pre)) { alert('El prefijo de los folios debe tener de 2 a 5 letras.'); return; }
+    payload.folio_prefijo = pre;
+  }
   if ($('cfg-pago-clabe')) {
     const clabe = $('cfg-pago-clabe').value.replace(/\s/g, '');
     if (clabe && !/^\d{18}$/.test(clabe)) { alert('La CLABE debe tener 18 dígitos.'); return; }
