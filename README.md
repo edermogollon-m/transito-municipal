@@ -7,7 +7,7 @@ Supabase como backend, publicado en Vercel. Roles: **Director (admin)**,
 ## Páginas
 
 - `login.html` — acceso del personal.
-- `index.html` + `app.js` — panel: dashboard, infracciones, permisos de
+- `index.html` + `js/*.js` — panel (un archivo por módulo, ver `js/README.md`): dashboard, infracciones, permisos de
   circulación, pagos/caja (corte de caja), padrón vehicular, grúa/corralón,
   accidentes viales, calendario, mapa de infracciones, rendimiento de
   oficiales, reportes (Excel), oficiales/bitácora de turno, bitácora de

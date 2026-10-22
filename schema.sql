@@ -207,7 +207,7 @@ drop trigger if exists trg_acc_folio on accidentes;
 create trigger trg_acc_folio before insert on accidentes
   for each row execute function generate_acc_folio();
 
--- ── Vencimiento automático (lo llama app.js al abrir el panel) ───────
+-- ── Vencimiento automático (lo llama la app al abrir el panel) ───────
 create or replace function marcar_infracciones_vencidas() returns void
 language plpgsql set search_path = public as $$
 begin

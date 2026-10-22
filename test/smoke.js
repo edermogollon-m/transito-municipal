@@ -31,8 +31,8 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(f).pipe(res);
 });
 
-// ── Datos simulados: test/fixtures.js + SEED_CONFIG de app.js ──
-const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+// ── Datos simulados: test/fixtures.js + SEED_CONFIG de la app (js/*.js) ──
+const src = fs.readdirSync(path.join(ROOT, 'js')).filter(f => f.endsWith('.js')).map(f => fs.readFileSync(path.join(ROOT, 'js', f), 'utf8')).join('\n');
 const seeds = { ...require('./fixtures') }; const seedCtx = vm.createContext({ Date });
 const cfg = src.match(/const SEED_CONFIG = (\{[\s\S]*?\n\});/);
 if (cfg) seeds.SEED_CONFIG = vm.runInContext('(' + cfg[1] + ')', seedCtx);
