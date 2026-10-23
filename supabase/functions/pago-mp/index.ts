@@ -2,6 +2,8 @@
 //
 //   POST { accion: "estado" }  → { disponible, prueba }   (portal y Configuración)
 //   POST { accion: "crear", infraccion_id, placa }  → { url }   (portal ciudadano)
+//   POST { accion: "constancia", token }  → { url }   (constancia de no adeudo,
+//        cobro creado con solicitar_constancia; constancias_cobro.sql)
 //   POST ?accion=webhook   (notificación de Mercado Pago)
 //
 // El monto lo calcula la base (monto_a_pagar: tramos de descuento del art. 330).
@@ -52,6 +54,15 @@ Deno.serve(async (req) => {
     if (!r.ok) return json({ error: `Mercado Pago ${r.status}` }, 502);
     const pago = await r.json();
     if (pago.status !== "approved" || pago.currency_id !== "MXN") return json({ estado: pago.status });
+    // Constancia de no adeudo: la referencia es "CND:<token del cobro>"
+    const ref = String(pago.external_reference || "");
+    if (ref.startsWith("CND:")) {
+      const { error } = await admin.rpc("registrar_pago_constancia", {
+        p_token: ref.slice(4), p_referencia: `MP-${pago.id}`, p_monto: Number(pago.transaction_amount),
+      });
+      if (error) return json({ error: error.message }, 409);
+      return json({ ok: true });
+    }
     const infraccionId = Number(pago.external_reference);
     if (!infraccionId) return json({ error: "Pago sin referencia de infracción" }, 400);
     const { error } = await admin.rpc("registrar_pago_en_linea", {
@@ -68,9 +79,43 @@ Deno.serve(async (req) => {
     return json({ disponible: !!(cfg?.pago_en_linea && token), conectado: !!token, prueba: !!token?.startsWith("TEST-") });
   }
 
-  // ── Crear el cobro desde el portal ciudadano ──
-  if (body?.accion !== "crear") return json({ error: "Acción no válida" }, 400);
+  if (!["crear", "constancia"].includes(body?.accion)) return json({ error: "Acción no válida" }, 400);
   if (!cfg?.pago_en_linea || !token) return json({ error: "El pago en línea no está disponible por ahora" }, 503);
+  const base = String(cfg.app_url || "").replace(/\/$/, "");
+  const vence = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+  const preferencia = async (item: Record<string, unknown>, referencia: string, regreso: (estado: string) => string) => {
+    const r = await fetch(`${MP}/checkout/preferences`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [{ quantity: 1, currency_id: "MXN", ...item }],
+        external_reference: referencia,
+        statement_descriptor: `TRANSITO ${String(cfg.municipio || "").toUpperCase()}`.slice(0, 22),
+        notification_url: `${SUPABASE_URL}/functions/v1/pago-mp?accion=webhook`,
+        back_urls: { success: regreso("ok"), pending: regreso("pendiente"), failure: regreso("error") },
+        auto_return: "approved",
+        expires: true, expiration_date_to: vence,
+      }),
+    });
+    if (!r.ok) return json({ error: `Mercado Pago respondió ${r.status}` }, 502);
+    return (await r.json()).init_point as string;
+  };
+
+  // ── Cobro de la constancia de no adeudo ──
+  if (body.accion === "constancia") {
+    const { data: c } = await admin.from("cobros_constancia").select("placa,monto,estado").eq("token", String(body.token || "")).maybeSingle();
+    if (!c) return json({ error: "Solicitud de constancia no encontrada" }, 404);
+    if (c.estado !== "pendiente") return json({ error: "Esta constancia ya está pagada" }, 409);
+    const url = await preferencia(
+      { id: `CND-${c.placa}`, title: `Constancia de no adeudo · placa ${c.placa}`, description: "Constancia de no adeudo de infracciones de tránsito", unit_price: Number(c.monto) },
+      `CND:${body.token}`,
+      (estado) => `${base}/consulta?q=${encodeURIComponent(c.placa)}&constancia=${encodeURIComponent(String(body.token))}&pago=${estado}`,
+    );
+    if (url instanceof Response) return url;
+    return json({ url, monto: c.monto });
+  }
+
+  // ── Crear el cobro de una infracción desde el portal ciudadano ──
 
   const id = Number(body.infraccion_id);
   const { data: m } = await admin.rpc("monto_a_pagar", { p_infraccion_id: id }).single();
@@ -81,27 +126,14 @@ Deno.serve(async (req) => {
   const { count } = await admin.from("pagos").select("id", { count: "exact", head: true }).eq("infraccion_id", id);
   if (count) return json({ error: `La infracción ${cobro.folio} ya está pagada` }, 409);
 
-  const base = String(cfg.app_url || "").replace(/\/$/, "");
-  const regreso = (estado: string) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`;
-  const vence = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const r = await fetch(`${MP}/checkout/preferences`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      items: [{
-        id: cobro.folio, title: `Infracción de tránsito ${cobro.folio}`,
-        description: cobro.descuento_pct > 0 ? `Incluye ${cobro.descuento_pct}% de descuento por pronto pago` : "Multa de tránsito",
-        quantity: 1, currency_id: "MXN", unit_price: Number(cobro.monto_final),
-      }],
-      external_reference: String(id),
-      statement_descriptor: `TRANSITO ${String(cfg.municipio || "").toUpperCase()}`.slice(0, 22),
-      notification_url: `${SUPABASE_URL}/functions/v1/pago-mp?accion=webhook`,
-      back_urls: { success: regreso("ok"), pending: regreso("pendiente"), failure: regreso("error") },
-      auto_return: "approved",
-      expires: true, expiration_date_to: vence,
-    }),
-  });
-  if (!r.ok) return json({ error: `Mercado Pago respondió ${r.status}` }, 502);
-  const pref = await r.json();
-  return json({ url: pref.init_point, monto: cobro.monto_final, descuento_pct: cobro.descuento_pct });
+  const url = await preferencia({
+      id: cobro.folio, title: `Infracción de tránsito ${cobro.folio}`,
+      description: cobro.descuento_pct > 0 ? `Incluye ${cobro.descuento_pct}% de descuento por pronto pago` : "Multa de tránsito",
+      unit_price: Number(cobro.monto_final),
+    },
+    String(id),
+    (estado) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`,
+  );
+  if (url instanceof Response) return url;
+  return json({ url, monto: cobro.monto_final, descuento_pct: cobro.descuento_pct });
 });

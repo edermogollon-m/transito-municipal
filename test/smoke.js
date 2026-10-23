@@ -52,7 +52,8 @@ const SESSION = {
 const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').match(/https:\/\/([a-z0-9]+)\.supabase\.co/)[1] + '-auth-token';
 const TOKEN = '11111111-2222-4333-8444-555555555555';
 const TOKEN_PAGO = '33333333-2222-4333-8444-555555555555';
-let mpConectado = true;   // ¿la función pago-mp tiene la cuenta de Mercado Pago?
+let mpConectado = true;
+const TOKEN_CND = '7c1e4b52-9f0a-4d3e-8b21-5a6c7d8e9f01';   // ¿la función pago-mp tiene la cuenta de Mercado Pago?
 const storageUploads = [];
 const rpcCalls = [];
 const inserts = [];   // filas que la app insertó en infracciones
@@ -67,6 +68,7 @@ const TABLES = {
   grua: withIds(seeds.SEED_GRUA || []), accidentes: withIds(seeds.SEED_ACCIDENTES || []),
   // Descuento distinto de 20% para comprobar que las boletas usan la configuración
   configuracion: [{ id: 1, ...(seeds.SEED_CONFIG || {}), descuento_pct: 10, dias_descuento: 10, dias_limite: 45, valor_uma: 117.31,
+    constancia_costo: 150,
     reglamento: 'Reglamento de Movilidad, Tránsito y Seguridad Vial de San Pedro Garza García, Nuevo León', fundamento_general: 'Artículos 16 y 21 de la Constitución', correo_reporte: 'director@municipio.gob.mx' }],
   // Extracto del catálogo del Reglamento de la Ley 561 de Veracruz (veracruz.sql)
   catalogo_infracciones: [
@@ -130,6 +132,7 @@ async function newPage(browser, { dbDown = false, tz } = {}) {
     if (u.pathname === '/functions/v1/pago-mp') {
       const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: 'pago-mp', ...b });
       const cuerpo = b.accion === 'estado' ? { disponible: mpConectado && !!TABLES.configuracion[0].pago_en_linea, conectado: mpConectado, prueba: true }
+        : b.accion === 'constancia' ? { url: BASE + '/consulta?q=LIM-001&constancia=' + b.token + '&pago=ok' }
         : { url: BASE + '/consulta?q=' + b.placa + '&pago=ok&inf=' + b.infraccion_id };
       return r.fulfill({ status: 200, headers: { ...json, 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(cuerpo) });
     }
@@ -202,8 +205,18 @@ async function newPage(browser, { dbDown = false, tz } = {}) {
       placasPush = table === 'rpc/cancelar_push' ? [] : (b.p_placas || []).map(norm);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(placasPush) });
     }
+    // Constancia de no adeudo con costo (constancias_cobro.sql)
+    if (['rpc/solicitar_constancia', 'rpc/constancia_de_cobro', 'rpc/cobrar_constancia_caja'].includes(table)) {
+      const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: table.slice(4), ...b });
+      const cnd = { folio: 'CND-26-ABCDEF', token: TOKEN_CND, placa: 'LIM001', emitida: new Date().toISOString(), vigente_hasta: '2099-12-31',
+        municipio: 'Prueba', estado: 'Ver.', director: 'Director de Prueba', pagada: true, monto: 150 };
+      const cuerpo = table === 'rpc/solicitar_constancia' ? { token: TOKEN_CND, monto: 150, placa: norm(b.p_placa) }
+        : table === 'rpc/constancia_de_cobro' ? { ...cnd, metodo: 'en_linea' }
+        : { ...cnd, placa: norm(b.p_placa), metodo: b.p_metodo, cajero: ADMIN.nombre };
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify(cuerpo) });
+    }
     if (table === 'rpc/portal_info')
-      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba', domicilio_transito: XSS, ut_domicilio: 'Palacio Municipal, planta baja', ut_telefono: '235 000 0000', ut_correo: 'transparencia@prueba.gob.mx', privacidad_actualizado: '2026-10-01' }) });
+      return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ constancia_costo: 150, municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba', domicilio_transito: XSS, ut_domicilio: 'Palacio Municipal, planta baja', ut_telefono: '235 000 0000', ut_correo: 'transparencia@prueba.gob.mx', privacidad_actualizado: '2026-10-01' }) });
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
     for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
@@ -514,6 +527,16 @@ function check(name, errors, extra) {
     const envioRec = rpcCalls.find(c => c.fn === 'recibo');
     check('recibo digital por WhatsApp y correo', errors, recibo.abierto && recibo.wa.startsWith('https://wa.me/525512345678') && recibo.wa.includes('/verificar?t=' + TOKEN_PAGO)
       && /enviado a ciudadano@correo.mx/.test(recibo.estado) && envioRec && envioRec.correo === 'ciudadano@correo.mx' && /^Bearer ey/.test(envioRec.auth || '') ? null : JSON.stringify({ recibo, envioRec }).slice(0, 300));
+
+    // Constancia de no adeudo cobrada en ventanilla
+    await page.evaluate(() => openCobrarConstancia()); await page.waitForTimeout(400);
+    await page.fill('#cnd-placa', 'LIM-001'); await page.waitForTimeout(900);
+    const cndCaja = await page.evaluate(() => ({ costo: $('cnd-costo').textContent, estado: $('cnd-estado').textContent }));
+    await page.evaluate(() => cobrarConstancia()); await page.waitForTimeout(900);
+    let cndHtml = ''; for (const p of popups.splice(0)) { cndHtml += await p.content().catch(() => ''); await p.close().catch(() => {}); }
+    const cobroCnd = rpcCalls.find(c => c.fn === 'cobrar_constancia_caja');
+    check('Caja cobra e imprime la constancia de no adeudo', errors, /150/.test(cndCaja.costo) && /Sin adeudos/.test(cndCaja.estado) && cobroCnd && cobroCnd.p_placa === 'LIM-001' && cobroCnd.p_metodo === 'efectivo'
+      && cndHtml.includes('CND-26-ABCDEF') && cndHtml.includes('Derechos pagados') && cndHtml.includes('/verificar?t=' + TOKEN_CND) ? null : JSON.stringify({ cndCaja, cobroCnd, cndHtml: cndHtml.slice(0, 120) }));
 
     // QR de la boleta: apunta a /verificar?t=<token>
     const qrUrl = await page.evaluate(id => urlVerificacion(id), TOKEN);
@@ -871,6 +894,9 @@ function check(name, errors, extra) {
     await page.goto(BASE + '/consulta?q=ABC-123'); await page.waitForTimeout(1500);
     const sinCuenta = await page.evaluate(() => { const b = document.querySelector('.btn-pagar'); return { hay: !!b, desactivado: !!b?.disabled, leyenda: document.querySelector('.pagar-nota.pronto')?.textContent || '' }; });
     check('sin cuenta de Mercado Pago el botón sale desactivado con leyenda', errors, sinCuenta.hay && sinCuenta.desactivado && sinCuenta.leyenda.includes('no está disponible') ? null : JSON.stringify(sinCuenta));
+    await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
+    const cndSin = await page.evaluate(() => { const c = document.querySelector('.bloque.constancia'); const b = c?.querySelector('.btn-pagar'); return { hay: !!c, desactivado: !!b?.disabled, t: c?.textContent.replace(/\s+/g, ' ') || '' }; });
+    check('constancia con costo: sin Mercado Pago, se paga en Caja', errors, cndSin.hay && cndSin.desactivado && /\$150/.test(cndSin.t) && /pagarla en la Caja/.test(cndSin.t) ? null : JSON.stringify(cndSin));
     await page.close();
     mpConectado = true;
     ({ page, errors } = await newPage(browser));
@@ -880,6 +906,21 @@ function check(name, errors, extra) {
     const mp = rpcCalls.find(c => c.fn === 'pago-mp' && c.accion === 'crear');
     const avisoPago = await page.evaluate(() => ({ ok: document.body.textContent.includes('Pago recibido'), recibo: document.querySelector('.btn-recibo')?.getAttribute('href') || '' }));
     check('pago en línea desde el portal', errors, hayBoton && mp && avisoPago.ok && avisoPago.recibo === '/verificar?t=' + TOKEN_PAGO ? null : JSON.stringify({ hayBoton, mp, avisoPago }));
+    // Constancia de no adeudo pagada en línea y descargada al regresar
+    await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
+    await Promise.all([page.waitForURL(/constancia=/, { timeout: 8000 }).catch(() => {}), page.click('.bloque.constancia .btn-pagar')]);
+    await page.waitForTimeout(1500);
+    const cndRegreso = await page.evaluate(() => document.querySelector('.pago-regreso')?.textContent.replace(/\s+/g, ' ') || '');
+    const [popCnd] = await Promise.all([page.context().waitForEvent('page', { timeout: 5000 }).catch(() => null), page.click('.pago-regreso .btn-recibo').catch(() => {})]);
+    await page.waitForTimeout(800);
+    const cndPdf = popCnd ? await popCnd.content().catch(() => '') : ''; if (popCnd) await popCnd.close().catch(() => {});
+    const sol = rpcCalls.find(c => c.fn === 'solicitar_constancia'), mpCnd = rpcCalls.find(c => c.fn === 'pago-mp' && c.accion === 'constancia');
+    check('constancia pagada en línea y descargada', errors, sol && norm(sol.p_placa) === 'LIM001' && mpCnd && mpCnd.token === TOKEN_CND && /Pago recibido/.test(cndRegreso) && /CND-26-ABCDEF/.test(cndRegreso)
+      && cndPdf.includes('Constancia de no adeudo') && cndPdf.includes('pago en línea') ? null : JSON.stringify({ sol, mpCnd, cndRegreso, cndPdf: cndPdf.slice(0, 100) }));
+    // Al volver a consultar la placa en el mismo teléfono se puede descargar otra vez
+    await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
+    const cndPrevia = await page.evaluate(() => document.querySelector('.bloque.constancia')?.textContent.replace(/\s+/g, ' ') || '');
+    check('constancia ya pagada se vuelve a descargar', errors, /Ya pagaste la constancia CND-26-ABCDEF/.test(cndPrevia) ? null : cndPrevia.slice(0, 200));
     TABLES.configuracion[0].pago_en_linea = false;
     await page.close();
 

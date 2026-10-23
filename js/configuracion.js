@@ -16,6 +16,7 @@ async function loadConfig() {
   if($('cfg-descuento2-pct')) $('cfg-descuento2-pct').value = data.descuento2_pct ?? '';
   if($('cfg-dias-descuento2'))$('cfg-dias-descuento2').value= data.dias_descuento2 ?? '';
   if($('cfg-valor-uma'))      $('cfg-valor-uma').value      = data.valor_uma      ?? '';
+  if($('cfg-constancia-costo')) $('cfg-constancia-costo').value = data.constancia_costo ?? '';
   if($('cfg-reglamento'))     $('cfg-reglamento').value     = data.reglamento     || '';
   if($('cfg-fundamento'))     $('cfg-fundamento').value     = data.fundamento_general || '';
   if($('cfg-recurso'))        $('cfg-recurso').value        = data.leyenda_recurso || '';
@@ -53,6 +54,7 @@ async function saveConfig() {
     descuento2_pct: parseInt(($('cfg-descuento2-pct')||{}).value)||0,
     dias_descuento2: parseInt(($('cfg-dias-descuento2')||{}).value)||null,
     valor_uma:      parseFloat(($('cfg-valor-uma')||{}).value) || null,
+    constancia_costo: parseFloat(($('cfg-constancia-costo')||{}).value) || _cachedConfig?.constancia_costo || 150,
     reglamento:     ($('cfg-reglamento')||{}).value?.trim() || null,
     fundamento_general: ($('cfg-fundamento')||{}).value?.trim() || null,
     leyenda_recurso:    ($('cfg-recurso')||{}).value?.trim() || null,

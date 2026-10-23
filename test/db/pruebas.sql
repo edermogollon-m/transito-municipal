@@ -788,23 +788,76 @@ do $$ declare v bigint := (select id from infracciones where placa = 'DIF-001');
 end $$;
 reset role;
 
--- Constancia de no adeudo desde la consulta ciudadana
+-- Constancia de no adeudo: se paga en línea o en Caja y entonces se expide (constancias_cobro.sql)
 set role anon;
-do $$ declare c jsonb; c2 jsonb; v jsonb; begin
-  c := emitir_constancia('dif 001');
-  assert c ->> 'folio' ~ '^CND-\d{2}-[2-9A-HJKMNP-Z]{6}$', 'folio de constancia';
-  c2 := emitir_constancia('DIF-001');
-  assert c2 ->> 'folio' = c ->> 'folio', 'una constancia por placa y día';
-  v := verificar_documento((c ->> 'token')::uuid);
-  assert v ->> 'tipo' = 'constancia' and v ->> 'estado' = 'vigente' and (v ->> 'adeudos_actuales')::int = 0, 'constancia verificable';
+do $$ declare s jsonb; s2 jsonb; c jsonb; begin
   begin
-    perform emitir_constancia('DEU-001');
+    perform emitir_constancia('DIF-001');
+    raise exception 'constancia gratis';
+  exception when others then if sqlerrm = 'constancia gratis' then raise; end if;
+  end;
+  s := solicitar_constancia('dif 001');
+  assert (s ->> 'monto')::numeric = 150, 'costo de la constancia';
+  s2 := solicitar_constancia('DIF-001');
+  assert s2 ->> 'token' = s ->> 'token', 'reusa el cobro sin pagar';
+  c := constancia_de_cobro((s ->> 'token')::uuid);
+  assert not (c ->> 'pagada')::boolean and c ->> 'folio' is null, 'sin pagar no hay constancia';
+  begin
+    perform solicitar_constancia('DEU-001');
     raise exception 'constancia con adeudo';
   exception when others then if sqlerrm = 'constancia con adeudo' then raise; end if;
   end;
   begin
+    perform registrar_pago_constancia((s ->> 'token')::uuid, 'MP-1', 150);
+    raise exception 'el público asentó un pago';
+  exception when others then if sqlerrm = 'el público asentó un pago' then raise; end if;
+  end;
+  begin
     assert (select count(*) from constancias) = 0, 'anónimo lee constancias';
   exception when insufficient_privilege then null;
+  end;
+  perform set_config('prueba.cnd', s ->> 'token', false);
+end $$;
+reset role;
+-- Mercado Pago acredita el pago (la función pago-mp usa la llave de servicio)
+do $$ declare t uuid := current_setting('prueba.cnd')::uuid; begin
+  begin
+    perform registrar_pago_constancia(t, 'MP-1', 100);
+    raise exception 'aceptó un pago incompleto';
+  exception when others then if sqlerrm = 'aceptó un pago incompleto' then raise; end if;
+  end;
+  perform registrar_pago_constancia(t, 'MP-1', 150);
+  perform registrar_pago_constancia(t, 'MP-1', 150);   -- Mercado Pago avisa dos veces
+  assert (select count(*) from constancias where placa = 'DIF001') = 1, 'una constancia por pago';
+end $$;
+set role anon;
+do $$ declare c jsonb; v jsonb; begin
+  c := constancia_de_cobro(current_setting('prueba.cnd')::uuid);
+  assert (c ->> 'pagada')::boolean and c ->> 'folio' ~ '^CND-\d{2}-[2-9A-HJKMNP-Z]{6}$', 'constancia pagada en línea: ' || c::text;
+  assert c ->> 'placa' = 'DIF-001' and c ->> 'metodo' = 'en_linea', 'datos de la constancia';
+  v := verificar_documento((c ->> 'token')::uuid);
+  assert v ->> 'tipo' = 'constancia' and v ->> 'estado' = 'vigente' and (v ->> 'adeudos_actuales')::int = 0, 'constancia verificable';
+end $$;
+reset role;
+-- En ventanilla: Caja la cobra, la imprime y entra a su corte; el policía vial no
+select pg_temp.como('caja');
+set role authenticated;
+do $$ declare c jsonb; antes numeric; r jsonb; begin
+  antes := (resumen_corte() ->> 'efectivo')::numeric;
+  c := cobrar_constancia_caja('DIF-001', 'efectivo');
+  assert c ->> 'folio' like 'CND-%' and (c ->> 'monto')::numeric = 150 and c ->> 'cajero' = 'Caja', 'constancia cobrada en caja';
+  r := resumen_corte();
+  assert (r ->> 'efectivo')::numeric = antes + 150 and (r ->> 'num_constancias')::int = 1, 'la constancia entra al corte: ' || r::text;
+  begin
+    perform cobrar_constancia_caja('DEU-001', 'efectivo');
+    raise exception 'caja cobró constancia con adeudo';
+  exception when others then if sqlerrm = 'caja cobró constancia con adeudo' then raise; end if;
+  end;
+  perform pg_temp.como('ofi');
+  begin
+    perform cobrar_constancia_caja('DIF-001', 'efectivo');
+    raise exception 'el oficial cobró una constancia';
+  exception when others then if sqlerrm = 'el oficial cobró una constancia' then raise; end if;
   end;
 end $$;
 reset role;
