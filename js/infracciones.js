@@ -856,10 +856,10 @@ async function openNewInfraccion(continuar) {
   $('inf-form').reset();
   $('inf-id').value = '';
   $('inf-fecha').value = fechaLocalInput();
-  // El policía vial levanta a su nombre y con la hora del momento
+  // La fecha y hora son las del momento y nadie las cambia; el policía vial
+  // además levanta a su nombre
+  $('inf-fecha').readOnly = true;
   const fija = !eligeOficial();
-  $('inf-fecha').readOnly = fija;
-  if ($('inf-fecha-nota')) $('inf-fecha-nota').hidden = !fija;
   $('inf-est').value = 'pendiente';
   if ($('inf-est-wrap')) $('inf-est-wrap').style.display = 'none';
   window._infLat = null; window._infLng = null;
