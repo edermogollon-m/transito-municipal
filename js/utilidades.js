@@ -174,7 +174,8 @@ let _oficiales = null;
 
 async function loadOficiales(selectIds) {
   if (!_oficiales) {
-    const { data } = await _sb.from('usuarios').select('nombre').eq('activo', true).order('nombre');
+    // Solo quienes levantan infracciones (no Caja, Jurídico, corralón ni Contraloría)
+    const { data } = await _sb.from('usuarios').select('nombre,rol').eq('activo', true).in('rol', ['admin', 'supervisor', 'oficial']).order('nombre');
     if (data) { _oficiales = data.map(u => u.nombre); _guardarLocal('tm_oficiales', _oficiales); }
     else _oficiales = _leerLocal('tm_oficiales') || (_session?.name ? [_session.name] : []);
   }

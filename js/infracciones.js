@@ -209,7 +209,7 @@ async function submitInfraccion(e) {
     licencia:       ($('inf-licencia')||{}).value?.trim() || '',
     vehiculo:       ($('inf-vehiculo')||{}).value?.trim() || '',
     color_vehiculo: ($('inf-color')||{}).value?.trim()    || '',
-    oficial:        ($('inf-oficial')||{}).value?.trim()  || '',
+    oficial:        eligeOficial() ? (($('inf-oficial')||{}).value?.trim() || '') : (_session?.name || ''),
     tipo:           $('inf-tipo').value,
     catalogo_numero: parseInt(($('inf-catalogo')||{}).value) || null,
     monto:          parseInt($('inf-monto').value)||0,
@@ -232,6 +232,14 @@ async function submitInfraccion(e) {
     fotos:          fotosArr.length ? JSON.stringify(fotosArr) : (id ? undefined : '[]')
   };
   if (payload.fotos === undefined) delete payload.fotos;
+
+  // La base rechaza fechas futuras (oficial.sql): avisar antes de intentar
+  if (new Date(payload.fecha).getTime() > Date.now() + 15 * 60000) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Registrar infracción'; }
+    alert('La fecha y hora de la infracción no puede ser posterior a este momento.');
+    $('inf-fecha')?.focus();
+    return;
+  }
 
   // Fundamento legal: obligatorio en altas; el tipo libre toma la descripción del reglamento
   const cat = catalogoPorNumero(payload.catalogo_numero);
@@ -847,7 +855,11 @@ async function openNewInfraccion(continuar) {
   $('modal-inf-title').textContent = continuar ? `Otra infracción en la misma boleta (${continuar.n + 1})` : 'Nueva infracción';
   $('inf-form').reset();
   $('inf-id').value = '';
-  $('inf-fecha').value = new Date().toISOString().slice(0,16);
+  $('inf-fecha').value = fechaLocalInput();
+  // El policía vial levanta a su nombre y con la hora del momento
+  const fija = !eligeOficial();
+  $('inf-fecha').readOnly = fija;
+  if ($('inf-fecha-nota')) $('inf-fecha-nota').hidden = !fija;
   $('inf-est').value = 'pendiente';
   if ($('inf-est-wrap')) $('inf-est-wrap').style.display = 'none';
   window._infLat = null; window._infLng = null;
@@ -871,8 +883,16 @@ async function openNewInfraccion(continuar) {
     if ($('inf-oficial')) $('inf-oficial').dataset.preload = previos['inf-oficial'] || '';
     window._infLat = continuar.lat; window._infLng = continuar.lng;
   }
-  loadOficiales(['inf-oficial']);
+  if (fija && $('inf-oficial')) {
+    $('inf-oficial').innerHTML = `<option value="${esc(_session?.name || '')}">${esc(_session?.name || '')}</option>`;
+    $('inf-oficial').disabled = true;
+  } else {
+    if ($('inf-oficial')) $('inf-oficial').disabled = false;
+    loadOficiales(['inf-oficial']);
+  }
   openModal('modal-infraccion');
+  // La ubicación se toma sola al abrir (en la misma boleta ya viene de la anterior)
+  if (!previos && navigator.geolocation) captureLocation(true);
   if ($('inf-catalogo')) $('inf-catalogo').value = '';
   renderCircunstancias(previos ? continuar.circunstancias : []);
   window._conductorPrevias = [];
@@ -905,7 +925,7 @@ async function editInfraccion(id) {
   $('modal-inf-title').textContent = 'Editar infracción';
   if ($('inf-est-wrap')) $('inf-est-wrap').style.display = '';
   $('inf-id').value       = data.id;
-  $('inf-fecha').value    = data.fecha ? data.fecha.slice(0,16) : '';
+  $('inf-fecha').value    = data.fecha ? fechaLocalInput(data.fecha) : '';
   $('inf-placa').value    = data.placa;
   $('inf-infractor').value= data.infractor;
   $('inf-licencia').value = data.licencia||'';

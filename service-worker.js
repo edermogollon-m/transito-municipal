@@ -1,4 +1,4 @@
-const CACHE = 'transito-v15';
+const CACHE = 'transito-v16';
 const PRECACHE = [
   '/',
   '/login',

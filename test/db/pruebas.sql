@@ -1005,4 +1005,21 @@ do $$ begin
   assert portal_info() ? 'privacidad_actualizado', 'fecha del aviso de privacidad';
 end $$;
 reset role;
+-- La boleta del policía vial lleva su nombre y no puede tener fecha futura (oficial.sql)
+select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
+set role authenticated;
+do $$ declare v bigint; begin
+  insert into infracciones (placa, infractor, tipo, monto, oficial) values ('OFI-001', 'X', 'Prueba', 500, 'Otro Agente') returning id into v;
+  assert (select oficial from infracciones where id = v) = 'Oficial', 'el oficial levantó a nombre de otro';
+  begin
+    insert into infracciones (placa, infractor, tipo, monto, fecha) values ('OFI-002', 'X', 'Prueba', 500, now() + interval '6 hours');
+    raise exception 'aceptó una fecha futura';
+  exception when others then if sqlerrm = 'aceptó una fecha futura' then raise; end if;
+  end;
+  insert into infracciones (placa, infractor, tipo, monto, fecha) values ('OFI-003', 'X', 'Prueba', 500, now() - interval '2 days');
+  perform pg_temp.como('sup');
+  insert into infracciones (placa, infractor, tipo, monto, oficial) values ('OFI-004', 'X', 'Prueba', 500, 'Oficial') returning id into v;
+  assert (select oficial from infracciones where id = v) = 'Oficial', 'el supervisor elige al oficial';
+end $$;
+reset role;
 \echo 'OK   pruebas de base de datos'
