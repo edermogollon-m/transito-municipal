@@ -59,7 +59,7 @@ const inserts = [];   // filas que la app insertó en infracciones
 // Tesseract.js simulado: "lee" una placa con texto alrededor
 const TESSERACT_STUB = `window.Tesseract = { createWorker: async () => ({
   setParameters: async () => {}, terminate: async () => {},
-  recognize: async () => ({ data: { text: 'NUEVO LEON\\nABC 123 D\\nMEXICO' } }) }) };`;
+  recognize: async () => ({ data: { text: window.__ocrTexto || 'NUEVO LEON\\nABC 123 D\\nMEXICO' } }) }) };`;
 const norm = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TABLES = {
   infracciones: withIds([...(seeds.SEED_INFRACCIONES || []), { fecha: '2026-06-03T10:00:00Z', placa: 'XSS-001', infractor: XSS, tipo: XSS, monto: 500, ubicacion: XSS, estado: 'pendiente', obs: XSS, oficial: XSS, telefono: '5550000000', token_verificacion: TOKEN, fotos: '["infracciones/2026/prueba.jpg"]' }]), permisos: withIds(seeds.SEED_PERMISOS || []),
@@ -318,16 +318,29 @@ function check(name, errors, extra) {
     await page.waitForTimeout(600);
     await page.evaluate(async () => { $('inf-tipo').value = 'Exceso de velocidad'; await autoFillMonto(); });
 
-    // Leer la placa con la cámara (Tesseract simulado)
-    const placaLeida = await page.evaluate(async () => {
-      const c = document.createElement('canvas'); c.width = 120; c.height = 40;
+    // Leer la placa con la cámara (Tesseract simulado). En la prueba no hay cámara:
+    // se usa una foto, se lee lo que cae en el recuadro y, si es claro, se llena solo
+    const leerFoto = texto => page.evaluate(async texto => {
+      window.__ocrTexto = texto; $('inf-placa').value = '';
+      const c = document.createElement('canvas'); c.width = 400; c.height = 200;
       const blob = await new Promise(r => c.toBlob(r, 'image/png'));
       await leerPlacaDesdeArchivo(new File([blob], 'placa.png', { type: 'image/png' }));
-      return { placa: $('inf-placa').value, estado: $('placa-ocr-status').textContent };
-    });
-    check('lectura de placa con cámara', errors, placaLeida.placa === 'ABC-123-D' ? null : JSON.stringify(placaLeida));
-    const formatos = await page.evaluate(() => ['ABC1234', 'JALISCO\n123-ABC', 'texto sin placa', 'PBA123C'].map(extraerPlaca));
-    check('formatos de placa', errors, JSON.stringify(formatos) === JSON.stringify(['ABC-1234', '123-ABC', '', 'PBA-123-C']) ? null : JSON.stringify(formatos));
+      const abierto = !$('placa-scan').hidden && !$('ps-leer').hidden;
+      await leerFotoRecortada();
+      return { abierto, placa: $('inf-placa').value, lector: !$('placa-scan').hidden, pregunta: $('ps-res').hidden ? '' : $('ps-placa').textContent + ' / ' + $('ps-alterna').textContent };
+    }, texto);
+    const placaLeida = await leerFoto('');
+    check('lectura de placa con cámara', errors, placaLeida.abierto && placaLeida.placa === 'ABC-123-D' && !placaLeida.lector ? null : JSON.stringify(placaLeida));
+    // Lectura dudosa (cabe como ABC-1237 o ABC-123-T): pregunta y no llena nada hasta que el oficial elige
+    const dudosa = await leerFoto('ABC 1237');
+    const elegida = await page.evaluate(() => { aceptarPlacaLeida(true); return { placa: $('inf-placa').value, lector: !$('placa-scan').hidden }; });
+    check('lectura dudosa de placa pregunta antes', errors, dudosa.placa === '' && dudosa.pregunta === 'ABC-1237 / No, es ABC-123-T' && elegida.placa === 'ABC-123-T' && !elegida.lector ? null : JSON.stringify({ dudosa, elegida }));
+    const nada = await leerFoto('VERACRUZ\nMEXICO');
+    await page.evaluate(() => cerrarLectorPlaca());
+    check('foto sin placa no llena el campo', errors, nada.placa === '' && nada.pregunta === '' ? null : JSON.stringify(nada));
+    await page.evaluate(() => { window.__ocrTexto = ''; $('inf-placa').value = 'ABC-123-D'; });
+    const formatos = await page.evaluate(() => ['ABC1234', 'JALISCO\n123-ABC', 'texto sin placa', 'PBA123C', 'PBA 1Z3 C', '1ABC-123-D', 'ABC-12-34'].map(extraerPlaca));
+    check('formatos de placa', errors, JSON.stringify(formatos) === JSON.stringify(['ABC-1234', '123-ABC', '', 'PBA-123-C', 'PBA-123-C', 'ABC-123-D', 'ABC-12-34']) ? null : JSON.stringify(formatos));
 
     // Boleta sin señal: se guarda en el dispositivo y se sube sola al volver internet
     await page.evaluate(() => { $('inf-infractor').value = 'Sin Señal'; $('inf-ubicacion').value = 'Carretera'; $('inf-domicilio').value = 'Conocido, Misantla'; $('inf-firma-negada').checked = true; });

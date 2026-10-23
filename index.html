@@ -358,6 +358,28 @@
     .delta-dn { color:var(--red);   font-size:.7rem; font-weight:600; }
 
     /* TOAST */
+    /* Lector de placas: cámara a pantalla completa con recuadro guía */
+    .placa-scan { position:fixed; inset:0; z-index:1200; background:#0B1110; color:#fff; display:flex; flex-direction:column; padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px); }
+    .placa-scan[hidden], .placa-scan [hidden] { display:none!important; }
+    .ps-top { display:flex; align-items:center; justify-content:space-between; padding:.8rem 1rem; font-size:.95rem; }
+    .ps-x { background:rgba(255,255,255,.12); border:none; color:#fff; width:40px; height:40px; border-radius:50%; font-size:1.1rem; cursor:pointer; }
+    .ps-vista { position:relative; flex:1; min-height:0; overflow:hidden; background:#000; touch-action:none; }
+    .ps-vista video, .ps-vista img { position:absolute; inset:0; width:100%; height:100%; }
+    .ps-vista video { object-fit:cover; }
+    .ps-vista img { object-fit:contain; }
+    .ps-marco { position:absolute; left:50%; top:50%; width:min(84%,560px); aspect-ratio:2/1; transform:translate(-50%,-50%); border:3px solid #fff; border-radius:12px; box-shadow:0 0 0 100vmax rgba(0,0,0,.55); pointer-events:none; }
+    .ps-marco.movible { pointer-events:auto; cursor:move; aspect-ratio:auto; border-color:#FACC15; }
+    .ps-asa { display:none; position:absolute; right:-14px; bottom:-14px; width:28px; height:28px; border-radius:50%; background:#FACC15; border:3px solid #0B1110; cursor:nwse-resize; }
+    .ps-marco.movible .ps-asa { display:block; }
+    .ps-ayuda { padding:.75rem 1rem; text-align:center; font-size:.85rem; min-height:2.9rem; color:#E5E7EB; }
+    .ps-ayuda[data-tono="error"] { color:#FCA5A5; } .ps-ayuda[data-tono="duda"] { color:#FDE68A; }
+    .ps-acciones, .ps-btns { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:center; padding:0 1rem 1rem; }
+    .ps-acciones .btn, .ps-btns .btn { min-height:44px; }
+    .ps-acciones .btn-ghost, .ps-btns .btn-ghost { background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.25); }
+    .ps-luz.activo { background:#FACC15!important; color:#111!important; }
+    .ps-res { text-align:center; padding:0 1rem .4rem; }
+    .ps-pregunta { font-size:.85rem; color:#D1D5DB; }
+    .ps-placa { display:inline-block; margin:.5rem 0 .9rem; padding:.35rem 1.1rem; background:#fff; color:#111; border:3px solid #111; border-radius:10px; font:800 2rem/1.2 ui-monospace,monospace; letter-spacing:.06em; }
     .toast { position:fixed; bottom:1.5rem; right:1.5rem; background:var(--ink); color:#fff; padding:.65rem 1.1rem; border-radius:10px; font-size:.8rem; font-weight:500; opacity:0; transform:translateY(8px); transition:opacity .22s ease,transform .22s cubic-bezier(.34,1.56,.64,1); pointer-events:none; z-index:9999; box-shadow:var(--shadow-md); }
     .toast.show { opacity:1; transform:translateY(0); }
 
@@ -1677,7 +1699,7 @@
           <div style="display:flex;gap:.5rem;align-items:center">
             <input id="inf-placa" class="form-input" placeholder="XYZ-1234" type="text" required
               oninput="this.value=this.value.toUpperCase()" onblur="checkPlacaHistory()" style="flex:1;font-family:monospace;font-weight:700;letter-spacing:.05em;font-size:.9rem"/>
-            <button type="button" id="btn-placa-camara" class="btn btn-ghost btn-sm" onclick="$('inf-placa-foto').click()" title="Tomar foto de la placa para leerla" style="white-space:nowrap;flex-shrink:0;min-height:38px">
+            <button type="button" id="btn-placa-camara" class="btn btn-ghost btn-sm" onclick="abrirLectorPlaca()" title="Leer la placa con la cámara" style="white-space:nowrap;flex-shrink:0;min-height:38px">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
               Leer placa
             </button>
@@ -2634,6 +2656,34 @@
       <button class="modal-close" onclick="closeModal('modal-vehiculo-detalle')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div id="veh-det-body"></div>
+  </div>
+</div>
+
+<!-- Lector de placas -->
+<div id="placa-scan" class="placa-scan" hidden role="dialog" aria-modal="true" aria-label="Leer placa">
+  <div class="ps-top"><strong>Leer placa</strong><button type="button" class="ps-x" onclick="cerrarLectorPlaca()" aria-label="Cerrar">✕</button></div>
+  <div class="ps-vista" id="ps-vista">
+    <video id="ps-video" playsinline muted autoplay hidden></video>
+    <img id="ps-foto" alt="Foto de la placa" hidden/>
+    <div class="ps-marco" id="ps-marco" onpointerdown="iniciarArrastreMarco(event)"><span class="ps-asa" id="ps-asa"></span></div>
+  </div>
+  <div class="ps-ayuda" id="ps-ayuda" role="status"></div>
+  <div class="ps-res" id="ps-res" hidden>
+    <div class="ps-pregunta">¿Es esta la placa?</div>
+    <div class="ps-placa" id="ps-placa"></div>
+    <div class="ps-btns">
+      <button type="button" class="btn btn-primary" onclick="aceptarPlacaLeida()">Sí, usarla</button>
+      <button type="button" id="ps-alterna" class="btn btn-ghost" onclick="aceptarPlacaLeida(true)" hidden></button>
+      <button type="button" class="btn btn-ghost" onclick="reintentarPlaca()">Volver a leer</button>
+      <button type="button" class="btn btn-ghost" onclick="cerrarLectorPlaca(true)">Escribir a mano</button>
+    </div>
+  </div>
+  <div class="ps-acciones" id="ps-acciones">
+    <button type="button" id="ps-leer" class="btn btn-primary" onclick="leerFotoRecortada()" hidden>Leer placa</button>
+    <button type="button" id="ps-reintentar" class="btn btn-primary" onclick="reintentarPlaca()" hidden>Volver a leer</button>
+    <button type="button" id="ps-luz" class="btn btn-ghost ps-luz" onclick="alternarLuzPlaca()" hidden>Linterna</button>
+    <button type="button" class="btn btn-ghost" onclick="usarFotoPlaca()">Usar una foto</button>
+    <button type="button" class="btn btn-ghost" onclick="cerrarLectorPlaca(true)">Escribir a mano</button>
   </div>
 </div>
 
