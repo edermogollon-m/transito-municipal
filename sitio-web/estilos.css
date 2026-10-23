@@ -419,6 +419,18 @@ b, strong { color: var(--tinta); }
 .cargando { padding: 2.4rem; text-align: center; color: var(--gris); }
 .cargando .rueda { width: 42px; height: 42px; margin: 0 auto .8rem; border-radius: 50%; border: 4px solid var(--borde); border-top-color: var(--linea); animation: girar .8s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
+.resultado .regreso { display: flex; gap: .8rem; align-items: flex-start; border-radius: 16px; padding: 1rem 1.15rem; margin-bottom: .9rem; box-shadow: 0 14px 40px rgba(20,23,26,.16); animation: subir .45s cubic-bezier(.2,.8,.2,1) both; font-size: .96rem; }
+.regreso > svg { flex-shrink: 0; margin-top: .1rem; }
+.regreso b { color: inherit; }
+.regreso .btn-oscuro { margin-top: .7rem; }
+.regreso.ok { background: var(--ok-bg); color: var(--ok); border: 2px solid var(--ok); }
+.regreso.info { background: #fff; color: var(--info); border: 2px solid var(--info); }
+.regreso.mal { background: var(--mal-bg); color: var(--mal); border: 2px solid var(--mal); }
+.rueda-chica { width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 3px solid var(--info-bg); border-top-color: var(--info); animation: girar .8s linear infinite; }
+.constancia-caja .costo { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px dashed var(--borde); border-bottom: 1px dashed var(--borde); padding: .5rem 0; }
+.constancia-caja .costo span { font-size: .85rem; color: var(--gris); }
+.constancia-caja .costo b { font-family: var(--display); font-weight: 900; font-size: 1.4rem; }
+.btn-constancia[disabled] { background: #C9CDD2; color: #5F6770; cursor: not-allowed; }
 .link-btn { background: none; border: 0; color: var(--ac); font-weight: 700; text-decoration: underline; padding: 0; }
 
 /* ── Aviso flotante ─────────────────────────────────────── */
