@@ -23,6 +23,8 @@ async function renderInicioRol() {
   // Para estos roles el inicio ya trae sus accesos: la barra general sobra
   const barra = document.querySelector('#view-dashboard .quick-actions');
   if (barra) barra.style.display = propios[_rol] ? 'none' : '';
+  // El policía vial no necesita las cifras de Caja ni del departamento
+  $('view-dashboard')?.classList.toggle('solo-inicio', _rol === 'oficial');
   try { caja.innerHTML = await fn(); caja.hidden = !caja.innerHTML.trim(); }
   catch (e) { console.warn('inicio:', e); caja.hidden = true; }
 }
@@ -39,14 +41,18 @@ function tarjetaInicio({ clase = '', principal, stats = [], botones = [], lista 
 async function inicioOficial() {
   const { data } = await _sb.from('infracciones').select('id,folio,placa,tipo,monto,fecha,oficial,capturo_auth').gte('fecha', hoyInicio()).order('fecha', { ascending: false });
   const mias = (data || []).filter(esMio);
+  let porSubir = 0;
+  try { porSubir = (await colaListar()).length; } catch (_) {}
   return tarjetaInicio({
     clase: 'oficial',
     principal: `<button type="button" class="inicio-grande" onclick="openNewInfraccion()">${ICO_INICIO.mas}<span>Nueva boleta<small>Levantar una infracción</small></span></button>`,
-    stats: [[mias.length, mias.length === 1 ? 'boleta hoy' : 'boletas hoy'], [fmt(mias.reduce((a, r) => a + Number(r.monto || 0), 0)), 'en multas hoy']],
+    stats: [[mias.length, mias.length === 1 ? 'boleta hoy' : 'boletas hoy'], [fmt(mias.reduce((a, r) => a + Number(r.monto || 0), 0)), 'en multas hoy'],
+      ...(porSubir ? [[porSubir, porSubir === 1 ? 'boleta sin señal por subir' : 'boletas sin señal por subir']] : [])],
     botones: [
       `<button type="button" class="btn btn-ghost" onclick="openNewInfraccion().then(()=>$('inf-placa-foto')?.click())">Leer placa con la cámara</button>`,
       `<button type="button" class="btn btn-ghost" onclick="openNewAccidente()">Registrar accidente</button>`,
       `<button type="button" class="btn btn-ghost" onclick="openNewGrua()">Enviar al corralón</button>`,
+      `<button type="button" class="btn btn-ghost" onclick="navigate('infracciones')">Mis boletas</button>`,
       `<button type="button" class="btn btn-ghost" onclick="abrirMiCredencial()">Mi credencial</button>`
     ],
     lista: mias.length ? `<div class="inicio-lista"><div class="inicio-lista-tit">Mis boletas de hoy</div>${mias.slice(0, 4).map(r => `

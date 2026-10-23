@@ -145,6 +145,15 @@ function esc(s) {
 // Argumento seguro para un onclick="fn(...)" construido con un template.
 function jsArg(v) { return esc(JSON.stringify(v ?? '')); }
 
+// Valor para un <input type="datetime-local"> con la hora del teléfono (no la UTC:
+// toISOString() adelantaría 6 horas en México).
+function fechaLocalInput(d = new Date()) {
+  const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+  return x.toISOString().slice(0, 16);
+}
+// El supervisor y el Director eligen quién levanta y la hora; el policía vial no (oficial.sql)
+function eligeOficial() { return ['admin', 'supervisor'].includes(_rol); }
+
 // Filtro de búsqueda para .or(): el texto va entre comillas para que una coma,
 // un paréntesis o un punto ("Pérez, Juan") no rompan la consulta.
 function orBuscar(campos, texto) {
@@ -259,7 +268,7 @@ function previewFotos(input, containerId) {
 }
 
 // ── Geolocalización ──────────────────────────────────────
-async function captureLocation() {
+async function captureLocation(auto = false) {   // auto: al abrir la boleta, sin avisos si falla
   const btn = document.getElementById('btn-geolocate');
   const status = document.getElementById('inf-geo-status');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
@@ -289,9 +298,9 @@ async function captureLocation() {
     if (status) status.innerHTML = `<span style="color:var(--green)">✓ Ubicación capturada (±${Math.round(pos.coords.accuracy)}m)</span>`;
     if (btn) { btn.textContent = '✓ GPS'; btn.style.color = 'var(--green)'; btn.disabled = false; }
   } catch(e) {
-    if (status) status.textContent = 'No se pudo obtener la ubicación GPS';
+    if (status) status.textContent = auto ? 'Sin ubicación GPS. Toca «GPS» para intentarlo de nuevo.' : 'No se pudo obtener la ubicación GPS';
     if (btn) { btn.textContent = 'GPS'; btn.disabled = false; }
-    showToast('GPS no disponible: ' + e.message);
+    if (!auto) showToast('GPS no disponible: ' + e.message);
   }
 }
 

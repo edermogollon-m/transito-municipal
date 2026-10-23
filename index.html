@@ -185,6 +185,31 @@
       .dash-tabla th, .dash-tabla td { padding-left:.4rem; padding-right:.4rem; }
     }
 
+    /* En pantallas táctiles no hay teclado: sin el atajo ⌘K */
+    @media (hover:none) { .kbd-atajo { display:none; } }
+    /* El policía vial ve solo su inicio: sin las cifras de Caja ni del departamento */
+    #view-dashboard.solo-inicio .dash-hoy-items, #view-dashboard.solo-inicio .dash-kpis,
+    #view-dashboard.solo-inicio .dash-grid, #view-dashboard.solo-inicio > .card { display:none; }
+
+    /* ── INFRACCIONES EN EL CELULAR: cada boleta es una tarjeta ── */
+    @media (max-width:600px) {
+      .inf-tabla thead { display:none; }
+      .inf-tabla, .inf-tabla tbody { display:block; }
+      .inf-tabla tr { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"placa estado" "tipo monto" "infr fecha" "folio acc"; gap:.2rem .75rem; align-items:center; padding:.8rem 1rem; border-bottom:1px solid var(--border); }
+      .inf-tabla td { display:block; padding:0 !important; border:0 !important; white-space:normal !important; max-width:none !important; min-width:0; }
+      .inf-tabla td[colspan] { grid-column:1 / -1; }
+      .inf-tabla td:nth-child(1) { grid-area:folio; font-size:.68rem !important; color:var(--muted); font-weight:600 !important; }
+      .inf-tabla td:nth-child(2) { grid-area:fecha; text-align:right; font-size:.72rem !important; color:var(--muted); }
+      .inf-tabla td:nth-child(3) { grid-area:placa; }
+      .inf-tabla td:nth-child(3) > span:first-child { font-size:.95rem !important; }
+      .inf-tabla td:nth-child(4) { grid-area:infr; font-size:.78rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap !important; }
+      .inf-tabla td:nth-child(5) { grid-area:tipo; font-size:.84rem !important; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap !important; }
+      .inf-tabla td:nth-child(6) { grid-area:monto; text-align:right; }
+      .inf-tabla td:nth-child(7) { grid-area:estado; text-align:right; }
+      .inf-tabla td:nth-child(8) { display:none; }
+      .inf-tabla td:nth-child(9) { grid-area:acc; padding-right:0 !important; }
+    }
+
     /* ── BOLETAS SIN SEÑAL ────────────────────────────────── */
     .cola-chip { min-height:32px; padding:0 .75rem; border-radius:16px; border:1px solid #FCD34D; background:var(--amber-bg); color:#92400E; font:inherit; font-size:.73rem; font-weight:700; cursor:pointer; white-space:nowrap; }
     .cola-chip.cola-error { border-color:#FCA5A5; background:var(--red-bg); color:#991B1B; }
@@ -668,7 +693,7 @@
         <button class="topbar-btn" onclick="openGlobalSearch()" title="Búsqueda global (⌘K)" style="width:auto;padding:0 .75rem;gap:.4rem;font-size:.75rem;color:var(--muted)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <span class="topbar-breadcrumb">Buscar</span>
-          <kbd style="background:var(--stone);border:1px solid var(--border);border-radius:4px;padding:.1rem .35rem;font-size:.65rem;font-family:inherit">⌘K</kbd>
+          <kbd class="kbd-atajo" style="background:var(--stone);border:1px solid var(--border);border-radius:4px;padding:.1rem .35rem;font-size:.65rem;font-family:inherit">⌘K</kbd>
         </button>
         <button class="topbar-btn" title="Notificaciones">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
@@ -848,7 +873,7 @@
         <!-- Tabla -->
         <div class="card" style="padding:0">
           <div class="table-wrap">
-            <table>
+            <table class="inf-tabla">
               <thead>
                 <tr>
                   <th class="th-sort" id="th-folio" onclick="sortInf('folio')">Folio <span class="th-sort-icon">↕</span></th>
@@ -1694,6 +1719,7 @@
         <div class="form-field"><label>Nombre completo *</label><input id="inf-infractor" class="form-input" placeholder="Nombre completo" type="text" required/></div>
         <div class="form-field"><label>Núm. de licencia o permiso</label><input id="inf-licencia" class="form-input" placeholder="Ej. MX-1234567" type="text" onblur="checkConductorHistory()"/></div>
       </div>
+      <div id="conductor-history"></div>
       <div class="form-row">
         <div class="form-field"><label>Tipo de licencia o permiso</label>
           <input id="inf-licencia-tipo" class="form-input" list="lista-licencia-tipo" placeholder="Ej. Automovilista" type="text"/>
@@ -1706,7 +1732,7 @@
         <input type="checkbox" id="inf-ausente"/> El infractor no se encontraba presente o no proporcionó sus datos (art. 327, fr. II, inciso b)
       </label>
       <div class="form-field">
-        <label>Teléfono <span style="font-weight:400;color:var(--muted)">(para enviar notificación WhatsApp automática)</span></label>
+        <label>Teléfono <span style="font-weight:400;color:var(--muted)">(para avisarle por WhatsApp)</span></label>
         <input id="inf-telefono" class="form-input" placeholder="10 dígitos" type="tel" maxlength="15"/>
       </div>
 
@@ -1716,7 +1742,8 @@
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)">Datos de la infracción</div>
       </div>
       <div class="form-row">
-        <div class="form-field"><label>Fecha y hora *</label><input id="inf-fecha" class="form-input" type="datetime-local" required/></div>
+        <div class="form-field"><label>Fecha y hora *</label><input id="inf-fecha" class="form-input" type="datetime-local" required/>
+          <div id="inf-fecha-nota" style="font-size:.72rem;color:var(--muted);margin-top:.25rem" hidden>Se registra con la hora de este momento.</div></div>
         <div class="form-field"><label>Oficial que levanta</label>
           <select id="inf-oficial" class="form-select"><option value="">— Seleccionar oficial —</option></select>
         </div>
@@ -1776,8 +1803,16 @@
       <!-- SECCIÓN 4: Evidencia -->
       <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
         <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">4</div>
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);white-space:nowrap">Evidencia fotográfica</div>
-        <span style="font-size:.7rem;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">(opcional · máx. 3 fotos)</span>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);white-space:nowrap">Evidencia y documento retenido</div>
+        <span style="font-size:.7rem;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">(fotos opcionales · máx. 3)</span>
+      </div>
+      <div class="form-field" style="margin-bottom:.5rem">
+        <label class="foto-upload-btn" for="inf-fotos" style="display:inline-flex">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Adjuntar fotos
+        </label>
+        <input id="inf-fotos" type="file" accept="image/*" multiple style="display:none" onchange="previewFotos(this)"/>
+        <div id="inf-fotos-preview" style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap"></div>
       </div>
       <div class="form-row">
         <div class="form-field"><label>Documento retenido en garantía (arts. 343-344)</label>
@@ -1788,6 +1823,12 @@
           </select>
         </div>
         <div class="form-field"><label>Número del documento</label><input id="inf-doc-numero" class="form-input" type="text" placeholder="Folio de la licencia o tarjeta"/></div>
+      </div>
+
+      <!-- SECCIÓN 5: Firmas -->
+      <div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--ac);color:#fff;font-size:.65rem;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">5</div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);white-space:nowrap">Firmas</div>
       </div>
       <div class="form-row">
         <div class="form-field"><label>Firma del infractor</label>
@@ -1801,15 +1842,6 @@
           <canvas id="firma-oficial" class="firma-pad" width="400" height="140"></canvas>
           <div style="text-align:right;margin-top:.25rem"><button type="button" class="btn btn-ghost btn-sm" onclick="limpiarFirma('firma-oficial')">Borrar</button></div>
         </div>
-      </div>
-      <div id="conductor-history"></div>
-      <div class="form-field" style="margin-bottom:.5rem">
-        <label class="foto-upload-btn" for="inf-fotos" style="display:inline-flex">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          Adjuntar fotos
-        </label>
-        <input id="inf-fotos" type="file" accept="image/*" multiple style="display:none" onchange="previewFotos(this)"/>
-        <div id="inf-fotos-preview" style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap"></div>
       </div>
 
       <!-- RESUMEN PRE-SUBMIT -->
