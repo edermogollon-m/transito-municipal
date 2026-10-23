@@ -106,13 +106,13 @@ Deno.serve(async (req) => {
     const { data: c } = await admin.from("cobros_constancia").select("placa,monto,estado").eq("token", String(body.token || "")).maybeSingle();
     if (!c) return json({ error: "Solicitud de constancia no encontrada" }, 404);
     if (c.estado !== "pendiente") return json({ error: "Esta constancia ya está pagada" }, 409);
-    const url = await preferencia(
+    const enlace = await preferencia(
       { id: `CND-${c.placa}`, title: `Constancia de no adeudo · placa ${c.placa}`, description: "Constancia de no adeudo de infracciones de tránsito", unit_price: Number(c.monto) },
       `CND:${body.token}`,
       (estado) => `${base}/consulta?q=${encodeURIComponent(c.placa)}&constancia=${encodeURIComponent(String(body.token))}&pago=${estado}`,
     );
-    if (url instanceof Response) return url;
-    return json({ url, monto: c.monto });
+    if (enlace instanceof Response) return enlace;
+    return json({ url: enlace, monto: c.monto });
   }
 
   // ── Crear el cobro de una infracción desde el portal ciudadano ──
@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
   const { count } = await admin.from("pagos").select("id", { count: "exact", head: true }).eq("infraccion_id", id);
   if (count) return json({ error: `La infracción ${cobro.folio} ya está pagada` }, 409);
 
-  const url = await preferencia({
+  const enlace = await preferencia({
       id: cobro.folio, title: `Infracción de tránsito ${cobro.folio}`,
       description: cobro.descuento_pct > 0 ? `Incluye ${cobro.descuento_pct}% de descuento por pronto pago` : "Multa de tránsito",
       unit_price: Number(cobro.monto_final),
@@ -134,6 +134,6 @@ Deno.serve(async (req) => {
     String(id),
     (estado) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`,
   );
-  if (url instanceof Response) return url;
-  return json({ url, monto: cobro.monto_final, descuento_pct: cobro.descuento_pct });
+  if (enlace instanceof Response) return enlace;
+  return json({ url: enlace, monto: cobro.monto_final, descuento_pct: cobro.descuento_pct });
 });
