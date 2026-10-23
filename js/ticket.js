@@ -1,84 +1,170 @@
 // ── Ticket 80mm (print functions) ────────────────────────
+// Pensado para térmica en blanco y negro: solo negro sólido, bordes y texto,
+// sin grises ni colores (la térmica los imprime como puntos sueltos).
 function buildTicket80(r, cfg, qrDataUrl) {
   const mun = esc(cfg?.municipio || 'Municipio');
   const est = esc(cfg?.estado || '');
+  const inst = esc(cfg?.institucion || '');
   const fechaObj = new Date(r.fecha);
   const fechaStr = fechaObj.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
   const horaStr  = fechaObj.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
   const { tramos, limFecha } = plazosPago(r, cfg, {day:'2-digit',month:'2-digit',year:'numeric'});
   const montoFmt  = Number(r.monto).toLocaleString('es-MX');
   const ref = (r.folio||'INF').replace(/[^A-Z0-9]/g,'') + String(r.id||0).padStart(6,'0');
+  const sec = t => `<div class="t-sec"><b>${t}</b></div>`;
+  const lista = r._lista || [];
 
   return `<div class="t80">
-    <div class="t-center"><!--ESCUDO:13mm:gris--></div>
-    <div class="t-center t-bold" style="font-size:7.5pt;letter-spacing:.5px">${mun.toUpperCase()}</div>
-    ${est?`<div class="t-center" style="font-size:6.5pt">${est.toUpperCase()}</div>`:''}
-    <div class="t-center" style="font-size:7pt">DIRECCIÓN DE TRÁNSITO Y MOVILIDAD</div>
-    <div class="t-div"></div>
-    <div class="t-invert">INFRACCIÓN DE TRÁNSITO</div>
-    <div style="margin:1.5mm 0"></div>
-    <div class="t-center t-xl">${esc(r.folio||'—')}</div>
-    <div class="t-div"></div>
-    <div class="t-row"><span>FECHA:</span><span>${fechaStr}</span></div>
-    <div class="t-row"><span>HORA:</span><span>${horaStr}</span></div>
-    <div class="t-div"></div>
-    <div class="t-bold" style="font-size:7.5pt">INFRACTOR:</div>
-    <div>${esc(r.infractor)}</div>
-    <div class="t-row t-small"><span>LIC:</span><span>${esc(r.licencia||'N/A')}${r.licencia_tipo ? ' ' + esc(r.licencia_tipo) : ''}</span></div>
-    <div class="t-small" style="word-break:break-word">${htmlDatosInfractor(r)}</div>
-    <div style="margin:.5mm 0"></div>
-    <div class="t-bold" style="font-size:7.5pt">VEHÍCULO:</div>
-    <div class="t-row"><span>PLACA:</span><span class="t-bold">${esc(r.placa)}</span></div>
-    ${r.color_vehiculo?`<div class="t-row t-small"><span>COLOR:</span><span>${esc(r.color_vehiculo)}</span></div>`:''}
-    ${r.vehiculo?`<div class="t-small" style="word-break:break-word">${esc(r.vehiculo)}</div>`:''}
-    <div class="t-div"></div>
-    <div class="t-bold" style="font-size:7.5pt">INFRACCIÓN:</div>
-    <div>${esc(r.tipo)}</div>
-    ${r.fundamento ? `<div class="t-small" style="margin-top:.5mm">Fundamento: ${esc(r.fundamento)}</div>` : ''}
-    ${r.ubicacion?`<div class="t-small" style="margin-top:.5mm">Lugar: ${esc(r.ubicacion)}</div>`:''}
-    <div class="t-small" style="margin-top:.5mm">Circunstancias (art. 331): ${htmlCircunstancias(r)}</div>
-    ${(r._lista||[]).length > 1 ? `<div class="t-div"></div>
-    <div class="t-bold" style="font-size:7pt">INFRACCIONES DE ESTA BOLETA (ART. 327):</div>
-    ${r._lista.map((x, i) => `<div class="t-row t-small"><span>${esc(x.folio||'—')}${i===0?' (mayor cuantía)':''}</span><span>$${Number(x.monto).toLocaleString('es-MX')}</span></div>`).join('')}` : ''}
-    <div class="t-solid"></div>
-    <div class="t-center t-bold" style="font-size:7.5pt">MONTO A PAGAR</div>
-    <div class="t-amount">
-      <div class="t-xl">$${montoFmt}</div>
-      <div class="t-small">MXN</div>
+    <div class="t-head">
+      <!--ESCUDO:14mm:gris-->
+      ${inst ? `<div class="t-inst">${inst}</div>` : ''}
+      <div class="t-mun">${mun.toUpperCase()}</div>
+      ${est ? `<div class="t-est">${est.toUpperCase()}</div>` : ''}
+      <div class="t-dir">Dirección de Tránsito y Movilidad</div>
     </div>
-    ${r._grave ? `<div class="t-disc">
-      <div class="t-bold">SIN DESCUENTO</div>
-      <div>Se paga íntegra conforme al Reglamento</div>
-    </div>` : tramos.map(x => `<div class="t-disc">
-      <div class="t-bold">▼ ${x.pct}% descuento pagando a más tardar el</div>
-      <div>${x.hasta} — solo $${x.monto} MXN</div>
-    </div>`).join('')}
-    <div class="t-disc" style="border-color:#DC2626;color:#DC2626">
-      <div class="t-bold">⚠ Fecha límite de pago: ${limFecha}</div>
+    <div class="t-band">BOLETA DE INFRACCIÓN</div>
+    <div class="t-folio"><span>FOLIO</span><b>${esc(r.folio||'—')}</b></div>
+    <div class="t-grid">
+      <div><span>FECHA</span><b>${fechaStr}</b></div>
+      <div><span>HORA</span><b>${horaStr}</b></div>
     </div>
-    <div class="t-div"></div>
-    <div class="t-center t-small">Pague en Tesorería Municipal</div>
-    <div class="t-center t-small">Lunes a Viernes 8:00–15:00 hrs</div>
-    <div class="t-center t-small" style="margin-top:.5mm">Referencia de pago:</div>
-    <div class="t-barref">${ref}</div>
-    ${qrDataUrl?`<div style="text-align:center;margin:2mm 0 1mm"><img src="${qrDataUrl}" style="width:130px;height:130px;display:block;margin:0 auto"/><div style="font-size:6.5pt;margin-top:.5mm;color:#444">Escanea para verificar o pagar</div></div>`:''}
-    <div class="t-div"></div>
-    ${r.documento_retenido ? `<div class="t-bold" style="font-size:7pt">DOCUMENTO RETENIDO (ARTS. 343-344):</div>
-    <div class="t-small">${esc(DOC_RETENIDO[r.documento_retenido] || '')}${r.documento_numero ? ' ' + esc(r.documento_numero) : ''}. Se devuelve en ${esc(cfg?.resguardo_lugar || 'la Delegación')} al pagar.</div>
-    <div class="t-div"></div>` : ''}
-    <div class="t-bold" style="font-size:7pt">FIRMA DEL OFICIAL:</div>
-    ${r.firma_oficial ? imgFirma(r.firma_oficial, 12) : '<div class="t-sig"></div>'}
-    <div class="t-small">${esc(r.oficial||'Agente de Tránsito')}${r.oficial_placa ? ' · Placa ' + esc(r.oficial_placa) : ''}</div>
-    ${r.oficial_adscripcion ? `<div class="t-small">${esc(r.oficial_adscripcion)}</div>` : ''}
-    <div style="margin:.5mm 0"></div>
-    <div class="t-bold" style="font-size:7pt">FIRMA / HUELLA DEL INFRACTOR:</div>
-    ${r.firma_infractor ? imgFirma(r.firma_infractor, 12) : (r.firma_negada ? '<div class="t-small">Se negó a firmar</div>' : '<div class="t-sig"></div>')}
-    <div class="t-div"></div>
-    <div class="t-small" style="text-align:justify">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
-    <div class="t-small" style="text-align:justify;margin-top:1mm">${esc(leyendaPrivacidad())}</div>
-    <div class="t-center t-small" style="margin-top:1mm">Sistema Tránsito Municipal · HCE</div>
+    ${r.ubicacion ? `<div class="t-lugar"><span>LUGAR</span> ${esc(r.ubicacion)}</div>` : ''}
+
+    ${sec('VEHÍCULO')}
+    <div class="t-placa"><span>${est ? est.toUpperCase() : 'MÉXICO'}</span><b>${esc(r.placa||'—')}</b></div>
+    ${r.vehiculo || r.color_vehiculo ? `<div class="t-center t-small">${esc(r.vehiculo||'')}${r.vehiculo && r.color_vehiculo ? ' · ' : ''}${r.color_vehiculo ? 'Color ' + esc(r.color_vehiculo) : ''}</div>` : ''}
+
+    ${sec('CONDUCTOR')}
+    <div class="t-nombre">${esc(r.infractor||'—')}</div>
+    <div class="t-kv"><span>Licencia</span><b>${esc(r.licencia||'N/A')}${r.licencia_tipo ? ' · ' + esc(r.licencia_tipo) : ''}</b></div>
+    <div class="t-small t-wrap">${htmlDatosInfractor(r)}</div>
+
+    ${sec('INFRACCIÓN')}
+    <div class="t-tipo">${esc(r.tipo||'—')}</div>
+    ${r.fundamento ? `<div class="t-small t-wrap">Fundamento: ${esc(r.fundamento)}</div>` : ''}
+    <div class="t-small t-wrap">Circunstancias (art. 331): ${htmlCircunstancias(r)}</div>
+    ${lista.length > 1 ? `<div class="t-lista">
+      <div class="t-lista-t">INFRACCIONES DE ESTA BOLETA (ART. 327)</div>
+      ${lista.map((x, i) => `<div class="t-kv"><span>${esc(x.folio||'—')}${i===0?' · mayor cuantía':''}</span><b>$${Number(x.monto).toLocaleString('es-MX')}</b></div>`).join('')}
+    </div>` : ''}
+
+    <div class="t-total">
+      <span>TOTAL A PAGAR</span>
+      <b>$${montoFmt}</b>
+      <small>PESOS MEXICANOS</small>
+    </div>
+    ${r._grave ? `<div class="t-nodesc"><b>SIN DESCUENTO</b><span>Se paga íntegra conforme al Reglamento</span></div>`
+      : tramos.length ? `<div class="t-desc">
+      <div class="t-desc-t">PAGA ANTES Y AHORRA</div>
+      ${tramos.map(x => `<div class="t-desc-r"><span class="t-pct">−${x.pct}%</span><span>hasta el ${x.hasta}</span><b>$${x.monto}</b></div>`).join('')}
+    </div>` : ''}
+    <div class="t-limite"><span>FECHA LÍMITE DE PAGO</span><b>${limFecha}</b></div>
+
+    ${sec('CÓMO PAGAR')}
+    <div class="t-pago">
+      ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR"/>` : ''}
+      <div>
+        <div class="t-paso"><i>1</i>Escanea el código para ver tu boleta${cfg?.pago_en_linea ? ' y pagar en línea' : ''}.</div>
+        <div class="t-paso"><i>2</i>O paga en la Tesorería Municipal, de lunes a viernes de 8:00 a 15:00 h.</div>
+        <div class="t-ref"><span>REFERENCIA</span><b>${ref}</b></div>
+      </div>
+    </div>
+
+    ${r.documento_retenido ? `<div class="t-retenido">
+      <b>DOCUMENTO RETENIDO (ARTS. 343-344)</b>
+      <div>${esc(DOC_RETENIDO[r.documento_retenido] || '')}${r.documento_numero ? ' ' + esc(r.documento_numero) : ''}</div>
+      <div class="t-small">Se devuelve en ${esc(cfg?.resguardo_lugar || 'la Delegación')} al pagar.</div>
+    </div>` : ''}
+
+    ${sec('FIRMAS')}
+    <div class="t-firmas">
+      <div>
+        ${r.firma_oficial ? imgFirma(r.firma_oficial, 11) : '<div class="t-sig"></div>'}
+        <div class="t-fcap">POLICÍA VIAL</div>
+        <div class="t-fnom">${esc(r.oficial||'Agente de Tránsito')}${r.oficial_placa ? '<br>Placa ' + esc(r.oficial_placa) : ''}</div>
+      </div>
+      <div>
+        ${r.firma_infractor ? imgFirma(r.firma_infractor, 11) : (r.firma_negada ? '<div class="t-sig t-negada">Se negó a firmar</div>' : '<div class="t-sig"></div>')}
+        <div class="t-fcap">INFRACTOR</div>
+        <div class="t-fnom">Firma o huella</div>
+      </div>
+    </div>
+    ${r.oficial_adscripcion ? `<div class="t-center t-small">${esc(r.oficial_adscripcion)}</div>` : ''}
+
+    <div class="t-legal">${esc(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocación.')}</div>
+    <div class="t-legal">${esc(leyendaPrivacidad())}</div>
+    <div class="t-corte">CONSERVE ESTE COMPROBANTE</div>
   </div>`;
 }
+
+// Estilos del ticket: negro sólido sobre blanco (print-color-adjust para que
+// las franjas negras sí se impriman).
+const CSS_TICKET80 = `
+    .t80{width:72mm;min-width:72mm;background:#fff;color:#000;padding:3mm 2.5mm;font-family:Arial,Helvetica,sans-serif;font-size:8pt;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .t80 b{font-weight:700}
+    .t80 .t-center{text-align:center}
+    .t80 .t-small{font-size:6.8pt}
+    .t80 .t-wrap{word-break:break-word;margin-top:.6mm}
+    .t80 .t-head{text-align:center}
+    .t80 .t-head img{display:block;margin:0 auto 1mm}
+    .t80 .t-inst{font-size:7pt;font-weight:700}
+    .t80 .t-mun{font-size:10pt;font-weight:900;letter-spacing:.6px}
+    .t80 .t-est{font-size:7pt;letter-spacing:1.5px}
+    .t80 .t-dir{font-size:7.5pt;margin-top:.3mm}
+    .t80 .t-band{background:#000;color:#fff;text-align:center;font-weight:900;font-size:10pt;letter-spacing:1.5px;padding:1.6mm 0;margin:2mm 0 0}
+    .t80 .t-folio{border:2px solid #000;border-top:none;text-align:center;padding:1mm 0 1.2mm;margin:0 0 1.5mm}
+    .t80 .t-folio span,.t80 .t-grid span,.t80 .t-lugar span,.t80 .t-ref span,.t80 .t-total span,.t80 .t-limite span,.t80 .t-placa span{display:block;font-size:6pt;font-weight:700;letter-spacing:1.2px}
+    .t80 .t-folio b{font-family:'Courier New',Courier,monospace;font-size:15pt;font-weight:900;letter-spacing:.5px}
+    .t80 .t-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #000}
+    .t80 .t-grid div{padding:.8mm 1.5mm;text-align:center}
+    .t80 .t-grid div+div{border-left:1px solid #000}
+    .t80 .t-grid b{font-size:9pt}
+    .t80 .t-lugar{font-size:7.5pt;margin-top:1mm;word-break:break-word}
+    .t80 .t-lugar span{display:inline;font-size:6pt}
+    .t80 .t-sec{display:flex;align-items:center;margin:2.6mm 0 1.2mm}
+    .t80 .t-sec b{background:#000;color:#fff;font-size:7pt;letter-spacing:1px;padding:.4mm 1.8mm}
+    .t80 .t-sec::after{content:"";flex:1;border-top:1.5px solid #000}
+    .t80 .t-placa{width:46mm;margin:0 auto 1mm;border:2.5px solid #000;border-radius:2.5mm;text-align:center;padding:.6mm 0 1mm;position:relative}
+    .t80 .t-placa::before{content:"";position:absolute;inset:.8mm;border:.5px solid #000;border-radius:1.6mm}
+    .t80 .t-placa b{display:block;font-family:'Courier New',Courier,monospace;font-size:17pt;font-weight:900;letter-spacing:1.5px;line-height:1.1}
+    .t80 .t-nombre{font-size:9pt;font-weight:700;word-break:break-word}
+    .t80 .t-kv{display:flex;justify-content:space-between;gap:2mm;font-size:7.5pt}
+    .t80 .t-kv b{text-align:right;word-break:break-word}
+    .t80 .t-tipo{font-size:9pt;font-weight:700;word-break:break-word}
+    .t80 .t-lista{border:1px dashed #000;padding:1mm 1.5mm;margin-top:1.2mm}
+    .t80 .t-lista-t{font-size:6.5pt;font-weight:700;margin-bottom:.5mm}
+    .t80 .t-total{border:3px double #000;text-align:center;padding:1.5mm 0 1.2mm;margin:3mm 0 1.5mm}
+    .t80 .t-total b{display:block;font-size:24pt;font-weight:900;line-height:1.05;letter-spacing:-.5px}
+    .t80 .t-total small{font-size:6pt;letter-spacing:1.2px}
+    .t80 .t-desc{border:1px solid #000}
+    .t80 .t-desc-t{text-align:center;font-size:6.5pt;font-weight:700;letter-spacing:1.2px;border-bottom:1px solid #000;padding:.5mm 0}
+    .t80 .t-desc-r{display:flex;align-items:center;gap:1.5mm;padding:.8mm 1.5mm;font-size:7.5pt}
+    .t80 .t-desc-r+.t-desc-r{border-top:1px dashed #000}
+    .t80 .t-desc-r span:nth-child(2){flex:1}
+    .t80 .t-desc-r b{font-size:10pt}
+    .t80 .t-pct{border:1.5px solid #000;border-radius:1mm;font-weight:900;font-size:8pt;padding:0 1mm;min-width:11mm;text-align:center}
+    .t80 .t-nodesc{border:2px solid #000;text-align:center;padding:1mm;font-size:7.5pt}
+    .t80 .t-nodesc b{display:block;font-size:9pt;letter-spacing:1px}
+    .t80 .t-limite{background:#000;color:#fff;text-align:center;padding:1mm 0 1.2mm;margin-top:1.5mm}
+    .t80 .t-limite b{font-size:11pt;letter-spacing:.5px}
+    .t80 .t-pago{display:flex;gap:2mm;align-items:center}
+    .t80 .t-pago img{width:27mm;height:27mm;flex:none;image-rendering:pixelated}
+    .t80 .t-paso{display:flex;gap:1.2mm;font-size:7pt;line-height:1.3;margin-bottom:1mm}
+    .t80 .t-paso i{flex:none;width:3.6mm;height:3.6mm;border-radius:50%;background:#000;color:#fff;font-style:normal;font-weight:700;font-size:6.5pt;display:flex;align-items:center;justify-content:center}
+    .t80 .t-ref{border-top:1px dashed #000;padding-top:.8mm}
+    .t80 .t-ref b{font-family:'Courier New',Courier,monospace;font-size:8pt;word-break:break-all}
+    .t80 .t-retenido{border:2px solid #000;padding:1.2mm 1.5mm;margin-top:2.5mm;font-size:7.5pt}
+    .t80 .t-retenido b{display:block;font-size:7pt;letter-spacing:.5px}
+    .t80 .t-firmas{display:grid;grid-template-columns:1fr 1fr;gap:3mm;text-align:center}
+    .t80 .t-firmas img{height:11mm}
+    .t80 .t-sig{height:11mm;border-bottom:1px solid #000}
+    .t80 .t-negada{display:flex;align-items:flex-end;justify-content:center;font-size:7pt;font-style:italic;padding-bottom:.5mm}
+    .t80 .t-firmas img+.t-fcap{border-top:1px solid #000}
+    .t80 .t-fcap{font-size:6pt;font-weight:700;letter-spacing:1px;padding-top:.4mm}
+    .t80 .t-fnom{font-size:6.5pt;line-height:1.25;word-break:break-word}
+    .t80 .t-legal{font-size:6.2pt;line-height:1.3;margin-top:2mm;word-break:break-word}
+    .t80 .t-corte{margin-top:3mm;border-top:1.5px dashed #000;padding-top:1mm;text-align:center;font-size:6pt;font-weight:700;letter-spacing:1.5px}
+`;
 
 // ── Impresión en campo (impresora térmica) ───────────────
 // Cada teléfono elige cómo imprime el ticket (se guarda en el dispositivo):
@@ -112,12 +198,15 @@ function envolverTexto(t, ancho) {
   return out;
 }
 
-// Ticket ESC/POS de la boleta (mismos datos que el ticket impreso por el navegador)
+// Ticket ESC/POS de la boleta (mismos datos y orden que el ticket del navegador).
+// La térmica solo tiene texto: los títulos van en negativo (blanco sobre negro),
+// el folio, la placa y el monto en letra doble.
 function escposTicket(r, cfg, ancho = 48) {
   const b = [], txt = s => { for (const ch of asciiTicket(s)) b.push(ch.charCodeAt(0)); };
   const cmd = (...xs) => b.push(...xs), ln = (s = '') => { txt(s); cmd(0x0A); };
   const centro = () => cmd(0x1B, 0x61, 1), izq = () => cmd(0x1B, 0x61, 0);
   const negrita = on => cmd(0x1B, 0x45, on ? 1 : 0), grande = on => cmd(0x1D, 0x21, on ? 0x11 : 0);
+  const alto = on => cmd(0x1D, 0x21, on ? 0x01 : 0), negativo = on => cmd(0x1D, 0x42, on ? 1 : 0);
   const raya = (c = '-') => ln(c.repeat(ancho));
   const par = (k, v) => {   // etiqueta a la izquierda, valor a la derecha; si no cabe, en dos renglones
     const a = asciiTicket(k), z = asciiTicket(v);
@@ -125,45 +214,86 @@ function escposTicket(r, cfg, ancho = 48) {
     else { ln(a); envolverTexto(z, ancho).forEach(l => ln(' '.repeat(Math.max(0, ancho - l.length)) + l)); }
   };
   const parrafo = t => envolverTexto(t, ancho).forEach(l => ln(l));
+  const franja = t => {     // renglón completo en negativo, texto al centro
+    const x = asciiTicket(t).slice(0, ancho), izqE = Math.floor((ancho - x.length) / 2);
+    negrita(true); negativo(true); txt(' '.repeat(izqE) + x + ' '.repeat(ancho - x.length - izqE)); negativo(false); negrita(false); cmd(0x0A);
+  };
+  const seccion = t => {    // " VEHICULO " en negativo y una raya hasta el borde
+    const x = ' ' + asciiTicket(t) + ' ';
+    ln(); negrita(true); negativo(true); txt(x); negativo(false); txt(' ' + '-'.repeat(Math.max(0, ancho - x.length - 1))); negrita(false); cmd(0x0A);
+  };
   const fecha = new Date(r.fecha);
   const fmtF = { day: '2-digit', month: '2-digit', year: 'numeric' };
   const { tramos, limFecha } = plazosPago(r, cfg, fmtF);
   cmd(0x1B, 0x40);
-  centro(); negrita(true); parrafo((cfg?.municipio || 'Municipio').toUpperCase()); negrita(false);
+  centro();
+  if (cfg?.institucion) parrafo(cfg.institucion);
+  negrita(true); alto(true); parrafo((cfg?.municipio || 'Municipio').toUpperCase()); alto(false); negrita(false);
   if (cfg?.estado) parrafo(cfg.estado.toUpperCase());
-  parrafo('DIRECCION DE TRANSITO Y SEGURIDAD VIAL'); raya('=');
-  negrita(true); ln('BOLETA DE INFRACCION'); grande(true); ln(r.folio || '-'); grande(false); negrita(false);
-  izq(); raya();
-  par('FECHA:', fecha.toLocaleDateString('es-MX', fmtF)); par('HORA:', fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }));
+  parrafo('Direccion de Transito y Movilidad'); ln();
+  franja('BOLETA DE INFRACCION');
+  ln('FOLIO'); negrita(true); grande(true); ln(r.folio || '-'); grande(false); negrita(false);
+  izq(); raya('=');
+  par('FECHA: ' + fecha.toLocaleDateString('es-MX', fmtF), 'HORA: ' + fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }));
   if (r.ubicacion) parrafo('LUGAR: ' + r.ubicacion);
-  raya(); negrita(true); ln('VEHICULO'); negrita(false);
-  par('PLACA:', r.placa || '-'); if (r.vehiculo) parrafo(r.vehiculo + (r.color_vehiculo ? ' - ' + r.color_vehiculo : ''));
-  raya(); negrita(true); ln('INFRACTOR'); negrita(false);
-  parrafo(r.infractor || '-');
+
+  seccion('VEHICULO');
+  const placa = asciiTicket(r.placa || '-'), caja = placa.length * 2 + 6;   // la letra doble ocupa dos columnas
+  centro();
+  if (caja <= ancho) {
+    ln('+' + '-'.repeat(caja - 2) + '+');
+    txt('|  '); negrita(true); grande(true); txt(placa); grande(false); negrita(false); txt('  |'); cmd(0x0A);
+    ln('+' + '-'.repeat(caja - 2) + '+');
+  } else { negrita(true); grande(true); ln(placa); grande(false); negrita(false); }
+  if (r.vehiculo || r.color_vehiculo) parrafo([r.vehiculo, r.color_vehiculo && 'Color ' + r.color_vehiculo].filter(Boolean).join(' - '));
+  izq();
+
+  seccion('CONDUCTOR');
+  negrita(true); parrafo(r.infractor || '-'); negrita(false);
+  par('Licencia', (r.licencia || 'N/A') + (r.licencia_tipo ? ' ' + r.licencia_tipo : ''));
   parrafo(r.infractor_ausente && !r.infractor_domicilio ? 'No presente o no proporciono domicilio (art. 327)' : 'Dom.: ' + (r.infractor_domicilio || 'no proporcionado'));
-  par('LIC:', (r.licencia || 'N/A') + (r.licencia_tipo ? ' ' + r.licencia_tipo : ''));
-  raya(); negrita(true); ln('INFRACCION'); negrita(false);
-  parrafo(r.tipo || '-');
+
+  seccion('INFRACCION');
+  negrita(true); parrafo(r.tipo || '-'); negrita(false);
   if (r.fundamento) parrafo('Fundamento: ' + r.fundamento);
   const circ = (r.circunstancias || []).map(c => textoCircunstancia(c));
   parrafo('Circunstancias (art. 331): ' + (circ.length ? circ.join('; ') : 'ninguna; UMA base del tabulador'));
   if ((r._lista || []).length > 1) {
-    raya(); negrita(true); ln('INFRACCIONES DE ESTA BOLETA'); negrita(false);
+    ln(); ln('INFRACCIONES DE ESTA BOLETA:');
     r._lista.forEach((x, i) => par((x.folio || '-') + (i === 0 ? ' (mayor)' : ''), '$' + Number(x.monto).toLocaleString('es-MX')));
   }
-  raya('='); centro(); ln('MONTO A PAGAR'); grande(true); negrita(true); ln('$' + Number(r.monto).toLocaleString('es-MX') + ' MXN'); grande(false); negrita(false); izq();
-  if (r._grave) parrafo('SIN DESCUENTO: se paga integra conforme al Reglamento.');
-  else tramos.forEach(x => parrafo(`${x.pct}% de descuento pagando a mas tardar el ${x.hasta}: $${x.monto} MXN`));
-  parrafo('Fecha limite de pago: ' + limFecha);
-  if (r.documento_retenido) { raya(); parrafo('DOCUMENTO RETENIDO (arts. 343-344): ' + (DOC_RETENIDO[r.documento_retenido] || '') + (r.documento_numero ? ' ' + r.documento_numero : '') + '. Se devuelve en ' + (cfg?.resguardo_lugar || 'la Delegacion') + ' al pagar.'); }
-  raya();
-  parrafo('Policia vial: ' + (r.oficial || '-') + (r.oficial_placa ? ' - Placa ' + r.oficial_placa : '') + (r.oficial_adscripcion ? ' - ' + r.oficial_adscripcion : ''));
-  parrafo('Firma del oficial: ' + (r.firma_oficial ? 'capturada en el dispositivo' : '______________________'));
-  parrafo('Firma del infractor: ' + (r.firma_infractor ? 'capturada en el dispositivo' : r.firma_negada ? 'se nego a firmar' : '____________________'));
-  raya(); parrafo(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocacion.');
-  parrafo(leyendaPrivacidad());
+
+  ln(); raya('='); centro(); ln('TOTAL A PAGAR');
+  grande(true); negrita(true); ln('$' + Number(r.monto).toLocaleString('es-MX')); grande(false); negrita(false);
+  ln('PESOS MEXICANOS'); izq(); raya('=');
+  if (r._grave) { centro(); negrita(true); ln('SIN DESCUENTO'); negrita(false); parrafo('Se paga integra conforme al Reglamento.'); izq(); }
+  else if (tramos.length) {
+    centro(); ln('PAGA ANTES Y AHORRA'); izq();
+    tramos.forEach(x => par(`-${x.pct}%  hasta el ${x.hasta}`, `$${x.monto}`));
+  }
+  ln(); franja('FECHA LIMITE DE PAGO: ' + limFecha);
+
+  seccion('COMO PAGAR');
+  parrafo('1. Escanee el codigo QR para ver su boleta' + (cfg?.pago_en_linea ? ' y pagar en linea.' : '.'));
+  parrafo('2. O pague en la Tesoreria Municipal, de lunes a viernes de 8:00 a 15:00 h.');
   const url = asciiTicket(urlVerificacion(r.token_verificacion));
-  if (url) { centro(); ln('Verifique su boleta:'); escposQR(cmd, url, ancho >= 48 ? 6 : 5); ln(); izq(); }
+  if (url) { centro(); ln(); escposQR(cmd, url, ancho >= 48 ? 6 : 5); ln(); izq(); }
+
+  if (r.documento_retenido) {
+    seccion('DOCUMENTO RETENIDO');
+    parrafo('DOCUMENTO RETENIDO (arts. 343-344): ' + (DOC_RETENIDO[r.documento_retenido] || '') + (r.documento_numero ? ' ' + r.documento_numero : '') + '. Se devuelve en ' + (cfg?.resguardo_lugar || 'la Delegacion') + ' al pagar.');
+  }
+
+  seccion('FIRMAS');
+  parrafo('Policia vial: ' + (r.oficial || '-') + (r.oficial_placa ? ' - Placa ' + r.oficial_placa : '') + (r.oficial_adscripcion ? ' - ' + r.oficial_adscripcion : ''));
+  if (r.firma_oficial) parrafo('Firma del oficial: capturada en el dispositivo'); else { ln(); ln(); ln('Firma del oficial: ' + '_'.repeat(Math.max(4, ancho - 19))); }
+  if (r.firma_infractor) parrafo('Firma del infractor: capturada en el dispositivo');
+  else if (r.firma_negada) parrafo('Firma del infractor: se nego a firmar');
+  else { ln(); ln(); ln('Firma del infractor: ' + '_'.repeat(Math.max(4, ancho - 21))); }
+
+  ln(); parrafo(cfg?.leyenda_recurso || 'Contra esta boleta procede el recurso de revocacion.');
+  ln(); parrafo(leyendaPrivacidad());
+  ln(); centro(); ln('- '.repeat(Math.floor(ancho / 2)).trimEnd()); ln('CONSERVE ESTE COMPROBANTE'); izq();
   cmd(0x1B, 0x64, 3, 0x1D, 0x56, 0x42, 0);                       // avanzar y cortar
   return new Uint8Array(b);
 }
@@ -257,7 +387,7 @@ async function printParabrisas(id) {
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Parabrisas ${esc(r.folio || '')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:'Courier New',Courier,monospace}
+    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:Arial,Helvetica,sans-serif}
     .no-print{text-align:center;margin-bottom:4mm}
     .no-print button{padding:6px 16px;background:#1A7A82;color:#fff;border:none;border-radius:5px;font-size:12px;cursor:pointer;margin:0 3px}
     .t80{width:72mm;background:#fff;font-size:8.5pt;line-height:1.45;color:#000;padding:4mm 3mm}
@@ -377,23 +507,11 @@ async function printTicket80(id) {
   <title>Ticket ${esc(r.folio||'')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:'Courier New',Courier,monospace}
+    body{background:#fff;display:flex;flex-direction:column;align-items:center;padding:4mm;font-family:Arial,Helvetica,sans-serif}
     .no-print{text-align:center;margin-bottom:4mm}
     .no-print button{padding:6px 16px;background:#1A7A82;color:#fff;border:none;border-radius:5px;font-size:12px;cursor:pointer;margin:0 3px}
     .no-print button:hover{background:#229099}
-    .t80{width:72mm;min-width:72mm;background:#fff;font-family:'Courier New',Courier,monospace;font-size:8.5pt;line-height:1.45;color:#000;padding:4mm 3mm}
-    .t80 .t-center{text-align:center}
-    .t80 .t-bold{font-weight:700}
-    .t80 .t-xl{font-size:18pt;font-weight:900;letter-spacing:-1px;text-align:center;display:block}
-    .t80 .t-small{font-size:7pt}
-    .t80 .t-div{border-top:1px dashed #555;margin:1.5mm 0}
-    .t80 .t-solid{border-top:2px solid #000;margin:1.5mm 0}
-    .t80 .t-row{display:flex;justify-content:space-between}
-    .t80 .t-invert{background:#000;color:#fff;text-align:center;font-weight:700;font-size:9pt;padding:1.5mm 0;margin:1.5mm -3mm;letter-spacing:1px}
-    .t80 .t-amount{border:2px solid #000;text-align:center;padding:2mm;margin:1.5mm 0}
-    .t80 .t-disc{border:1px solid #555;text-align:center;padding:1.5mm;margin:1mm 0;font-size:8pt}
-    .t80 .t-barref{font-family:'Courier New',monospace;font-size:7pt;letter-spacing:4px;word-break:break-all;text-align:center;margin:1mm 0;color:#333}
-    .t80 .t-sig{border-bottom:1px solid #000;height:8mm;margin-bottom:1mm}
+    ${CSS_TICKET80}
     @media print{
       body{padding:0;background:#fff}
       .no-print{display:none!important}
