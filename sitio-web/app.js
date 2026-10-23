@@ -184,6 +184,7 @@ const iniciales = n => String(n || '').trim().split(/\s+/).filter(Boolean).map(p
 let _ultimos = [], _ultimaQ = '', _historial = false;
 
 async function buscar() {
+  $('q').value = formatoPlaca($('q').value);
   const q = $('q').value.trim();
   if (q.replace(/[^A-Za-z0-9]/g, '').length < 3) { $('q').focus(); avisar('Escribe tu placa o el folio de tu boleta'); return; }
   const caja = $('resultado'), btn = $('btn-buscar');

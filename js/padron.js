@@ -164,7 +164,7 @@ async function submitVehiculo(e) {
   const btn = $('veh-submit-btn'); btn.disabled=true; btn.textContent='Guardando…';
   const id = $('veh-id').value;
   const payload = {
-    placa: $('veh-placa').value.trim().toUpperCase(),
+    placa: formatoPlaca($('veh-placa').value),
     propietario: $('veh-propietario').value.trim(),
     marca: $('veh-marca').value.trim(), modelo: $('veh-modelo').value.trim(),
     anio: $('veh-anio').value ? parseInt($('veh-anio').value) : null,
@@ -189,7 +189,7 @@ async function viewVehiculoDetalle(id) {
   const { data: v, error } = await _sb.from('vehiculos').select('*').eq('id',id).single();
   if (error || !v) return;
   const { data: infs } = await _sb.from('infracciones')
-    .select('id,folio,fecha,tipo,monto,estado,oficial').eq('placa',v.placa)
+    .select('id,folio,fecha,tipo,monto,estado,oficial').in('placa', variantesPlaca(v.placa))
     .order('fecha',{ascending:false}).limit(30);
   $('veh-det-title').textContent = `Vehículo — ${v.placa}`;
 

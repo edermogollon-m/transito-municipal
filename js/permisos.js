@@ -123,7 +123,7 @@ async function submitPermiso(e) {
   const payload = {
     titular:     $('per-titular').value.trim(),
     tipo:        $('per-tipo').value,
-    placa:       $('per-placa').value.trim().toUpperCase(),
+    placa:       formatoPlaca($('per-placa').value),
     ruta:        $('per-ruta').value.trim(),
     inicio:      $('per-inicio').value||null,
     vencimiento: $('per-venc').value,

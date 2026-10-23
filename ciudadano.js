@@ -133,7 +133,7 @@ async function pintarAvisosCelular(placaSugerida) {
   } else {
     cuerpo = `<p>Te avisamos aquí si le levantan una multa a tu vehículo, un día antes de que se acabe tu descuento y cuando haya cierres de calles o desfiles.</p>
       <div class="ap-form">
-        <input id="ap-placa" class="ap-campo" type="text" autocapitalize="characters" maxlength="12" placeholder="Tu placa" value="${esc(placa.toUpperCase())}" aria-label="Placa para recibir avisos"/>
+        <input id="ap-placa" class="ap-campo" data-placa type="text" autocapitalize="characters" maxlength="12" placeholder="Tu placa" value="${esc(placa.toUpperCase())}" aria-label="Placa para recibir avisos"/>
         <button type="button" class="ap-btn" onclick="activarAvisos($('ap-placa').value)">Activar avisos</button>
       </div>
       <p class="ap-privacidad">Al activarlos autorizas que usemos tu placa para enviarte estos avisos. Puedes desactivarlos cuando quieras. <a href="/privacidad#finalidades">Aviso de privacidad</a></p>`;
