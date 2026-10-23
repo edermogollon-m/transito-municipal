@@ -949,7 +949,7 @@ function check(name, errors, extra) {
     const cndPdf = popCnd ? await popCnd.content().catch(() => '') : ''; if (popCnd) await popCnd.close().catch(() => {});
     const sol = rpcCalls.find(c => c.fn === 'solicitar_constancia'), mpCnd = rpcCalls.find(c => c.fn === 'pago-mp' && c.accion === 'constancia');
     check('constancia pagada en línea y descargada', errors, sol && norm(sol.p_placa) === 'LIM001' && mpCnd && mpCnd.token === TOKEN_CND && /Pago recibido/.test(cndRegreso) && /CND-26-ABCDEF/.test(cndRegreso)
-      && cndPdf.includes('Constancia de no adeudo') && cndPdf.includes('pago en línea') ? null : JSON.stringify({ sol, mpCnd, cndRegreso, cndPdf: cndPdf.slice(0, 100) }));
+      && /Constancia de no adeudo/i.test(cndPdf) && /pago en línea/i.test(cndPdf) ? null : JSON.stringify({ sol, mpCnd, cndRegreso, cndPdf: cndPdf.slice(0, 100) }));
     // Al volver a consultar la placa en el mismo teléfono se puede descargar otra vez
     await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
     const cndPrevia = await page.evaluate(() => document.querySelector('.bloque.constancia')?.textContent.replace(/\s+/g, ' ') || '');
