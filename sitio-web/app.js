@@ -183,9 +183,9 @@ async function buscar() {
   const q = $('q').value.trim();
   if (q.replace(/[^A-Za-z0-9]/g, '').length < 3) { $('q').focus(); avisar('Escribe tu placa o el folio de tu boleta'); return; }
   const caja = $('resultado'), btn = $('btn-buscar');
-  caja.hidden = false; btn.disabled = true;
+  caja.hidden = false; $('zona-resultado').hidden = false; btn.disabled = true;
   caja.innerHTML = `<div class="res-panel"><div class="cargando"><div class="rueda"></div>Buscando ${esc(q.toUpperCase())}…</div></div>`;
-  caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('zona-resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
   history.replaceState(null, '', '?q=' + encodeURIComponent(q));
   await _listo;
   let datos;
@@ -207,11 +207,7 @@ function sinMultas(q) {
     <div class="estado-vacio"><div class="sello-ok">${icono('ok', 36)}</div>
       <h3>No tienes infracciones por pagar</h3>
       <p><b>${esc(placa)}</b> no tiene multas pendientes. Revisa que la placa o el folio estén bien escritos.</p>
-      ${pareceFolio(q) ? '' : `<div class="constancia-caja">
-        <h4>Constancia de no infracción</h4>
-        <p>Descárgala gratis para trámites de compraventa o del vehículo. Trae un código QR para comprobar que es auténtica y vale 30 días.</p>
-        <button class="btn-constancia" type="button" onclick="descargarConstancia(${esc(JSON.stringify(q))}, this)">${icono('constancia', 20)} Descargar constancia</button>
-      </div>`}
+      ${pareceFolio(q) ? '' : bloqueConstancia(q)}
     </div>
     <div class="res-pie"><span>¿Quieres ver también las multas pagadas?</span><a href="${SIS}/consulta?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">Ver historial completo</a></div>`;
 }
@@ -264,12 +260,12 @@ function tarjeta(r) {
 }
 
 // Pago con Mercado Pago (el monto lo calcula el servidor). Al terminar,
-// Mercado Pago regresa al portal del sistema, que muestra el recibo.
+// Mercado Pago regresa a esta página (regreso: 'sitio'), que muestra el recibo.
 async function pagar(id, placa, btn) {
   const antes = btn.innerHTML;
   btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…';
   try {
-    const d = await funcion('pago-mp', { accion: 'crear', infraccion_id: id, placa });
+    const d = await funcion('pago-mp', { accion: 'crear', infraccion_id: id, placa, regreso: 'sitio' });
     if (!d.url) throw new Error('No se pudo iniciar el pago');
     location.href = d.url;
   } catch (err) {
@@ -278,8 +274,58 @@ async function pagar(id, placa, btn) {
   }
 }
 
-// Constancia de no infracción (emitir_constancia), con QR que apunta a la
-// verificación del sistema
+// ── Constancia de no adeudo con costo (constancias_cobro.sql del sistema) ──
+// Se pide el cobro (solicitar_constancia), se paga con Mercado Pago y, cuando
+// se acredita, se descarga con el token del cobro (constancia_de_cobro). El
+// token se guarda en este navegador con la misma clave que el portal /consulta,
+// así se puede volver a descargar desde cualquiera de los dos.
+const normPlaca = p => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function tokenConstancia(placa, token) {
+  const k = 'cnd:' + normPlaca(placa);
+  try {
+    if (token) localStorage.setItem(k, JSON.stringify({ token, t: Date.now() }));
+    const v = JSON.parse(localStorage.getItem(k) || 'null');
+    return v && Date.now() - v.t < 31 * 864e5 ? v.token : null;
+  } catch (_) { return null; }
+}
+function bloqueConstancia(placa) {
+  const costo = Number(_info.constancia_costo) || 0;
+  const id = 'cnd-' + normPlaca(placa);
+  const previa = tokenConstancia(placa);
+  if (previa) setTimeout(() => revisarConstanciaPrevia(previa, id), 0);
+  return `<div class="constancia-caja" id="${id}">
+    <h4>Constancia de no infracción</h4>
+    <p>Para trámites de compraventa o del vehículo. Trae un código QR para comprobar que es auténtica y vale 30 días.</p>
+    <div class="costo"><span>Costo</span><b>${costo ? pesos(costo) : 'Consulta en Caja'}</b></div>
+    <button class="btn-constancia" type="button"${_pagoEnLinea ? ` onclick="pagarConstancia(${esc(JSON.stringify(placa))}, this)"` : ' disabled'}>${icono('tarjeta', 20)} Pagar y obtener constancia${costo ? ' ' + pesos(costo) : ''}</button>
+    <div class="pagar-nota">${_pagoEnLinea ? 'Tarjeta, OXXO o SPEI con Mercado Pago. Al acreditarse la descargas aquí mismo.' : 'Por ahora el pago en línea no está disponible: pídela y págala en la Caja.'}</div>
+  </div>`;
+}
+// Ya la había pagado desde este navegador: ofrecer descargarla otra vez
+async function revisarConstanciaPrevia(token, id) {
+  let c = null;
+  try { c = await rpc('constancia_de_cobro', { p_token: token }); } catch (_) { return; }
+  const caja = $(id);
+  if (!caja || !c?.folio || c.vigente_hasta < new Date().toISOString().slice(0, 10)) return;
+  caja.insertAdjacentHTML('beforeend', `<div class="nota-inf ok">${icono('ok', 17)}<span>Ya pagaste la constancia <b>${esc(c.folio)}</b>, vigente hasta el ${esc(fechaLarga(new Date(c.vigente_hasta + 'T12:00:00')))}.
+    <button class="link-btn" type="button" onclick="descargarConstancia(${esc(JSON.stringify(token))})">Descargarla</button></span></div>`);
+}
+async function pagarConstancia(placa, btn) {
+  const antes = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…';
+  try {
+    const c = await rpc('solicitar_constancia', { p_placa: placa });
+    if (!c?.token) throw new Error('No se pudo solicitar la constancia');
+    tokenConstancia(placa, c.token);
+    const d = await funcion('pago-mp', { accion: 'constancia', token: c.token, regreso: 'sitio' });
+    if (!d.url) throw new Error('No se pudo iniciar el pago');
+    location.href = d.url;
+  } catch (err) {
+    avisar(String(err.message).replace(/\.$/, '') + '. También puedes pagarla en Caja.');
+    btn.disabled = false; btn.innerHTML = antes;
+  }
+}
+
 function cargarQR() {
   if (window.QRious) return Promise.resolve();
   return new Promise((ok, mal) => {
@@ -288,25 +334,30 @@ function cargarQR() {
     s.onload = ok; s.onerror = mal; document.head.appendChild(s);
   });
 }
-async function descargarConstancia(placa, btn) {
+// La ventana se abre en el clic: después de esperar al servidor el navegador la bloquearía
+async function descargarConstancia(token) {
   const win = window.open('', '_blank', 'width=820,height=900');
-  btn.disabled = true;
-  let c;
-  try { [c] = await Promise.all([rpc('emitir_constancia', { p_placa: placa }), cargarQR().catch(() => {})]); }
-  catch (_) { c = null; }
-  btn.disabled = false;
-  if (!c) { win?.close(); avisar('No se pudo expedir la constancia. Intenta más tarde.'); return; }
+  let c = null;
+  try { [c] = await Promise.all([rpc('constancia_de_cobro', { p_token: token }), cargarQR().catch(() => {})]); } catch (_) {}
+  if (!c?.folio) { win?.close(); avisar('La constancia aún no está lista. Intenta en unos minutos.'); return; }
   if (!win) { avisar('Permite las ventanas emergentes para descargar la constancia'); return; }
+  win.document.write(htmlConstancia(c)); win.document.close();
+}
+// Mismo documento que imprime el sistema (js/constancia.js); el QR lleva a la
+// verificación del sistema
+function htmlConstancia(c) {
   const url = `${SIS}/verificar?t=${encodeURIComponent(c.token)}`;
   let qr = '';
   try { qr = new QRious({ value: url, size: 260, padding: 8 }).toDataURL(); } catch (_) {}
-  const f = d => new Date(d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
-  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Constancia ${esc(c.folio)}</title>
+  const f = d => new Date(d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
+  const metodo = { en_linea: 'pago en línea', efectivo: 'efectivo', tarjeta: 'tarjeta', transferencia: 'transferencia' }[c.metodo] || '';
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Constancia ${esc(c.folio)}</title>
   <style>
     body{font-family:Georgia,'Times New Roman',serif;color:#111827;max-width:720px;margin:2rem auto;padding:0 1.2rem;line-height:1.6}
     .k{font-family:Arial,sans-serif;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#4B5563}
     h1{font-size:1.45rem;margin:.4rem 0 1.4rem}.folio{font-family:'Courier New',monospace;font-weight:700}
     .placa{display:inline-block;font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;border:2px solid #111827;border-radius:6px;padding:.1rem .7rem;letter-spacing:.06em}
+    .pago{font-family:Arial,sans-serif;font-size:.8rem;color:#374151}
     .qr{display:flex;gap:1.2rem;align-items:center;margin-top:2rem;padding-top:1rem;border-top:1px solid #D1D5DB;font-family:Arial,sans-serif;font-size:.78rem;color:#374151}
     .firma{margin-top:3rem;text-align:center;font-size:.85rem}.firma div{border-top:1px solid #111827;width:280px;margin:0 auto;padding-top:.3rem}
     button{font-family:Arial,sans-serif;margin-bottom:1rem;padding:.5rem 1rem;background:#15181C;color:#F5B700;border:0;border-radius:6px;cursor:pointer;font-weight:700}
@@ -320,10 +371,55 @@ async function descargarConstancia(placa, btn) {
   <p style="text-align:center"><span class="placa">${esc(String(c.placa).toUpperCase())}</span></p>
   <p>no tiene infracciones de tránsito pendientes de pago, vencidas ni en proceso de impugnación registradas en el sistema de la Dirección de Tránsito y Vialidad${c.municipio ? ' del municipio de ' + esc(c.municipio) : ''}.</p>
   <p>Expedida el ${esc(f(c.emitida))}. Vigente hasta el ${esc(f(c.vigente_hasta + 'T12:00:00'))}.</p>
+  ${c.monto != null ? `<p class="pago">Derechos pagados: ${esc(pesos(c.monto))}${metodo ? ' (' + esc(metodo) + ')' : ''}.</p>` : ''}
   <div class="firma"><div>${esc(c.director || 'Director de Tránsito')}<br>Director de Tránsito y Vialidad</div></div>
-  <div class="qr">${qr ? `<img src="${qr}" width="120" height="120" alt="Código QR de verificación">` : ''}<div>Esta constancia se emite en línea. Escanee el código o entre a <strong>${esc(url)}</strong> para comprobar que es auténtica.</div></div>
-  </body></html>`);
-  win.document.close();
+  <div class="qr">${qr ? `<img src="${qr}" width="120" height="120" alt="Código QR de verificación">` : ''}<div>Escanee el código o entre a <strong>${esc(url)}</strong> para comprobar que la constancia es auténtica y ver si la placa sigue sin adeudos.</div></div>
+  </body></html>`;
+}
+
+// ── Regreso de Mercado Pago (?pago=ok|pendiente|error) ──
+function pintarRegreso(clase, html) {
+  $('zona-resultado').hidden = false;
+  const r = $('regreso'); r.hidden = false; r.className = 'regreso ' + clase; r.innerHTML = html;
+}
+// Mercado Pago avisa al sistema en segundos; se pregunta hasta un minuto
+async function esperar(fn, listo) {
+  for (let i = 0; i < 15; i++) {
+    let d = null;
+    try { d = await fn(); } catch (_) { /* reintenta */ }
+    if (listo(d)) return d;
+    await new Promise(r => setTimeout(r, 4000));
+  }
+  return null;
+}
+async function confirmarPagoMulta(inf, q) {
+  const d = await esperar(() => rpc('pago_en_linea_estado', { p_id: inf, p_q: q }), d => d?.pagado);
+  if (!d) return pintarRegreso('info', `${icono('reloj', 22)}<div><b>Estamos confirmando tu pago con Mercado Pago.</b> Puede tardar unos minutos; vuelve a consultar tu placa más tarde. Si ya te cobraron, no pagues de nuevo.</div>`);
+  pintarRegreso('ok', `${icono('ok', 22)}<div><b>¡Pago recibido!</b> La infracción ${esc(d.folio || '')} quedó pagada${d.monto != null ? ' (' + esc(pesos(d.monto)) + ')' : ''}. Guarda tu recibo como comprobante.
+    ${d.token ? `<a class="btn-oscuro" href="${SIS}/verificar?t=${encodeURIComponent(d.token)}" target="_blank" rel="noopener">Ver mi recibo de pago ${icono('flecha', 18)}</a>` : ''}</div>`);
+  buscar();
+}
+async function confirmarPagoConstancia(token) {
+  const c = await esperar(() => rpc('constancia_de_cobro', { p_token: token }), c => c?.folio || c?.pagada);
+  if (c?.folio) {
+    tokenConstancia(c.placa, token);
+    return pintarRegreso('ok', `${icono('ok', 22)}<div><b>¡Pago recibido!</b> Tu constancia ${esc(c.folio)} está lista, vigente hasta el ${esc(fechaLarga(new Date(c.vigente_hasta + 'T12:00:00')))}.
+      <button class="btn-oscuro" type="button" onclick="descargarConstancia(${esc(JSON.stringify(token))})">${icono('constancia', 18)} Descargar constancia</button></div>`);
+  }
+  if (c?.pagada) return pintarRegreso('info', `${icono('alerta', 22)}<div><b>Recibimos tu pago, pero no se pudo expedir la constancia.</b> ${esc(c.nota || '')} Acude a la Dirección de Tránsito con tu comprobante de Mercado Pago para resolverlo.</div>`);
+  pintarRegreso('info', `${icono('reloj', 22)}<div><b>Estamos confirmando tu pago con Mercado Pago.</b> Puede tardar unos minutos; vuelve a consultar tu placa en este mismo teléfono para descargarla. Si ya te cobraron, no pagues de nuevo.</div>`);
+}
+function regresoDePago(params) {
+  const pago = params.get('pago'), cnd = params.get('constancia'), inf = Number(params.get('inf')), q = params.get('q') || '';
+  if (!pago) return;
+  if (pago === 'error') return pintarRegreso('mal', `${icono('alerta', 22)}<div><b>El pago no se completó</b> y no se hizo ningún cargo. Puedes intentarlo de nuevo.</div>`);
+  if (pago === 'pendiente') return pintarRegreso('info', `${icono('reloj', 22)}<div><b>Tu pago está en proceso</b> (OXXO o transferencia). ${cnd
+    ? 'Cuando Mercado Pago lo acredite, consulta tu placa en este mismo teléfono para descargar la constancia.'
+    : 'La multa aparecerá como pagada cuando Mercado Pago lo acredite, normalmente el mismo día.'}</div>`);
+  if (pago !== 'ok') return;
+  pintarRegreso('info', `<div class="rueda-chica"></div><div><b>Confirmando tu pago con Mercado Pago…</b></div>`);
+  if (cnd) confirmarPagoConstancia(cnd);
+  else if (inf && q) confirmarPagoMulta(inf, q);
 }
 
 // ── Inicio ─────────────────────────────────────────────────
@@ -336,5 +432,7 @@ document.querySelectorAll('.senal, .pago, .encabezado, .revelar').forEach(el => 
   el.classList.add('revelar');
   if (_obs) _obs.observe(el); else el.classList.add('visible');
 });
-const q0 = new URLSearchParams(location.search).get('q');
+const _params0 = new URLSearchParams(location.search);
+regresoDePago(_params0);
+const q0 = _params0.get('q');
 if (q0) { $('q').value = q0; buscar(); }

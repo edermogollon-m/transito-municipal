@@ -5,6 +5,8 @@
 //   POST { accion: "constancia", token }  → { url }   (constancia de no adeudo,
 //        cobro creado con solicitar_constancia; constancias_cobro.sql)
 //   POST ?accion=webhook   (notificación de Mercado Pago)
+//   Con regreso: "sitio", Mercado Pago regresa a la página pública (/sitio-web/)
+//   en vez del portal (/consulta). No acepta otras rutas.
 //
 // El monto lo calcula la base (monto_a_pagar: tramos de descuento del art. 330).
 // Al recibir la notificación se consulta el pago en la API de Mercado Pago y,
@@ -81,7 +83,7 @@ Deno.serve(async (req) => {
 
   if (!["crear", "constancia"].includes(body?.accion)) return json({ error: "Acción no válida" }, 400);
   if (!cfg?.pago_en_linea || !token) return json({ error: "El pago en línea no está disponible por ahora" }, 503);
-  const base = String(cfg.app_url || "").replace(/\/$/, "");
+  const base = String(cfg.app_url || "").replace(/\/$/, "") + (body?.regreso === "sitio" ? "/sitio-web/" : "/consulta");
   const vence = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
   const preferencia = async (item: Record<string, unknown>, referencia: string, regreso: (estado: string) => string) => {
     const r = await fetch(`${MP}/checkout/preferences`, {
@@ -109,7 +111,7 @@ Deno.serve(async (req) => {
     const enlace = await preferencia(
       { id: `CND-${c.placa}`, title: `Constancia de no adeudo · placa ${c.placa}`, description: "Constancia de no adeudo de infracciones de tránsito", unit_price: Number(c.monto) },
       `CND:${body.token}`,
-      (estado) => `${base}/consulta?q=${encodeURIComponent(c.placa)}&constancia=${encodeURIComponent(String(body.token))}&pago=${estado}`,
+      (estado) => `${base}?q=${encodeURIComponent(c.placa)}&constancia=${encodeURIComponent(String(body.token))}&pago=${estado}`,
     );
     if (enlace instanceof Response) return enlace;
     return json({ url: enlace, monto: c.monto });
@@ -132,7 +134,7 @@ Deno.serve(async (req) => {
       unit_price: Number(cobro.monto_final),
     },
     String(id),
-    (estado) => `${base}/consulta?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`,
+    (estado) => `${base}?q=${encodeURIComponent(cobro.placa)}&pago=${estado}&inf=${id}`,
   );
   if (enlace instanceof Response) return enlace;
   return json({ url: enlace, monto: cobro.monto_final, descuento_pct: cobro.descuento_pct });

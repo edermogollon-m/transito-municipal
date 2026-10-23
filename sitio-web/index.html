@@ -84,14 +84,17 @@
       <p class="pista">También puedes escribir el folio de tu boleta, por ejemplo <b>MIS-26-7KX94Q</b>.</p>
       <ul class="sellos">
         <li><svg width="16" height="16"><use href="#i-ok"/></svg><span>Pago con tarjeta, OXXO o SPEI</span></li>
-        <li><svg width="16" height="16"><use href="#i-ok"/></svg><span>Constancia de no infracción gratis</span></li>
+        <li><svg width="16" height="16"><use href="#i-ok"/></svg><span>Constancia de no infracción en línea</span></li>
         <li><svg width="16" height="16"><use href="#i-ok"/></svg><span>Hasta <b data-desc1>75</b>% de descuento</span></li>
       </ul>
     </div>
   </section>
 
-  <!-- Resultado de la consulta -->
-  <section class="resultado" id="resultado" aria-live="polite" hidden></section>
+  <!-- Regreso de Mercado Pago y resultado de la consulta -->
+  <section class="resultado" id="zona-resultado" hidden>
+    <div class="regreso" id="regreso" role="status" hidden></div>
+    <div id="resultado" aria-live="polite" hidden></div>
+  </section>
 
   <!-- ═════ ACCESOS RÁPIDOS ═════ -->
   <section class="seccion accesos" aria-labelledby="titulo-accesos">
@@ -101,7 +104,7 @@
     </div>
     <div class="senales">
       <a class="senal verde" href="#consulta" data-foco="q"><svg><use href="#i-tarjeta"/></svg><b>Pagar mi multa</b><span>En línea o en ventanilla</span></a>
-      <a class="senal verde" href="#tramite-constancia"><svg><use href="#i-constancia"/></svg><b>Constancia de no infracción</b><span>Gratis, al momento</span></a>
+      <a class="senal verde" href="#tramite-constancia"><svg><use href="#i-constancia"/></svg><b>Constancia de no infracción</b><span>Págala en línea y descárgala</span></a>
       <a class="senal azul" href="#tramite-corralon"><svg><use href="#i-grua"/></svg><b>Sacar mi vehículo del corralón</b><span>Requisitos y pasos</span></a>
       <a class="senal azul" href="#tramite-documento"><svg><use href="#i-documento"/></svg><b>Recuperar mi licencia o tarjeta</b><span>Documentos retenidos</span></a>
       <a class="senal blanca" href="#tramite-recurso"><svg><use href="#i-balanza"/></svg><b>Inconformarme con una multa</b><span>Recurso de revocación</span></a>
