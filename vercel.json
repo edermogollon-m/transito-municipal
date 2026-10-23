@@ -49,5 +49,8 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    { "source": "/sitio-web", "destination": "/sitio-web/", "permanent": false }
   ]
 }

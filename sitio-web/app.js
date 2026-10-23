@@ -1,0 +1,340 @@
+// Página de la Dirección de Tránsito: consulta, pago en línea, constancia de
+// no infracción y contenido informativo. Usa solo las funciones públicas del
+// sistema (las mismas que el portal /consulta), con la llave pública.
+'use strict';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pesos = n => Number(n || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fechaCorta = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+const fechaLarga = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+const icono = (id, w = 20) => `<svg width="${w}" height="${w}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+const SIS = SITIO.sistema.replace(/\/$/, '');
+
+let _info = {};
+let _params = { descuento_pct: 0, dias_descuento: 0, descuento2_pct: 0, dias_descuento2: 0, dias_limite: 30 };
+let _pagoEnLinea = false;
+
+// ── Llamadas al sistema ────────────────────────────────────
+async function rpc(fn, args = {}) {
+  const res = await fetch(`${SITIO.supabase.url}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SITIO.supabase.llave, Authorization: `Bearer ${SITIO.supabase.llave}` },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) throw new Error(`${fn}: ${res.status}`);
+  return res.json();
+}
+async function funcion(nombre, cuerpo) {
+  const res = await fetch(`${SITIO.supabase.url}/functions/v1/${nombre}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SITIO.supabase.llave }, body: JSON.stringify(cuerpo),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.error || 'El servicio no respondió');
+  return d;
+}
+
+function avisar(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('ver');
+  clearTimeout(avisar._t); avisar._t = setTimeout(() => t.classList.remove('ver'), 3200);
+}
+
+// ── Contenido fijo (datos.js) ──────────────────────────────
+function pintarContenido() {
+  const o = SITIO.oficina;
+  document.querySelectorAll('[data-oficina-nombre]').forEach(el => { el.textContent = o.nombre; });
+  document.querySelectorAll('[data-oficina-domicilio]').forEach(el => { el.textContent = o.domicilio; });
+  document.querySelectorAll('[data-caja-nombre]').forEach(el => { el.textContent = SITIO.caja.nombre; });
+  document.querySelectorAll('[data-caja-domicilio]').forEach(el => { el.textContent = SITIO.caja.domicilio; });
+  document.querySelectorAll('[data-caja-horario]').forEach(el => { el.textContent = SITIO.caja.horario; });
+  document.querySelectorAll('[data-uma]').forEach(el => { el.textContent = '$' + SITIO.uma.toFixed(2); });
+  $('horario').innerHTML = o.horario.map(([d, h]) => `<dt>${esc(d)}</dt><dd>${esc(h)}</dd>`).join('');
+  const tel = $('oficina-tel'); tel.textContent = o.telefono; tel.href = 'tel:' + o.telefono.replace(/\D/g, '');
+  if (o.whatsapp) { const wa = $('oficina-wa'); wa.hidden = false; wa.href = 'https://wa.me/52' + o.whatsapp.replace(/\D/g, ''); }
+  const { lat, lng } = o.mapa, d = .006;
+  $('mapa').innerHTML = `<iframe title="Mapa de la ${esc(o.nombre)}" loading="lazy" referrerpolicy="no-referrer"
+    src="https://www.openstreetmap.org/export/embed.html?bbox=${lng - d},${lat - d * .6},${lng + d},${lat + d * .6}&layer=mapnik&marker=${lat},${lng}"></iframe>`;
+  $('como-llegar').href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  $('emergencias').innerHTML = SITIO.emergencias.map(([n, t]) => `<a href="tel:${esc(t)}"><b>${esc(t)}</b>${esc(n)}</a>`).join('');
+  $('lnk-privacidad').href = SIS + '/privacidad';
+  $('lnk-personal').href = SIS + '/login';
+  $('btn-avisos').href = SIS + '/consulta';
+
+  const claseCss = c => c.toLowerCase().replace(/\s+/g, '-');
+  $('multas-grid').innerHTML = SITIO.multas.map(m => `<article class="multa revelar">
+    <div class="multa-top"><span class="prohibido">${icono(m.icono)}</span><h3>${esc(m.titulo)}</h3></div>
+    <span class="clase ${claseCss(m.clase)}">${esc(m.clase)}</span>
+    <div class="rango">${pesos(m.uma[0] * SITIO.uma)} a ${pesos(m.uma[1] * SITIO.uma)}<small>De ${m.uma[0]} a ${m.uma[1]} UMA</small></div>
+    ${m.nota ? `<div class="nota-multa">${esc(m.nota)}</div>` : ''}
+    <div class="art">Art. ${esc(m.art)} del Reglamento</div>
+  </article>`).join('');
+
+  $('tramites-lista').innerHTML = SITIO.tramites.map(t => `<details class="tramite revelar" id="tramite-${esc(t.id)}">
+    <summary><span class="ico">${icono(t.icono, 26)}</span><b>${esc(t.titulo)}</b><span class="mas" aria-hidden="true"></span></summary>
+    <div class="tramite-cuerpo">
+      <div><h4>Pasos</h4><ol class="pasos">${t.pasos.map(p => `<li><span>${esc(p)}</span></li>`).join('')}</ol></div>
+      <div><h4>${t.id === 'constancia' ? 'Bueno saber' : 'Qué llevar'}</h4><ul class="requisitos">${t.requisitos.map(r => `<li>${icono('ok', 18)}<span>${esc(r)}</span></li>`).join('')}</ul></div>
+      ${t.id === 'corralon' ? `<p class="tramite-cta">El corralón está en <b>${esc(SITIO.corralon.domicilio)}</b>, ${esc(SITIO.corralon.horario.toLowerCase())}.</p>` : ''}
+      ${t.id === 'constancia' || t.id === 'corralon' ? `<div class="tramite-cta"><a class="btn-oscuro" href="#consulta" data-foco="q">Consultar mi placa ${icono('flecha', 18)}</a></div>` : ''}
+    </div>
+  </details>`).join('');
+
+  $('consejos-grid').innerHTML = SITIO.consejos.map(([ico, t, p]) => `<article class="consejo revelar">
+    <span class="preventiva">${icono(ico, 24)}</span><div><h3>${esc(t)}</h3><p>${esc(p)}</p></div></article>`).join('');
+
+  $('faq').innerHTML = SITIO.preguntas.map(([p, r]) => `<details class="revelar"><summary>${esc(p)}</summary><p>${esc(r)}</p></details>`).join('');
+}
+
+// Los accesos que llevan a un trámite lo abren; los de la consulta enfocan la placa
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#"]');
+  if (!a) return;
+  const destino = document.querySelector(a.getAttribute('href'));
+  if (destino?.tagName === 'DETAILS') destino.open = true;
+  if (a.dataset.foco) setTimeout(() => $(a.dataset.foco)?.focus({ preventScroll: true }), 450);
+});
+
+// ── Datos del sistema ──────────────────────────────────────
+function pintarMarca(d) {
+  // "Veracruz de Ignacio de la Llave" → "Veracruz" (cabe en la placa y en la barra)
+  const municipio = d.municipio || SITIO.municipio, estado = (d.estado || SITIO.estado).split(' de ')[0];
+  document.querySelectorAll('[data-municipio]').forEach(el => { el.textContent = municipio; });
+  $('marca-municipio').textContent = `${municipio}, ${estado}`;
+  document.querySelectorAll('[data-estado-placa]').forEach(el => { el.textContent = estado.toUpperCase(); });
+  const inst = d.institucion || `H. Ayuntamiento de ${municipio}`;
+  document.querySelectorAll('[data-institucion]').forEach(el => { el.textContent = inst; });
+  document.title = `Tránsito ${municipio} — Consulta y paga tus infracciones`;
+  if (/^#[0-9a-f]{6}$/i.test(d.color || '')) document.documentElement.style.setProperty('--ac', d.color);
+  const esc0 = $('escudo');
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(d.escudo || '')) {
+    const img = new Image(); img.src = d.escudo; img.alt = ''; esc0.replaceChildren(img); esc0.style.background = 'transparent';
+  } else esc0.innerHTML = '<span class="escudo-vacio"></span>';
+  if (d.pago_clabe) {
+    $('transferencia-txt').innerHTML = `${d.pago_banco ? `<b>${esc(d.pago_banco)}</b><br>` : ''}${d.pago_beneficiario ? esc(d.pago_beneficiario) + '<br>' : ''}
+      <span class="clabe"><code>${esc(d.pago_clabe)}</code><button class="link-btn" type="button" data-copiar="${esc(d.pago_clabe)}">Copiar</button></span>
+      <br>Escribe el folio de tu boleta como concepto y envía tu comprobante${d.correo ? ` a <a href="mailto:${esc(d.correo)}">${esc(d.correo)}</a>` : ' a la Dirección'}.`;
+  }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copiar]');
+  if (b) navigator.clipboard?.writeText(b.dataset.copiar).then(() => avisar('CLABE copiada')).catch(() => avisar(b.dataset.copiar));
+});
+
+function tramosDescuento() {
+  return [[_params.descuento_pct, _params.dias_descuento], [_params.descuento2_pct, _params.dias_descuento2]]
+    .filter(([p, d]) => p > 0 && d > 0).map(([pct, dias]) => ({ pct, dias }));
+}
+function pintarDescuentos() {
+  const tramos = tramosDescuento(), lim = _params.dias_limite || 30;
+  if (tramos.length) document.querySelectorAll('[data-desc1]').forEach(el => { el.textContent = tramos[0].pct; });
+  const colores = ['#3DDC97', '#9BE8C2'];
+  let ini = 0;
+  const html = tramos.map((t, i) => {
+    const s = `<div class="tramo" style="--dias:${Math.max(t.dias - ini, 3)};--color:${colores[i] || '#C9F0DC'}">
+      <span class="pct">${t.pct}<small>% menos</small></span><span class="dias">Del día ${ini + 1} al ${t.dias}</span></div>`;
+    ini = t.dias; return s;
+  }).join('') + `<div class="tramo" style="--dias:${Math.max(lim - ini, 4)};--color:#FFD45C">
+      <span class="pct">100<small>% de la multa</small></span><span class="dias">Del día ${ini + 1} al ${lim}</span></div>
+    <div class="tramo" style="--dias:4;--color:#FF8A8A"><span class="pct" style="font-size:1.3rem">Vencida</span><span class="dias">Después del día ${lim}</span></div>`;
+  $('carretera').innerHTML = `<div class="tramos">${html}</div><div class="postes"><span>Día de la boleta</span><span>Día ${lim}</span></div>`;
+  const ej = 10 * SITIO.uma;
+  $('ejemplo-descuento').innerHTML = `<b>Ejemplo:</b> una multa de 10 UMA (${pesos(ej)}).
+    <span class="cifras">${tramos.map(t => `<span>${pesos(ej * (1 - t.pct / 100))} hasta el día ${t.dias}</span>`).join('')}<span>${pesos(ej)} hasta el día ${lim}</span></span>
+    <small style="display:block;margin-top:.4rem;color:var(--gris)">Conducir en estado de ebriedad no tiene descuento.</small>`;
+}
+
+async function pintarAvisosViales() {
+  try {
+    const avisos = await rpc('avisos_viales_vigentes');
+    if (!avisos?.length) return;
+    const f = d => fechaCorta(new Date(d + 'T12:00'));
+    $('avisos-lista').innerHTML = avisos.map(a => `<article class="aviso-vial">
+      <span class="rombo">${icono('alerta')}</span>
+      <div><h3>${esc(a.titulo)}</h3>${a.texto ? `<p>${esc(a.texto)}</p>` : ''}
+      <small>${a.hasta ? `Del ${f(a.desde)} al ${f(a.hasta)}` : `Desde el ${f(a.desde)}`}</small></div></article>`).join('');
+    $('avisos').hidden = false;
+  } catch (_) { /* sin avisos */ }
+}
+
+const _listo = (async () => {
+  const [info, params, pago] = await Promise.allSettled([
+    rpc('portal_info'), rpc('parametros_descuento'), funcion('pago-mp', { accion: 'estado' }),
+  ]);
+  if (info.status === 'fulfilled' && info.value) { _info = Array.isArray(info.value) ? info.value[0] : info.value; }
+  pintarMarca(_info || {});
+  if (params.status === 'fulfilled' && params.value) _params = { ..._params, ...params.value };
+  _pagoEnLinea = pago.status === 'fulfilled' && pago.value?.disponible === true;
+  pintarDescuentos();
+})();
+
+// ── Consulta ───────────────────────────────────────────────
+function plazos(r) {
+  const f = new Date(r.fecha);
+  const dias = Math.max(0, Math.floor((Date.now() - f.getTime()) / 86400000));
+  const tramos = r.grave ? [] : tramosDescuento();
+  const tramo = tramos.find(t => dias <= t.dias) || null;
+  const lim = _params.dias_limite || 30;
+  const enDias = n => new Date(f.getTime() + n * 86400000);
+  return { dias, lim, tramo, tramos, hoy: Math.round(r.monto * (1 - (tramo?.pct || 0) / 100)), descHasta: tramo ? enDias(tramo.dias) : null, limite: enDias(lim), vencida: r.estado === 'vencida' || dias > lim };
+}
+const pareceFolio = q => /^[A-Z]{2,5}-?\d{2}-?[2-9A-Z]{6}$/i.test(q.trim()) || /^INF-/i.test(q.trim());
+
+async function buscar() {
+  const q = $('q').value.trim();
+  if (q.replace(/[^A-Za-z0-9]/g, '').length < 3) { $('q').focus(); avisar('Escribe tu placa o el folio de tu boleta'); return; }
+  const caja = $('resultado'), btn = $('btn-buscar');
+  caja.hidden = false; btn.disabled = true;
+  caja.innerHTML = `<div class="res-panel"><div class="cargando"><div class="rueda"></div>Buscando ${esc(q.toUpperCase())}…</div></div>`;
+  caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  history.replaceState(null, '', '?q=' + encodeURIComponent(q));
+  await _listo;
+  let datos;
+  try { datos = await rpc('consulta_ciudadana', { p_q: q, p_historial: false }); }
+  catch (_) {
+    // Si el servidor falla no se puede decir "sin adeudos": sería información falsa
+    caja.innerHTML = `<div class="res-panel"><div class="estado-vacio"><div class="sello-ok sello-alerta">${icono('alerta', 36)}</div>
+      <h3>No pudimos hacer la consulta</h3><p>El servicio no está disponible en este momento. Intenta de nuevo en unos minutos.</p>
+      <p style="margin-top:1rem"><button class="btn-oscuro" type="button" onclick="buscar()">Reintentar</button></p></div></div>`;
+    btn.disabled = false; return;
+  }
+  btn.disabled = false;
+  caja.innerHTML = `<div class="res-panel">${datos?.length ? conMultas(q, datos) : sinMultas(q)}</div>`;
+}
+
+function sinMultas(q) {
+  const placa = q.toUpperCase();
+  return `<div class="res-cabeza"><span class="res-placa">${esc(placa)}</span><span class="res-conteo"><b>Sin adeudos</b>al día de hoy</span></div>
+    <div class="estado-vacio"><div class="sello-ok">${icono('ok', 36)}</div>
+      <h3>No tienes infracciones por pagar</h3>
+      <p><b>${esc(placa)}</b> no tiene multas pendientes. Revisa que la placa o el folio estén bien escritos.</p>
+      ${pareceFolio(q) ? '' : `<div class="constancia-caja">
+        <h4>Constancia de no infracción</h4>
+        <p>Descárgala gratis para trámites de compraventa o del vehículo. Trae un código QR para comprobar que es auténtica y vale 30 días.</p>
+        <button class="btn-constancia" type="button" onclick="descargarConstancia(${esc(JSON.stringify(q))}, this)">${icono('constancia', 20)} Descargar constancia</button>
+      </div>`}
+    </div>
+    <div class="res-pie"><span>¿Quieres ver también las multas pagadas?</span><a href="${SIS}/consulta?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">Ver historial completo</a></div>`;
+}
+
+function conMultas(q, datos) {
+  const porPagar = datos.filter(r => r.estado === 'pendiente' || r.estado === 'vencida');
+  const enRevision = datos.filter(r => r.estado === 'impugnada');
+  const pl = porPagar.map(plazos);
+  const totalHoy = pl.reduce((a, p) => a + p.hoy, 0);
+  const totalLleno = porPagar.reduce((a, r) => a + Number(r.monto), 0);
+  const conDesc = pl.filter(p => p.tramo);
+  const primerCorte = conDesc.length ? new Date(Math.min(...conDesc.map(p => p.descHasta.getTime()))) : null;
+  const placas = [...new Set(datos.map(r => r.placa))];
+  return `<div class="res-cabeza"><span class="res-placa">${esc(placas.length === 1 ? placas[0] : q.toUpperCase())}</span>
+      <span class="res-conteo"><b>${porPagar.length ? `${porPagar.length} por pagar` : 'Nada por pagar'}</b>${datos.length} ${datos.length === 1 ? 'infracción activa' : 'infracciones activas'}</span></div>
+    ${porPagar.length ? `<div class="res-total"><small>${conDesc.length ? 'Total si pagas hoy' : 'Total a pagar'}</small>
+      <div class="cifra">${pesos(totalHoy)}</div>
+      ${conDesc.length ? `<div class="ahorro">${icono('ok', 18)}<span>Ahorras <b>${pesos(totalLleno - totalHoy)}</b> por pronto pago. ${conDesc.length === porPagar.length ? 'Aplica' : 'El primer descuento vence'} hasta el <b>${fechaLarga(primerCorte)}</b>.</span></div>` : ''}
+    </div>` : `<div class="res-total"><div class="nota-inf info">${icono('alerta', 17)}<span>${enRevision.length ? 'Tus infracciones están en revisión: no pagues por ahora.' : 'No tienes adeudos.'}</span></div></div>`}
+    <div class="res-lista">${datos.map(tarjeta).join('')}</div>
+    <div class="res-pie"><span>¿Dudas sobre tu multa? Revisa <a href="#tramite-recurso">cómo inconformarte</a>.</span><a href="${SIS}/consulta?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">Ver detalle completo</a></div>`;
+}
+
+function tarjeta(r) {
+  const p = plazos(r);
+  const activa = r.estado === 'pendiente' || r.estado === 'vencida';
+  const estado = activa && p.vencida ? 'vencida' : r.estado;
+  const nombres = { pendiente: 'Pendiente', vencida: 'Vencida', impugnada: 'En revisión', pagada: 'Pagada', cancelada: 'Cancelada' };
+  let barra = '';
+  if (activa) {
+    let ini = 0;
+    const segs = p.tramos.map((t, i) => { const s = `<span style="width:${(t.dias - ini) / p.lim * 100}%;background:${i ? '#9BE8C2' : '#3DDC97'}"></span>`; ini = t.dias; return s; });
+    segs.push(`<span style="width:${(p.lim - ini) / p.lim * 100}%;background:#FFD45C"></span>`);
+    barra = `<div><div class="plazo-barra" aria-hidden="true">${segs.join('')}<i class="plazo-hoy" style="left:${Math.min(100, p.dias / p.lim * 100)}%"></i></div>
+      <div class="plazo-txt"><span>${p.tramo ? `<b>${p.tramo.pct}% de descuento</b> hasta el ${fechaCorta(p.descHasta)}` : p.vencida ? '<b>Plazo vencido</b>' : 'Sin descuento'}</span><span>Límite: <b>${fechaCorta(p.limite)}</b></span></div></div>`;
+  }
+  let nota = '';
+  if (activa && p.vencida) nota = `<div class="nota-inf mal">${icono('alerta', 17)}<span>Pasó la fecha límite (${fechaLarga(p.limite)}). Regulariza cuanto antes.</span></div>`;
+  else if (activa && r.grave) nota = `<div class="nota-inf gris">${icono('alerta', 17)}<span>Por su gravedad, esta multa se paga completa.</span></div>`;
+  else if (r.estado === 'impugnada') nota = `<div class="nota-inf info">${icono('alerta', 17)}<span>Está en revisión. <b>No pagues por ahora.</b></span></div>`;
+  const pago = activa ? `<button type="button" class="btn-pagar"${_pagoEnLinea ? ` onclick="pagar(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)"` : ' disabled'}>${icono('tarjeta', 20)} Pagar en línea ${pesos(p.tramo ? p.hoy : r.monto)}</button>
+    <div class="pagar-nota">${_pagoEnLinea ? 'Tarjeta, OXXO o SPEI con Mercado Pago.' : 'Por ahora el pago en línea no está disponible: paga en la Tesorería.'}</div>` : '';
+  return `<article class="inf ${estado}">
+    <div class="inf-top">
+      <div><div class="inf-motivo">${esc(r.tipo)}</div>
+        <div class="inf-meta"><code>${esc(r.folio || '—')}</code> · ${fechaLarga(new Date(r.fecha))}</div>
+        <span class="chip ${estado}">${nombres[estado] || esc(estado)}</span></div>
+      <div class="inf-monto"><b>${pesos(activa && p.tramo ? p.hoy : r.monto)}</b>${activa && p.tramo ? `<s>${pesos(r.monto)}</s>` : ''}</div>
+    </div>${barra}${nota}${pago}</article>`;
+}
+
+// Pago con Mercado Pago (el monto lo calcula el servidor). Al terminar,
+// Mercado Pago regresa al portal del sistema, que muestra el recibo.
+async function pagar(id, placa, btn) {
+  const antes = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…';
+  try {
+    const d = await funcion('pago-mp', { accion: 'crear', infraccion_id: id, placa });
+    if (!d.url) throw new Error('No se pudo iniciar el pago');
+    location.href = d.url;
+  } catch (err) {
+    avisar(err.message + '. Puedes pagar en la Tesorería.');
+    btn.disabled = false; btn.innerHTML = antes;
+  }
+}
+
+// Constancia de no infracción (emitir_constancia), con QR que apunta a la
+// verificación del sistema
+function cargarQR() {
+  if (window.QRious) return Promise.resolve();
+  return new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js';
+    s.onload = ok; s.onerror = mal; document.head.appendChild(s);
+  });
+}
+async function descargarConstancia(placa, btn) {
+  const win = window.open('', '_blank', 'width=820,height=900');
+  btn.disabled = true;
+  let c;
+  try { [c] = await Promise.all([rpc('emitir_constancia', { p_placa: placa }), cargarQR().catch(() => {})]); }
+  catch (_) { c = null; }
+  btn.disabled = false;
+  if (!c) { win?.close(); avisar('No se pudo expedir la constancia. Intenta más tarde.'); return; }
+  if (!win) { avisar('Permite las ventanas emergentes para descargar la constancia'); return; }
+  const url = `${SIS}/verificar?t=${encodeURIComponent(c.token)}`;
+  let qr = '';
+  try { qr = new QRious({ value: url, size: 260, padding: 8 }).toDataURL(); } catch (_) {}
+  const f = d => new Date(d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Constancia ${esc(c.folio)}</title>
+  <style>
+    body{font-family:Georgia,'Times New Roman',serif;color:#111827;max-width:720px;margin:2rem auto;padding:0 1.2rem;line-height:1.6}
+    .k{font-family:Arial,sans-serif;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#4B5563}
+    h1{font-size:1.45rem;margin:.4rem 0 1.4rem}.folio{font-family:'Courier New',monospace;font-weight:700}
+    .placa{display:inline-block;font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;border:2px solid #111827;border-radius:6px;padding:.1rem .7rem;letter-spacing:.06em}
+    .qr{display:flex;gap:1.2rem;align-items:center;margin-top:2rem;padding-top:1rem;border-top:1px solid #D1D5DB;font-family:Arial,sans-serif;font-size:.78rem;color:#374151}
+    .firma{margin-top:3rem;text-align:center;font-size:.85rem}.firma div{border-top:1px solid #111827;width:280px;margin:0 auto;padding-top:.3rem}
+    button{font-family:Arial,sans-serif;margin-bottom:1rem;padding:.5rem 1rem;background:#15181C;color:#F5B700;border:0;border-radius:6px;cursor:pointer;font-weight:700}
+    @media print{button{display:none}body{margin:0 auto}}
+  </style></head><body>
+  <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div class="k">Dirección de Tránsito y Vialidad · ${esc(c.municipio || '')}${c.estado ? ', ' + esc(c.estado) : ''}</div>
+  <h1>Constancia de no adeudo de infracciones de tránsito</h1>
+  <p>Folio <span class="folio">${esc(c.folio)}</span></p>
+  <p>Se hace constar que, a la fecha de expedición, el vehículo con placa</p>
+  <p style="text-align:center"><span class="placa">${esc(String(c.placa).toUpperCase())}</span></p>
+  <p>no tiene infracciones de tránsito pendientes de pago, vencidas ni en proceso de impugnación registradas en el sistema de la Dirección de Tránsito y Vialidad${c.municipio ? ' del municipio de ' + esc(c.municipio) : ''}.</p>
+  <p>Expedida el ${esc(f(c.emitida))}. Vigente hasta el ${esc(f(c.vigente_hasta + 'T12:00:00'))}.</p>
+  <div class="firma"><div>${esc(c.director || 'Director de Tránsito')}<br>Director de Tránsito y Vialidad</div></div>
+  <div class="qr">${qr ? `<img src="${qr}" width="120" height="120" alt="Código QR de verificación">` : ''}<div>Esta constancia se emite en línea. Escanee el código o entre a <strong>${esc(url)}</strong> para comprobar que es auténtica.</div></div>
+  </body></html>`);
+  win.document.close();
+}
+
+// ── Inicio ─────────────────────────────────────────────────
+pintarContenido();
+pintarAvisosViales();
+const _obs = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) { e.target.classList.add('visible'); _obs.unobserve(e.target); }
+}), { rootMargin: '0px 0px -8% 0px' }) : null;
+document.querySelectorAll('.senal, .pago, .encabezado, .revelar').forEach(el => {
+  el.classList.add('revelar');
+  if (_obs) _obs.observe(el); else el.classList.add('visible');
+});
+const q0 = new URLSearchParams(location.search).get('q');
+if (q0) { $('q').value = q0; buscar(); }
