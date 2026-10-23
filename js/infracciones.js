@@ -204,7 +204,7 @@ async function submitInfraccion(e) {
 
   const payload = {
     fecha:          $('inf-fecha').value ? new Date($('inf-fecha').value).toISOString() : new Date().toISOString(),
-    placa:          $('inf-placa').value.trim().toUpperCase(),
+    placa:          formatoPlaca($('inf-placa').value),
     infractor:      $('inf-infractor').value.trim(),
     licencia:       ($('inf-licencia')||{}).value?.trim() || '',
     vehiculo:       ($('inf-vehiculo')||{}).value?.trim() || '',
@@ -293,7 +293,7 @@ async function submitInfraccion(e) {
     // Si el cache está vacío o puede ser de otra placa, consultar de nuevo
     if (!adeudos.length) {
       const { data: adData } = await _sb.from('infracciones')
-        .select('folio,monto,tipo,boleta').eq('placa', payload.placa).in('estado',['pendiente','vencida']);
+        .select('folio,monto,tipo,boleta').in('placa', variantesPlaca(payload.placa)).in('estado',['pendiente','vencida']);
       adeudos = (adData || []).filter(r => !(_boletaGrupo && r.boleta === _boletaGrupo));
       montoAdeudos = adeudos.reduce((a,r)=>a+Number(r.monto),0);
     }

@@ -1,9 +1,10 @@
-const CACHE = 'transito-v21';
+const CACHE = 'transito-v22';
 const PRECACHE = [
   '/',
   '/login',
   '/consulta',
   '/verificar',
+  '/js/placa-mx.js',
   '/js/nucleo.js',
   '/js/panel.js',
   '/js/infracciones.js',

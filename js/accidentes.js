@@ -72,7 +72,7 @@ function renderPartesForm(){
       <div style="display:flex;justify-content:space-between;margin-bottom:.5rem;font-size:.75rem;font-weight:700;color:var(--muted)">Parte ${i+1} <button type="button" class="btn btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.7rem" onclick="removeParte(${i})">✕</button></div>
       <div class="form-row">
         <input class="form-input" placeholder="Nombre" value="${esc(p.nombre)}" oninput="_accPartes[${i}].nombre=this.value" style="font-size:.8rem"/>
-        <input class="form-input" placeholder="Placa" value="${esc(p.placa)}" oninput="_accPartes[${i}].placa=this.value.toUpperCase()" style="font-size:.8rem"/>
+        <input class="form-input" data-placa placeholder="Placa" value="${esc(p.placa)}" oninput="_accPartes[${i}].placa=this.value.toUpperCase()" style="font-size:.8rem"/>
       </div>
       <div class="form-row" style="margin-top:.4rem">
         <input class="form-input" placeholder="Núm. licencia" value="${esc(p.licencia)}" oninput="_accPartes[${i}].licencia=this.value" style="font-size:.8rem"/>
