@@ -398,47 +398,24 @@ function cargarQR() {
     s.onload = ok; s.onerror = mal; document.head.appendChild(s);
   });
 }
+// El documento es el mismo que imprime el sistema (js/constancia.js): se carga
+// de ahí, así la constancia sale igual en Caja, en el portal y en esta página
+function cargarConstancia() {
+  if (window.htmlConstancia) return Promise.resolve();
+  return new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = `${SIS}/js/constancia.js`;
+    s.onload = ok; s.onerror = mal; document.head.appendChild(s);
+  });
+}
 // La ventana se abre en el clic: después de esperar al servidor el navegador la bloquearía
 async function descargarConstancia(token) {
-  const win = window.open('', '_blank', 'width=820,height=900');
+  const win = window.open('', '_blank', 'width=900,height=1000');
   let c = null;
-  try { [c] = await Promise.all([rpc('constancia_de_cobro', { p_token: token }), cargarQR().catch(() => {})]); } catch (_) {}
-  if (!c?.folio || c.vencida) { win?.close(); avisar(c?.vencida ? 'Esta constancia ya venció y no es válida.' : 'La constancia aún no está lista. Intenta en unos minutos.'); return; }
+  try { [c] = await Promise.all([rpc('constancia_de_cobro', { p_token: token }), cargarQR(), cargarConstancia()]); } catch (_) {}
+  if (!c?.folio || c.vencida || !window.htmlConstancia) { win?.close(); avisar(c?.vencida ? 'Esta constancia ya venció y no es válida.' : 'La constancia aún no está lista. Intenta en unos minutos.'); return; }
   if (!win) { avisar('Permite las ventanas emergentes para descargar la constancia'); return; }
-  win.document.write(htmlConstancia(c)); win.document.close();
-}
-// Mismo documento que imprime el sistema (js/constancia.js); el QR lleva a la
-// verificación del sistema
-function htmlConstancia(c) {
-  const url = `${SIS}/verificar?t=${encodeURIComponent(c.token)}`;
-  let qr = '';
-  try { qr = new QRious({ value: url, size: 260, padding: 8 }).toDataURL(); } catch (_) {}
-  const f = d => new Date(d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
-  const metodo = { en_linea: 'pago en línea', efectivo: 'efectivo', tarjeta: 'tarjeta', transferencia: 'transferencia' }[c.metodo] || '';
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Constancia ${esc(c.folio)}</title>
-  <style>
-    body{font-family:Georgia,'Times New Roman',serif;color:#111827;max-width:720px;margin:2rem auto;padding:0 1.2rem;line-height:1.6}
-    .k{font-family:Arial,sans-serif;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#4B5563}
-    h1{font-size:1.45rem;margin:.4rem 0 1.4rem}.folio{font-family:'Courier New',monospace;font-weight:700}
-    .placa{display:inline-block;font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;border:2px solid #111827;border-radius:6px;padding:.1rem .7rem;letter-spacing:.06em}
-    .pago{font-family:Arial,sans-serif;font-size:.8rem;color:#374151}
-    .qr{display:flex;gap:1.2rem;align-items:center;margin-top:2rem;padding-top:1rem;border-top:1px solid #D1D5DB;font-family:Arial,sans-serif;font-size:.78rem;color:#374151}
-    .firma{margin-top:3rem;text-align:center;font-size:.85rem}.firma div{border-top:1px solid #111827;width:280px;margin:0 auto;padding-top:.3rem}
-    button{font-family:Arial,sans-serif;margin-bottom:1rem;padding:.5rem 1rem;background:#15181C;color:#F5B700;border:0;border-radius:6px;cursor:pointer;font-weight:700}
-    @media print{button{display:none}body{margin:0 auto}}
-  </style></head><body>
-  <button onclick="window.print()">Imprimir o guardar como PDF</button>
-  <div class="k">Dirección de Tránsito y Vialidad · ${esc(c.municipio || '')}${c.estado ? ', ' + esc(c.estado) : ''}</div>
-  <h1>Constancia de no adeudo de infracciones de tránsito</h1>
-  <p>Folio <span class="folio">${esc(c.folio)}</span></p>
-  <p>Se hace constar que, a la fecha de expedición, el vehículo con placa</p>
-  <p style="text-align:center"><span class="placa">${esc(String(c.placa).toUpperCase())}</span></p>
-  <p>no tiene infracciones de tránsito pendientes de pago, vencidas ni en proceso de impugnación registradas en el sistema de la Dirección de Tránsito y Vialidad${c.municipio ? ' del municipio de ' + esc(c.municipio) : ''}.</p>
-  <p>Expedida el ${esc(f(c.emitida))}. Vigente hasta el ${esc(f(c.vigente_hasta + 'T12:00:00'))}.</p>
-  ${c.monto != null ? `<p class="pago">Derechos pagados: ${esc(pesos(c.monto))}${metodo ? ' (' + esc(metodo) + ')' : ''}.</p>` : ''}
-  <div class="firma"><div>${esc(c.director || 'Director de Tránsito')}<br>Director de Tránsito y Vialidad</div></div>
-  <div class="qr">${qr ? `<img src="${qr}" width="120" height="120" alt="Código QR de verificación">` : ''}<div>Escanee el código o entre a <strong>${esc(url)}</strong> para comprobar que la constancia es auténtica y ver si la placa sigue sin adeudos.</div></div>
-  </body></html>`;
+  abrirConstancia(c, win, { base: SIS, marca: _info });
 }
 
 // ── Regreso de Mercado Pago (?pago=ok|pendiente|error) ──
