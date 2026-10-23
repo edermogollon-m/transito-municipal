@@ -6,7 +6,9 @@
 --     nombre de un compañero. El supervisor y el Director sí eligen.
 --   * Nadie registra una infracción con fecha futura (15 min de tolerancia
 --     por la hora del celular). Las boletas sin señal llegan después, así
---     que una fecha pasada sí se acepta.
+--     que una fecha pasada sí se acepta, pero no de más de 7 días: la fecha
+--     la pone la app al momento de levantarla y nadie la escribe a mano.
+--   * Ya registrada, la fecha no se puede cambiar (inmutable.sql).
 --
 -- El trigger se llama trg_a_… para correr antes de trg_aplicar_fundamento
 -- (orden alfabético), que toma la placa y adscripción del oficial.
@@ -25,6 +27,10 @@ begin
   end if;
   if new.fecha > now() + interval '15 minutes' then
     raise exception 'La fecha de la infracción (%) es posterior a la hora actual. Revisa la hora del celular.',
+      to_char(new.fecha at time zone 'America/Mexico_City', 'DD/MM/YYYY HH24:MI');
+  end if;
+  if current_user in ('authenticated', 'anon') and new.fecha < now() - interval '7 days' then
+    raise exception 'La fecha de la infracción (%) tiene más de 7 días. La fecha y hora se registran solas al levantarla.',
       to_char(new.fecha at time zone 'America/Mexico_City', 'DD/MM/YYYY HH24:MI');
   end if;
   return new;

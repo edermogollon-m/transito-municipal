@@ -565,7 +565,7 @@ function check(name, errors, extra) {
       check('rol ' + rol + ': inicio propio', errors, inicio.visible && esperaInicio.test(inicio.t) && inicio.barra === ['supervisor', 'contraloria'].includes(rol)
         && (rol !== 'contraloria' || !/Avisos viales/.test(inicio.t)) ? null : JSON.stringify(inicio).slice(0, 220));
       if (rol === 'oficial' || rol === 'supervisor') {
-        // Hora de México en la boleta; el policía vial no cambia el oficial ni la hora y ve solo su inicio
+        // Hora de México en la boleta y nadie la cambia; el policía vial tampoco cambia el oficial y ve solo su inicio
         const f = await page.evaluate(async () => {
           await openNewInfraccion(); await new Promise(r => setTimeout(r, 800));   // la lista de oficiales llega después
           const n = new Date(), p = x => String(x).padStart(2, '0');
@@ -575,7 +575,7 @@ function check(name, errors, extra) {
           closeModal('modal-infraccion'); return r;
         });
         const ok = f.fechaOk && (rol === 'oficial' ? f.fijaFecha && f.fijoOficial && f.oficial === 'Admin Prueba' && f.opciones === 1 && f.soloInicio
-                                                   : !f.fijaFecha && !f.fijoOficial && f.opciones > 1 && !f.soloInicio);
+                                                   : f.fijaFecha && !f.fijoOficial && f.opciones > 1 && !f.soloInicio);
         check('rol ' + rol + ': hora de México, oficial y fecha de la boleta', errors, ok ? null : JSON.stringify(f));
       }
       await page.close();

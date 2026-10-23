@@ -273,6 +273,8 @@ do $$ begin
   assert (select tipo_rapido from catalogo_infracciones where numero = 1091) = 'Exceso de velocidad', 'tipo rápido';
 end $$;
 
+-- Una de hace 12 días la registra el dueño de la base: la app ya no acepta fechas tan atrasadas (oficial.sql)
+insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-003', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '12 days');
 select set_config('request.jwt.claim.sub', (select auth_id::text from usuarios where usuario = 'ofi'), false);
 set role authenticated;
 do $$ declare v_id bigint; begin
@@ -285,7 +287,7 @@ do $$ declare v_id bigint; begin
   insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-002', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '7 days') returning id into v_id;
   assert (pg_temp.cobrar(v_id, true)).descuento_pct = 50, '50% del 6.º al 10.º día';
 
-  insert into infracciones (placa, infractor, tipo, monto, catalogo_numero, fecha) values ('VER-003', 'X', 'Uso de celular al conducir', 1876, 1133, now() - interval '12 days') returning id into v_id;
+  select id into v_id from infracciones where placa = 'VER-003';
   begin
     perform pg_temp.cobrar(v_id, true);
     raise exception 'descuento después del día 10';
@@ -1020,6 +1022,17 @@ do $$ declare v bigint; begin
   perform pg_temp.como('sup');
   insert into infracciones (placa, infractor, tipo, monto, oficial) values ('OFI-004', 'X', 'Prueba', 500, 'Oficial') returning id into v;
   assert (select oficial from infracciones where id = v) = 'Oficial', 'el supervisor elige al oficial';
+  -- Nadie (ni el supervisor) registra con fecha de hace más de 7 días ni la cambia después
+  begin
+    insert into infracciones (placa, infractor, tipo, monto, fecha) values ('OFI-005', 'X', 'Prueba', 500, now() - interval '10 days');
+    raise exception 'aceptó una fecha de hace 10 días';
+  exception when others then if sqlerrm = 'aceptó una fecha de hace 10 días' then raise; end if;
+  end;
+  begin
+    update infracciones set fecha = fecha - interval '1 hour' where id = v;
+    raise exception 'dejó cambiar la fecha';
+  exception when others then if sqlerrm = 'dejó cambiar la fecha' then raise; end if;
+  end;
 end $$;
 reset role;
 \echo 'OK   pruebas de base de datos'
