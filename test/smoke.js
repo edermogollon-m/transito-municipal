@@ -404,7 +404,7 @@ function check(name, errors, extra) {
       await page.waitForTimeout(800);
       let html = '';
       for (const p of popups.splice(0)) { html += await p.content().catch(() => ''); await p.close().catch(() => {}); }
-      check(fn + ' usa el descuento configurado', errors, html.includes('10% descuento') && !html.includes('20% descuento') ? null : 'no mostró 10% de descuento');
+      check(fn + ' usa el descuento configurado', errors, /10% descuento|−10%/.test(html) && !/20% descuento|−20%/.test(html) ? null : 'no mostró 10% de descuento');
     }
 
     // Fundamento legal: el tipo rápido propone su artículo y el monto mínimo del tabulador
