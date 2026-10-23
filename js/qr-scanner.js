@@ -66,6 +66,15 @@ function stopQRScan() {
 }
 
 async function handleQRResult(data) {
+  // Orden de pago de constancia (/verificar?c=<token>, constancias_orden.sql)
+  const orden = String(data).match(/[?&]c=([0-9a-f-]{36})/i);
+  if (orden) {
+    const { data: c } = await _sb.from('cobros_constancia').select('placa,estado').eq('token', orden[1]).maybeSingle();
+    if (!c) { showToast('Orden de pago no encontrada'); return; }
+    if (c.estado !== 'pendiente') { showToast('Esta orden de pago ya está pagada'); return; }
+    openCobrarConstancia(c.placa);
+    return;
+  }
   let infId = null;
   const tok = String(data).match(/[?&]t=([0-9a-f-]{36})/i);
   if (tok) {

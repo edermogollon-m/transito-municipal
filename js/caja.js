@@ -34,11 +34,15 @@ async function anularPago(id, folio) {
 // El cajero cuenta el efectivo; el sistema guarda la diferencia contra lo cobrado
 let _resumenCorte = null;
 // ── Constancia de no adeudo en ventanilla (constancias_cobro.sql) ──
-async function openCobrarConstancia() {
-  $('cnd-placa').value = ''; $('cnd-estado').innerHTML = ''; $('cnd-metodo').value = 'efectivo';
+// placa: la trae el QR de la orden de pago del ciudadano (js/qr-scanner.js)
+let _cndCostoBase = null;
+async function openCobrarConstancia(placa = '') {
+  $('cnd-placa').value = placa; $('cnd-estado').innerHTML = ''; $('cnd-metodo').value = 'efectivo';
   const { data } = await _sb.from('configuracion').select('constancia_costo').eq('id', 1).maybeSingle();
-  $('cnd-costo').textContent = data?.constancia_costo != null ? fmt(data.constancia_costo) : '—';
+  _cndCostoBase = data?.constancia_costo ?? null;
+  $('cnd-costo').textContent = _cndCostoBase != null ? fmt(_cndCostoBase) : '—';
   openModal('modal-constancia');
+  if (placa) revisarPlacaConstancia();
   setTimeout(() => $('cnd-placa').focus(), 50);
 }
 
@@ -48,12 +52,17 @@ function revisarPlacaConstancia() {
   const placa = $('cnd-placa').value.trim(), el = $('cnd-estado');
   if (placa.replace(/[^A-Z0-9]/gi, '').length < 4) { el.innerHTML = ''; return; }
   _cndTimer = setTimeout(async () => {
-    const { data } = await _sb.rpc('consulta_ciudadana', { p_q: placa, p_historial: false });
+    const [{ data }, { data: orden }] = await Promise.all([
+      _sb.rpc('consulta_ciudadana', { p_q: placa, p_historial: false }),
+      _sb.rpc('orden_constancia_de_placa', { p_placa: placa }),   // constancias_orden.sql
+    ]);
     if ($('cnd-placa').value.trim() !== placa) return;
     const adeudos = (data || []).filter(r => ['pendiente', 'vencida', 'impugnada'].includes(r.estado));
+    // Con orden de pago del ciudadano se cobra el monto de su orden
+    $('cnd-costo').textContent = orden?.monto != null ? fmt(orden.monto) : _cndCostoBase != null ? fmt(_cndCostoBase) : '—';
     el.innerHTML = adeudos.length
       ? `<span style="color:var(--red)">Tiene ${adeudos.length} infracción${adeudos.length > 1 ? 'es' : ''} sin pagar o en revisión (${adeudos.map(r => esc(r.folio)).join(', ')}). Primero debe cubrirlas.</span>`
-      : '<span style="color:var(--green)">✓ Sin adeudos: se puede expedir</span>';
+      : `<span style="color:var(--green)">✓ Sin adeudos: se puede expedir${orden ? ` · trae orden de pago (vence el ${esc(fmtDateShort(orden.vence + 'T12:00:00'))})` : ''}</span>`;
   }, 400);
 }
 

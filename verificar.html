@@ -28,6 +28,9 @@
     .status p{font-size:.8rem;color:var(--muted);margin-top:.15rem;}
     .ok{background:var(--green-bg);color:var(--green);}
     .bad{background:var(--red-bg);color:var(--red);}
+    .warn{background:var(--amber-bg);color:var(--amber);}
+    .orden-total{font-size:2.1rem;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+    .pasos-orden{margin:.2rem 0 0 1.1rem;font-size:.84rem;line-height:1.6;color:var(--text);}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem 1rem;padding:1.1rem 1.25rem 1.25rem;}
     .f label{display:block;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.15rem;}
     .f span{font-size:.88rem;color:var(--ink);}
@@ -72,6 +75,8 @@
 <script src="config.js"></script>
 <script src="supabase.js"></script>
 <script src="marca.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+<script src="js/constancia.js"></script>
 <script>
 aplicarMarca(marcaGuardada());
 _sb.rpc('portal_info').then(({ data }) => { const d = Array.isArray(data) ? data[0] : data; if (d && 'escudo' in d) aplicarMarca(guardarMarca(d)); }).catch(() => {});
@@ -126,9 +131,67 @@ async function verificarOficial(token) {
     </div>`;
 }
 
+// Orden de pago de la constancia (constancias_orden.sql): /verificar?c=<token>.
+// Pendiente muestra cuánto pagar en Caja; pagada, la constancia para imprimir.
+// Mientras está pendiente revisa sola cada 15 s, así al pagar aparece la constancia.
+async function verificarOrden(token, vuelta = 0) {
+  document.querySelector('.note').textContent = 'Esta página muestra tu orden de pago de la constancia de no adeudo. Cuando la pagues en la Caja, aquí mismo aparece tu constancia lista para imprimir.';
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return noValido('El código no corresponde a ninguna orden de pago de Tránsito.');
+  let data = null, error = null;
+  try { ({ data, error } = await _sb.rpc('constancia_de_cobro', { p_token: token })); } catch (e) { error = e; }
+  const card = document.getElementById('card');
+  if (error) { card.innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>No se pudo consultar</h1><p>El servicio no está disponible en este momento. Intente de nuevo en unos minutos.</p></div></div>`; return; }
+  if (!data) return noValido('El código no corresponde a ninguna orden de pago de Tránsito.');
+  const placa = esc(String(data.placa || '').toUpperCase());
+  if (data.vencida) {
+    card.innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>Constancia vencida</h1><p>La constancia ${esc(data.folio)} venció el ${esc(fecha(data.vigente_hasta + 'T12:00:00'))} y ya no es válida. Para un trámite pide una nueva.</p></div></div>
+      <div class="rec-acciones"><button type="button" onclick="location.href='/consulta?q=${encodeURIComponent(data.placa)}'">Pedir una constancia nueva</button></div>`;
+    return;
+  }
+  if (data.folio) {
+    document.title = `Constancia ${data.folio} — Tránsito Municipal`;
+    card.innerHTML = `<div class="status ok">${ICON_OK}<div><h1>Tu constancia está lista</h1><p>Pago recibido. Imprímela o guárdala en PDF.</p></div></div>
+      <div class="grid">
+        <div class="f"><label>Folio</label><span class="mono">${esc(data.folio)}</span></div>
+        <div class="f"><label>Placa</label><span class="mono">${esc(data.placa)}</span></div>
+        <div class="f full"><label>Vigencia</label><span class="pill" style="color:var(--green);background:var(--green-bg)">Válida hasta el ${esc(fecha(data.vigente_hasta + 'T12:00:00'))} (30 días)</span></div>
+      </div>
+      <div class="rec-acciones"><button type="button" id="btn-imprimir-cnd">Imprimir constancia</button></div>`;
+    document.getElementById('btn-imprimir-cnd').onclick = () => { if (!abrirConstancia(data)) alert('Permite las ventanas emergentes para imprimir la constancia.'); };
+    return;
+  }
+  if (data.pagada) {
+    card.innerHTML = `<div class="status warn">${ICON_BAD}<div><h1>Pago recibido</h1><p>No se pudo expedir la constancia. ${esc(data.nota || '')} Acude a la Dirección de Tránsito con este código.</p></div></div>`;
+    return;
+  }
+  if (data.orden_vencida) {
+    card.innerHTML = `<div class="status bad">${ICON_BAD}<div><h1>Orden de pago vencida</h1><p>Esta orden ya no se puede pagar. Genera una nueva consultando tu placa.</p></div></div>
+      <div class="rec-acciones"><button type="button" onclick="location.href='/consulta?q=${encodeURIComponent(data.placa)}'">Generar una orden nueva</button></div>`;
+    return;
+  }
+  card.innerHTML = `<div class="status warn">${ICON_BAD}<div><h1>Orden de pago pendiente</h1><p>Constancia de no adeudo · paga en la Caja de la Dirección de Tránsito</p></div></div>
+    <div class="recibo">
+      <div class="rec-tit">Total a pagar</div>
+      <div class="orden-total">${esc(fmt(data.monto))}</div>
+      <div class="rec-filas">
+        <div><span>Placa</span><b class="mono">${placa}</b></div>
+        <div><span>Paga antes del</span><b>${esc(fecha(data.vence + 'T12:00:00'))}</b></div>
+      </div>
+      <ol class="pasos-orden">
+        <li>Presenta este código en la Caja (en tu celular o impreso).</li>
+        <li>Paga en efectivo, con tarjeta o por transferencia.</li>
+        <li>Te entregan la constancia impresa, y aquí mismo aparece para descargarla.</li>
+      </ol>
+    </div>`;
+  // La orden se paga en ventanilla: revisar cada 15 s por 30 min
+  if (vuelta < 120) setTimeout(() => verificarOrden(token, vuelta + 1), 15000);
+}
+
 async function verificar() {
   const oficial = new URLSearchParams(location.search).get('o');
   if (oficial !== null) return verificarOficial(oficial);
+  const orden = new URLSearchParams(location.search).get('c');
+  if (orden !== null) return verificarOrden(orden);
   const token = new URLSearchParams(location.search).get('t') || '';
   if (!/^[0-9a-f-]{36}$/i.test(token)) return noValido('El código no corresponde a ningún documento emitido por Tránsito.');
   let data = null, error = null;
@@ -142,9 +205,9 @@ async function verificar() {
   if (data.tipo === 'constancia') {
     const vigente = data.estado === 'vigente', limpio = Number(data.adeudos_actuales) === 0;
     document.getElementById('card').innerHTML = `
-      <div class="status ok">${ICON_OK}<div>
-        <h1>Constancia de no adeudo auténtica</h1>
-        <p>Emitida por la Dirección de Tránsito${data.municipio ? ' de ' + esc(data.municipio) : ''}</p>
+      <div class="status ${vigente ? 'ok' : 'bad'}">${vigente ? ICON_OK : ICON_BAD}<div>
+        <h1>${vigente ? 'Constancia de no adeudo auténtica' : 'Constancia vencida: ya no es válida'}</h1>
+        <p>${vigente ? 'Emitida por la Dirección de Tránsito' + (data.municipio ? ' de ' + esc(data.municipio) : '') : 'Pasaron sus 30 días de vigencia. Para un trámite se necesita una constancia nueva.'}</p>
       </div></div>
       <div class="grid">
         <div class="f"><label>Folio</label><span class="mono">${esc(data.folio)}</span></div>

@@ -63,8 +63,8 @@ const SITIO = {
       pasos: ['Presenta tu escrito de recurso de revocación en la Dirección de Tránsito dentro del plazo que marca tu boleta.', 'Explica por qué no estás de acuerdo y anexa tus pruebas (fotos, testigos, documentos).', 'Mientras se resuelve, la multa aparece "en revisión" y no tienes que pagarla.', 'Recibirás la resolución por escrito.'],
       requisitos: ['Escrito con tu nombre, domicilio y firma', 'Folio de la boleta', 'Pruebas que tengas', 'Identificación oficial'] },
     { id: 'constancia', titulo: 'Constancia de no infracción', icono: 'constancia',
-      pasos: ['Escribe tu placa en el buscador de arriba.', 'Si no tienes multas pendientes, toca "Pagar y obtener constancia" y paga con tarjeta, OXXO o SPEI.', 'Al acreditarse el pago, descárgala e imprímela o guárdala en PDF: trae un código QR para comprobar que es auténtica.'],
-      requisitos: ['Tiene un costo: lo ves al consultar tu placa', 'Vale 30 días', 'También la puedes pedir y pagar en la Caja', 'Si la pagaste en este celular, puedes volver a descargarla mientras esté vigente', 'Sirve para trámites de compraventa, alta o baja del vehículo'] },
+      pasos: ['Escribe tu placa en el buscador de arriba.', 'Si no tienes multas pendientes, págala en línea (tarjeta, OXXO o SPEI) o genera una orden de pago con código QR para pagarla en la Caja.', 'Al pagar, descárgala e imprímela o guárdala en PDF: trae un código QR para comprobar que es auténtica.', 'Vale 30 días. Después ya no es válida y necesitas una nueva.'],
+      requisitos: ['Tiene un costo: lo ves al consultar tu placa', 'Vale 30 días', 'La orden de pago para Caja vale 7 días', 'Si la pagaste en este celular, puedes volver a descargarla mientras esté vigente', 'Sirve para trámites de compraventa, alta o baja del vehículo'] },
   ],
 
   consejos: [

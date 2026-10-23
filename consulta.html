@@ -182,6 +182,12 @@
     .btn-pagar[disabled]:not([onclick]){background:#9CA3AF;opacity:1;cursor:not-allowed}
     .pagar-nota.pronto{color:var(--amber);font-weight:600}
     .pagar-nota{margin:-.45rem 1rem .85rem;font-size:.72rem;color:var(--muted);text-align:center}
+    .btn-caja{display:flex;align-items:center;justify-content:center;gap:.45rem;width:100%;margin-top:.6rem;padding:.7rem 1rem;border:2px solid var(--ink);border-radius:10px;background:#fff;color:var(--ink);font:700 .9rem inherit;cursor:pointer}
+    .btn-caja:disabled{opacity:.6;cursor:wait}
+    .orden-pago{margin-top:.8rem;border:2px dashed var(--border);border-radius:12px;padding:1rem;text-align:center;background:#fff}
+    .orden-pago img{margin:.5rem auto;width:180px;height:180px}
+    .orden-pago .monto{font-size:1.6rem;font-weight:800;color:var(--ink)}
+    .orden-pago p{font-size:.8rem}
     .pago-regreso{max-width:760px;margin:12px auto}
     .btn-recibo{display:inline-block;border:0;cursor:pointer;font-size:.84rem;margin-top:.5rem;padding:.45rem .8rem;border-radius:8px;background:var(--green);color:#fff;font-weight:700;text-decoration:none}
 
@@ -566,7 +572,11 @@ function bloqueConstancia(placa) {
       Pagar en línea${costo ? ' ' + montoFmt(costo) : ''}</button>
     ${_params.pago_en_linea
       ? '<div class="pagar-nota">Al acreditarse el pago la descargas aquí mismo. Tarjeta, OXXO o SPEI, con Mercado Pago.</div>'
-      : `<div class="pagar-nota pronto" id="${id}-nota">Por el momento el pago en línea no está disponible. Puedes pedirla y pagarla en la Caja de la Dirección de Tránsito.</div>`}
+      : `<div class="pagar-nota pronto" id="${id}-nota">Por el momento el pago en línea no está disponible. Genera tu orden de pago y págala en la Caja.</div>`}
+    <button type="button" class="btn-caja" onclick="ordenConstancia(${esc(JSON.stringify(placa))}, this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>
+      Pagar en Caja: generar orden de pago</button>
+    <div class="pagar-nota" style="margin:.4rem 0 0">Te damos un código QR para pagar en ventanilla. Al pagar, con ese mismo código descargas tu constancia.</div>
   </div>`;
 }
 
@@ -575,9 +585,43 @@ async function revisarConstanciaPrevia(token, id) {
   let data = null;
   try { ({ data } = await _sb.rpc('constancia_de_cobro', { p_token: token })); } catch { return; }
   const caja = $(id);
-  if (!caja || !data?.folio || data.vigente_hasta < new Date().toISOString().slice(0, 10)) return;
+  if (!caja || !data) return;
+  // Orden de pago sin pagar y vigente (constancias_orden.sql): mostrarla otra vez
+  if (!data.pagada && !data.orden_vencida) return pintarOrden(caja, { token, placa: data.placa, monto: data.monto, vence: data.vence });
+  if (data.vencida) return caja.insertAdjacentHTML('beforeend', `<div class="aviso gris" style="margin-top:.7rem">${ICO.info}<span>Tu constancia ${esc(data.folio)} venció el ${esc(fechaLarga(new Date(data.vigente_hasta + 'T12:00:00')))} y ya no es válida. Para un trámite necesitas una nueva.</span></div>`);
+  if (!data.folio || data.vigente_hasta < new Date().toISOString().slice(0, 10)) return;
   caja.insertAdjacentHTML('beforeend', `<div class="aviso verde" style="margin-top:.7rem">${ICO.ok}<span>Ya pagaste la constancia <strong>${esc(data.folio)}</strong>, vigente hasta el ${esc(fechaLarga(new Date(data.vigente_hasta + 'T12:00:00')))}.
     <button class="link" type="button" onclick="descargarConstancia(${esc(JSON.stringify(token))})">Descargar</button></span></div>`);
+}
+
+// Orden de pago para pagar en Caja (constancias_orden.sql)
+async function ordenConstancia(placa, btn) {
+  const antes = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Generando tu orden de pago…';
+  const { data, error } = await _sb.rpc('solicitar_constancia', { p_placa: placa });
+  btn.disabled = false; btn.innerHTML = antes;
+  if (error || !data?.token) { showToast(error?.message || 'No se pudo generar la orden. Intenta de nuevo.'); return; }
+  tokenConstancia(placa, data.token);
+  pintarOrden(btn.closest('.bloque'), data);
+}
+function pintarOrden(caja, o) {
+  caja.querySelector('.orden-pago')?.remove();
+  const url = urlOrdenConstancia(o.token);
+  let qr = '';
+  try { qr = new QRious({ value: url, size: 360, padding: 8 }).toDataURL(); } catch (_) {}
+  caja.insertAdjacentHTML('beforeend', `<div class="orden-pago">
+    <strong>Tu orden de pago</strong>
+    <div class="monto">${montoFmt(o.monto)}</div>
+    <p>Placa <strong style="font-family:var(--mono)">${esc(String(o.placa).toUpperCase())}</strong> · paga en la Caja antes del <strong>${esc(fechaLarga(new Date(o.vence + 'T12:00:00')))}</strong></p>
+    ${qr ? `<img src="${qr}" alt="Código QR de la orden de pago">` : ''}
+    <p>Muestra este código en la Caja. Después de pagar, escanéalo o vuelve a consultar tu placa en este teléfono para descargar tu constancia.</p>
+    <button class="btn-sec" type="button" style="margin-top:.5rem" onclick="imprimirOrden(${esc(JSON.stringify(o))})">Guardar o imprimir la orden</button>
+  </div>`);
+}
+function imprimirOrden(o) {
+  const win = window.open('', '_blank', 'width=480,height=820');
+  if (!win) { showToast('Permite las ventanas emergentes para imprimir la orden'); return; }
+  win.document.write(htmlOrdenConstancia(o)); win.document.close();
 }
 
 async function pagarConstancia(placa, btn) {
@@ -605,7 +649,7 @@ async function descargarConstancia(token) {
   const win = window.open('', '_blank', 'width=820,height=900');
   let data = null, error = null;
   try { ({ data, error } = await _sb.rpc('constancia_de_cobro', { p_token: token })); } catch (e) { error = e; }
-  if (error || !data?.folio) { if (win) win.close(); showToast(error?.message || 'La constancia aún no está lista. Intenta en unos minutos.'); return; }
+  if (error || !data?.folio || data.vencida) { if (win) win.close(); showToast(error?.message || (data?.vencida ? 'Esta constancia ya venció y no es válida.' : 'La constancia aún no está lista. Intenta en unos minutos.')); return; }
   if (!abrirConstancia(data, win)) showToast('Permite las ventanas emergentes para descargar la constancia');
 }
 

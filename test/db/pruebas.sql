@@ -861,6 +861,68 @@ do $$ declare c jsonb; antes numeric; r jsonb; begin
   end;
 end $$;
 reset role;
+-- Orden de pago para pagar la constancia en Caja (constancias_orden.sql)
+set role anon;
+do $$ declare o jsonb; c jsonb; begin
+  o := solicitar_constancia('ord-001');
+  assert (o ->> 'vence')::date = current_date + 7, 'la orden vale 7 días: ' || o::text;
+  c := constancia_de_cobro((o ->> 'token')::uuid);
+  assert not (c ->> 'pagada')::boolean and not (c ->> 'orden_vencida')::boolean and c ->> 'vence' = o ->> 'vence', 'orden pendiente: ' || c::text;
+  begin
+    perform orden_constancia_de_placa('ORD-001');
+    raise exception 'el público leyó la orden de Caja';
+  exception when others then if sqlerrm = 'el público leyó la orden de Caja' then raise; end if;
+  end;
+  perform set_config('prueba.orden', o ->> 'token', false);
+end $$;
+reset role;
+select pg_temp.como('caja');
+set role authenticated;
+do $$ declare o jsonb; c jsonb; begin
+  o := orden_constancia_de_placa('ord 001');
+  assert (o ->> 'monto')::numeric = 150, 'Caja ve la orden de la placa';
+  c := cobrar_constancia_caja('ORD001', 'tarjeta');
+  assert c ->> 'metodo' = 'tarjeta' and c ->> 'folio' like 'CND-%', 'Caja cobra la orden';
+  assert orden_constancia_de_placa('ORD001') is null, 'la orden ya no está pendiente';
+end $$;
+reset role;
+do $$ begin
+  assert (select count(*) from cobros_constancia where placa = 'ORD001') = 1, 'Caja pagó la orden, no creó otro cobro';
+  assert (select token::text from cobros_constancia where placa = 'ORD001') = current_setting('prueba.orden'), 'el cobro pagado es el de la orden';
+end $$;
+set role anon;
+do $$ declare c jsonb; begin
+  c := constancia_de_cobro(current_setting('prueba.orden')::uuid);
+  assert (c ->> 'pagada')::boolean and c ->> 'folio' like 'CND-%' and c ->> 'metodo' = 'tarjeta' and c ? 'token', 'con el QR de la orden se descarga la constancia: ' || c::text;
+end $$;
+reset role;
+-- Pasados los 30 días la constancia ya no se entrega ni vale; la orden sin pagar vence a los 7
+update constancias set vigente_hasta = current_date - 1 where placa = 'ORD001';
+select set_config('prueba.cnd_ord', (select token::text from constancias where placa = 'ORD001'), false);
+set role anon;
+do $$ declare c jsonb; o jsonb; begin
+  c := constancia_de_cobro(current_setting('prueba.orden')::uuid);
+  assert (c ->> 'vencida')::boolean and not c ? 'token' and not c ? 'director', 'constancia vencida ya no se imprime: ' || c::text;
+  assert verificar_documento(current_setting('prueba.cnd_ord')::uuid) ->> 'estado' = 'vencida_constancia', 'verificación: vencida';
+  o := solicitar_constancia('ORD-002');
+  perform set_config('prueba.orden2', o ->> 'token', false);
+end $$;
+reset role;
+update cobros_constancia set created_at = now() - interval '8 days' where token = current_setting('prueba.orden2')::uuid;
+set role anon;
+do $$ declare c jsonb; o jsonb; begin
+  c := constancia_de_cobro(current_setting('prueba.orden2')::uuid);
+  assert (c ->> 'orden_vencida')::boolean, 'orden de pago vencida';
+  o := solicitar_constancia('ORD-002');
+  assert o ->> 'token' <> current_setting('prueba.orden2'), 'con la orden vencida se genera otra';
+end $$;
+reset role;
+select pg_temp.como('caja');
+set role authenticated;
+do $$ begin
+  assert (orden_constancia_de_placa('ORD-002') ->> 'vence')::date = current_date + 7, 'Caja ve la orden nueva, no la vencida';
+end $$;
+reset role;
 -- Credencial verificable, placas reportadas e imagen institucional (institucional.sql)
 select pg_temp.como('ofi');
 set role authenticated;
