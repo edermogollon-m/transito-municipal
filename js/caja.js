@@ -33,6 +33,45 @@ async function anularPago(id, folio) {
 // ── Corte de caja formal (controles.sql) ──────────────────
 // El cajero cuenta el efectivo; el sistema guarda la diferencia contra lo cobrado
 let _resumenCorte = null;
+// ── Constancia de no adeudo en ventanilla (constancias_cobro.sql) ──
+async function openCobrarConstancia() {
+  $('cnd-placa').value = ''; $('cnd-estado').innerHTML = ''; $('cnd-metodo').value = 'efectivo';
+  const { data } = await _sb.from('configuracion').select('constancia_costo').eq('id', 1).maybeSingle();
+  $('cnd-costo').textContent = data?.constancia_costo != null ? fmt(data.constancia_costo) : '—';
+  openModal('modal-constancia');
+  setTimeout(() => $('cnd-placa').focus(), 50);
+}
+
+let _cndTimer;
+function revisarPlacaConstancia() {
+  clearTimeout(_cndTimer);
+  const placa = $('cnd-placa').value.trim(), el = $('cnd-estado');
+  if (placa.replace(/[^A-Z0-9]/gi, '').length < 4) { el.innerHTML = ''; return; }
+  _cndTimer = setTimeout(async () => {
+    const { data } = await _sb.rpc('consulta_ciudadana', { p_q: placa, p_historial: false });
+    if ($('cnd-placa').value.trim() !== placa) return;
+    const adeudos = (data || []).filter(r => ['pendiente', 'vencida', 'impugnada'].includes(r.estado));
+    el.innerHTML = adeudos.length
+      ? `<span style="color:var(--red)">Tiene ${adeudos.length} infracción${adeudos.length > 1 ? 'es' : ''} sin pagar o en revisión (${adeudos.map(r => esc(r.folio)).join(', ')}). Primero debe cubrirlas.</span>`
+      : '<span style="color:var(--green)">✓ Sin adeudos: se puede expedir</span>';
+  }, 400);
+}
+
+async function cobrarConstancia() {
+  const placa = $('cnd-placa').value.trim();
+  if (placa.replace(/[^A-Z0-9]/gi, '').length < 4) { alert('Escribe la placa completa'); return; }
+  // La ventana se abre en el clic: después de esperar al servidor el navegador la bloquearía
+  const win = window.open('', '_blank', 'width=820,height=900');
+  const btn = $('cnd-submit'); btn.disabled = true;
+  const { data, error } = await _sb.rpc('cobrar_constancia_caja', { p_placa: placa, p_metodo: $('cnd-metodo').value });
+  btn.disabled = false;
+  if (error) { if (win) win.close(); alert(error.message); return; }
+  await logActivity('caja', `Constancia de no adeudo ${data.folio} de la placa ${data.placa}: ${fmt(data.monto)} en ${data.metodo}`);
+  closeModal('modal-constancia');
+  showToast(`Constancia ${data.folio} cobrada`);
+  if (!abrirConstancia(data, win)) alert('Permite las ventanas emergentes para imprimir la constancia.');
+}
+
 async function openCorteCaja() {
   const { data, error } = await _sb.rpc('resumen_corte');
   if (error) { alert('Error: '+error.message); return; }
@@ -42,6 +81,7 @@ async function openCorteCaja() {
   $('corte-resumen').innerHTML = `
     <div style="font-size:.76rem;color:var(--muted);margin-bottom:.5rem">${esc(data.cajero)} · del ${fh(data.desde)} a ahora</div>
     ${fila('Pagos cobrados', data.num_pagos)}
+    ${data.num_constancias ? fila('&nbsp;&nbsp;de ellos, constancias de no adeudo', data.num_constancias) : ''}
     ${fila('Tarjeta', fmt(data.tarjeta))}
     ${fila('Transferencia', fmt(data.transferencia))}
     ${fila('Total cobrado', fmt(data.total))}

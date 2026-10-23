@@ -1160,6 +1160,10 @@
               <label>Valor diario de la UMA ($)</label>
               <input class="form-input" id="cfg-valor-uma" type="number" min="1" step="0.01" placeholder="117.31"/>
             </div>
+            <div class="form-field">
+              <label>Costo de la constancia de no adeudo ($)</label>
+              <input class="form-input" id="cfg-constancia-costo" type="number" min="1" step="0.01" placeholder="150"/>
+            </div>
           </div>
           <div class="form-field">
             <label>Reglamento que se cita</label>
@@ -1242,6 +1246,10 @@
             <button class="btn btn-ghost btn-sm" onclick="exportExcel('pagos')">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Excel
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="openCobrarConstancia()" title="Cobra e imprime la constancia de no adeudo de una placa">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>
+              Constancia
             </button>
             <button class="btn btn-primary" onclick="openBuscarParaPago()">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2181,6 +2189,31 @@
   </div>
 </div>
 
+<!-- MODAL: Cobrar constancia de no adeudo (js/caja.js, constancias_cobro.sql) -->
+<div class="modal-overlay" id="modal-constancia">
+  <div class="modal" style="width:440px">
+    <div class="modal-header">
+      <div class="modal-title">Constancia de no adeudo</div>
+      <button class="modal-close" onclick="closeModal('modal-constancia')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form onsubmit="event.preventDefault();cobrarConstancia()">
+      <div class="form-field"><label>Placa</label><input id="cnd-placa" class="form-input" type="text" autocomplete="off" style="font-family:var(--mono);text-transform:uppercase" oninput="revisarPlacaConstancia()"/></div>
+      <div id="cnd-estado" style="font-size:.8rem;min-height:1.2rem;margin:-.3rem 0 .7rem"></div>
+      <div class="form-field"><label>Método de pago</label>
+        <select id="cnd-metodo" class="form-input"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option></select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;padding:.6rem 0;border-top:1px solid var(--border)">
+        <span style="font-size:.84rem;color:var(--muted)">Costo</span><strong id="cnd-costo" style="font-size:1.15rem;color:var(--ink)">—</strong>
+      </div>
+      <p style="font-size:.76rem;color:var(--muted)">Solo se expide si la placa no tiene infracciones pendientes, vencidas ni en revisión. Vigencia de 30 días, con QR verificable. El cobro entra en tu corte de caja.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-constancia')">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="cnd-submit">Cobrar e imprimir</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- MODAL: Cambiar mi contraseña -->
 <div class="modal-overlay" id="modal-contrasena">
   <div class="modal" style="width:400px">
@@ -2706,6 +2739,7 @@
 <script src="js/impresion.js"></script>
 <script src="js/placa.js"></script>
 <script src="js/caja.js"></script>
+<script src="js/constancia.js"></script>
 <script src="js/qr-scanner.js"></script>
 <script src="js/usuarios.js"></script>
 <script src="js/ticket.js"></script>
