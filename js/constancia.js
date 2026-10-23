@@ -46,3 +46,44 @@ function abrirConstancia(data, win) {
   win.document.write(htmlConstancia(data)); win.document.close();
   return true;
 }
+
+// Orden de pago para pagar la constancia en Caja (constancias_orden.sql).
+// o: { token, placa, monto, vence }. El QR lleva a /verificar?c=<token>: Caja lo
+// escanea para cobrar y, ya pagada, ahí mismo aparece la constancia.
+function urlOrdenConstancia(token, base = location.origin) { return `${base}/verificar?c=${token}`; }
+function htmlOrdenConstancia(o, base = location.origin) {
+  const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const url = urlOrdenConstancia(o.token, base);
+  let qr = '';
+  try { qr = new QRious({ value: url, size: 300, padding: 8 }).toDataURL(); } catch (_) {}
+  const f = d => new Date(d + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  const monto = Number(o.monto).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Orden de pago · constancia ${e(o.placa)}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:420px;margin:1.5rem auto;padding:0 1rem;text-align:center}
+    .k{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:#4B5563}
+    h1{font-size:1.2rem;margin:.3rem 0 1rem}
+    .monto{font-size:2.2rem;font-weight:700;letter-spacing:-.02em}
+    .placa{display:inline-block;font-family:'Courier New',monospace;font-size:1.3rem;font-weight:700;border:2px solid #111827;border-radius:6px;padding:.05rem .6rem;letter-spacing:.06em;margin:.4rem 0}
+    .vence{font-size:.9rem;margin:.6rem 0 1rem}
+    ol{text-align:left;font-size:.82rem;line-height:1.6;color:#374151;padding-left:1.2rem}
+    .corte{border-top:2px dashed #9CA3AF;margin:1rem 0}
+    button{margin-bottom:1rem;padding:.5rem 1rem;background:#1A7A82;color:#fff;border:0;border-radius:6px;cursor:pointer;font-weight:700}
+    @media print{button{display:none}body{margin:0 auto}}
+  </style></head><body>
+  <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div class="k">Dirección de Tránsito y Vialidad</div>
+  <h1>Orden de pago · Constancia de no adeudo</h1>
+  <div class="placa">${e(String(o.placa).toUpperCase())}</div>
+  <div class="monto">${e(monto)}</div>
+  <div class="vence">Paga en la Caja antes del <b>${e(f(o.vence))}</b></div>
+  ${qr ? `<img src="${qr}" width="220" height="220" alt="Código QR de la orden de pago">` : ''}
+  <div class="corte"></div>
+  <ol>
+    <li>Presenta este código en la Caja de la Dirección de Tránsito, en tu celular o impreso.</li>
+    <li>Paga en efectivo, con tarjeta o por transferencia.</li>
+    <li>Te entregan tu constancia impresa. También puedes escanear este mismo código para descargarla: vale 30 días.</li>
+  </ol>
+  <p style="font-size:.72rem;color:#6B7280;word-break:break-all">${e(url)}</p>
+  </body></html>`;
+}

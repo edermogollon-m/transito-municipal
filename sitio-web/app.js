@@ -297,8 +297,10 @@ function bloqueConstancia(placa) {
     <h4>Constancia de no infracción</h4>
     <p>Para trámites de compraventa o del vehículo. Trae un código QR para comprobar que es auténtica y vale 30 días.</p>
     <div class="costo"><span>Costo</span><b>${costo ? pesos(costo) : 'Consulta en Caja'}</b></div>
-    <button class="btn-constancia" type="button"${_pagoEnLinea ? ` onclick="pagarConstancia(${esc(JSON.stringify(placa))}, this)"` : ' disabled'}>${icono('tarjeta', 20)} Pagar y obtener constancia${costo ? ' ' + pesos(costo) : ''}</button>
-    <div class="pagar-nota">${_pagoEnLinea ? 'Tarjeta, OXXO o SPEI con Mercado Pago. Al acreditarse la descargas aquí mismo.' : 'Por ahora el pago en línea no está disponible: pídela y págala en la Caja.'}</div>
+    <button class="btn-constancia" type="button"${_pagoEnLinea ? ` onclick="pagarConstancia(${esc(JSON.stringify(placa))}, this)"` : ' disabled'}>${icono('tarjeta', 20)} Pagar en línea${costo ? ' ' + pesos(costo) : ''}</button>
+    <div class="pagar-nota">${_pagoEnLinea ? 'Tarjeta, OXXO o SPEI con Mercado Pago. Al acreditarse la descargas aquí mismo.' : 'Por ahora el pago en línea no está disponible: genera tu orden y págala en la Caja.'}</div>
+    <button class="btn-borde btn-caja" type="button" onclick="ordenConstancia(${esc(JSON.stringify(placa))}, this)">${icono('qr', 20)} Pagar en Caja: generar orden de pago</button>
+    <div class="pagar-nota">Te damos un código QR para pagar en ventanilla. Al pagar, con ese mismo código descargas tu constancia.</div>
   </div>`;
 }
 // Ya la había pagado desde este navegador: ofrecer descargarla otra vez
@@ -306,10 +308,72 @@ async function revisarConstanciaPrevia(token, id) {
   let c = null;
   try { c = await rpc('constancia_de_cobro', { p_token: token }); } catch (_) { return; }
   const caja = $(id);
-  if (!caja || !c?.folio || c.vigente_hasta < new Date().toISOString().slice(0, 10)) return;
+  if (!caja || !c) return;
+  // Orden de pago sin pagar y vigente: mostrarla otra vez
+  if (!c.pagada && !c.orden_vencida) return pintarOrden(caja, { token, placa: c.placa, monto: c.monto, vence: c.vence });
+  if (c.vencida) return caja.insertAdjacentHTML('beforeend', `<div class="nota-inf gris">${icono('alerta', 17)}<span>Tu constancia ${esc(c.folio)} venció el ${esc(fechaLarga(new Date(c.vigente_hasta + 'T12:00:00')))} y ya no es válida. Para un trámite necesitas una nueva.</span></div>`);
+  if (!c.folio || c.vigente_hasta < new Date().toISOString().slice(0, 10)) return;
   caja.insertAdjacentHTML('beforeend', `<div class="nota-inf ok">${icono('ok', 17)}<span>Ya pagaste la constancia <b>${esc(c.folio)}</b>, vigente hasta el ${esc(fechaLarga(new Date(c.vigente_hasta + 'T12:00:00')))}.
     <button class="link-btn" type="button" onclick="descargarConstancia(${esc(JSON.stringify(token))})">Descargarla</button></span></div>`);
 }
+// Orden de pago para pagar en Caja (constancias_orden.sql del sistema). El QR
+// lleva a /verificar?c=<token> del sistema: Caja lo escanea para cobrar y, ya
+// pagada, ahí mismo aparece la constancia para imprimir.
+async function ordenConstancia(placa, btn) {
+  const antes = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Generando tu orden de pago…';
+  let o = null;
+  try { [o] = await Promise.all([rpc('solicitar_constancia', { p_placa: placa }), cargarQR().catch(() => {})]); }
+  catch (_) { avisar('No se pudo generar la orden. Revisa que la placa no tenga multas pendientes.'); }
+  btn.disabled = false; btn.innerHTML = antes;
+  if (!o?.token) return;
+  tokenConstancia(placa, o.token);
+  pintarOrden(btn.closest('.constancia-caja'), o);
+}
+const urlOrden = token => `${SIS}/verificar?c=${encodeURIComponent(token)}`;
+async function pintarOrden(caja, o) {
+  await cargarQR().catch(() => {});
+  caja.querySelector('.orden-pago')?.remove();
+  let qr = '';
+  try { qr = new QRious({ value: urlOrden(o.token), size: 360, padding: 8 }).toDataURL(); } catch (_) {}
+  caja.insertAdjacentHTML('beforeend', `<div class="orden-pago">
+    <span class="orden-tit">Tu orden de pago</span>
+    <b class="orden-monto">${pesos(o.monto)}</b>
+    <p>Placa <b>${esc(String(o.placa).toUpperCase())}</b> · paga en la Caja antes del <b>${esc(fechaLarga(new Date(o.vence + 'T12:00:00')))}</b></p>
+    ${qr ? `<img src="${qr}" width="190" height="190" alt="Código QR de la orden de pago">` : ''}
+    <p>Muestra este código en la Caja. Después de pagar, escanéalo o vuelve a consultar tu placa en este teléfono para descargar tu constancia.</p>
+    <button class="btn-oscuro" type="button" onclick="imprimirOrden(${esc(JSON.stringify(o))})">Guardar o imprimir la orden</button>
+  </div>`);
+}
+function imprimirOrden(o) {
+  const win = window.open('', '_blank', 'width=480,height=820');
+  if (!win) { avisar('Permite las ventanas emergentes para imprimir la orden'); return; }
+  let qr = '';
+  try { qr = new QRious({ value: urlOrden(o.token), size: 300, padding: 8 }).toDataURL(); } catch (_) {}
+  win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Orden de pago · constancia ${esc(o.placa)}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:420px;margin:1.5rem auto;padding:0 1rem;text-align:center}
+    .k{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:#4B5563}h1{font-size:1.2rem;margin:.3rem 0 1rem}
+    .monto{font-size:2.2rem;font-weight:700}.placa{display:inline-block;font-family:'Courier New',monospace;font-size:1.3rem;font-weight:700;border:2px solid #111827;border-radius:6px;padding:.05rem .6rem;margin:.4rem 0}
+    ol{text-align:left;font-size:.82rem;line-height:1.6;color:#374151;padding-left:1.2rem}.corte{border-top:2px dashed #9CA3AF;margin:1rem 0}
+    button{margin-bottom:1rem;padding:.5rem 1rem;background:#15181C;color:#F5B700;border:0;border-radius:6px;cursor:pointer;font-weight:700}
+    @media print{button{display:none}}
+  </style></head><body>
+  <button onclick="window.print()">Imprimir o guardar como PDF</button>
+  <div class="k">Dirección de Tránsito y Vialidad · ${esc(_info.municipio || SITIO.municipio)}</div>
+  <h1>Orden de pago · Constancia de no adeudo</h1>
+  <div class="placa">${esc(String(o.placa).toUpperCase())}</div>
+  <div class="monto">${esc(pesos(o.monto))}</div>
+  <p>Paga en la Caja antes del <b>${esc(fechaLarga(new Date(o.vence + 'T12:00:00')))}</b></p>
+  ${qr ? `<img src="${qr}" width="220" height="220" alt="Código QR">` : ''}
+  <div class="corte"></div>
+  <ol><li>Presenta este código en ${esc(SITIO.caja.nombre)} (${esc(SITIO.caja.domicilio)}), ${esc(SITIO.caja.horario.toLowerCase())}.</li>
+  <li>Paga en efectivo, con tarjeta o por transferencia.</li>
+  <li>Te entregan tu constancia impresa. También puedes escanear este código para descargarla: vale 30 días.</li></ol>
+  </body></html>`);
+  win.document.close();
+}
+
 async function pagarConstancia(placa, btn) {
   const antes = btn.innerHTML;
   btn.disabled = true; btn.textContent = 'Conectando con Mercado Pago…';
@@ -339,7 +403,7 @@ async function descargarConstancia(token) {
   const win = window.open('', '_blank', 'width=820,height=900');
   let c = null;
   try { [c] = await Promise.all([rpc('constancia_de_cobro', { p_token: token }), cargarQR().catch(() => {})]); } catch (_) {}
-  if (!c?.folio) { win?.close(); avisar('La constancia aún no está lista. Intenta en unos minutos.'); return; }
+  if (!c?.folio || c.vencida) { win?.close(); avisar(c?.vencida ? 'Esta constancia ya venció y no es válida.' : 'La constancia aún no está lista. Intenta en unos minutos.'); return; }
   if (!win) { avisar('Permite las ventanas emergentes para descargar la constancia'); return; }
   win.document.write(htmlConstancia(c)); win.document.close();
 }

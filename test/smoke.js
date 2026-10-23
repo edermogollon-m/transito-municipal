@@ -53,6 +53,7 @@ const SB_KEY = 'sb-' + fs.readFileSync(path.join(ROOT, 'config.js'), 'utf8').mat
 const TOKEN = '11111111-2222-4333-8444-555555555555';
 const TOKEN_PAGO = '33333333-2222-4333-8444-555555555555';
 let mpConectado = true;
+let cndEstado = 'pagada';   // constancia_de_cobro simulada: pagada, pendiente (orden de pago) o vencida
 const TOKEN_CND = '7c1e4b52-9f0a-4d3e-8b21-5a6c7d8e9f01';   // ¿la función pago-mp tiene la cuenta de Mercado Pago?
 const storageUploads = [];
 const rpcCalls = [];
@@ -92,6 +93,7 @@ const TOKEN_CRED = '99999999-8888-4777-8666-555555555555';
 const ESCUDO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 Object.assign(ADMIN, { token_credencial: TOKEN_CRED, foto: '', numero_placa: 'PV-001', adscripcion: 'Delegación Centro' });
 Object.assign(TABLES.configuracion[0], { escudo: ESCUDO, logo: '', color_institucional: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba' });
+TABLES.cobros_constancia = [{ id: 1, token: TOKEN_CND, placa: 'LIM001', estado: 'pendiente', monto: 150 }];
 TABLES.vehiculos_reportados = [{ id: 1, placa: 'ROB123A', motivo: 'robo', detalle: XSS, reportado_por: XSS, activo: true, created_at: '2026-10-20T10:00:00Z' }];
 TABLES.alertas_placa = [];
 // Portal ciudadano (ciudadano.sql)
@@ -206,12 +208,16 @@ async function newPage(browser, { dbDown = false, tz } = {}) {
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(placasPush) });
     }
     // Constancia de no adeudo con costo (constancias_cobro.sql)
-    if (['rpc/solicitar_constancia', 'rpc/constancia_de_cobro', 'rpc/cobrar_constancia_caja'].includes(table)) {
+    if (['rpc/solicitar_constancia', 'rpc/constancia_de_cobro', 'rpc/cobrar_constancia_caja', 'rpc/orden_constancia_de_placa'].includes(table)) {
       const b = JSON.parse(req.postData() || '{}'); rpcCalls.push({ fn: table.slice(4), ...b });
       const cnd = { folio: 'CND-26-ABCDEF', token: TOKEN_CND, placa: 'LIM001', emitida: new Date().toISOString(), vigente_hasta: '2099-12-31',
         municipio: 'Prueba', estado: 'Ver.', director: 'Director de Prueba', pagada: true, monto: 150 };
-      const cuerpo = table === 'rpc/solicitar_constancia' ? { token: TOKEN_CND, monto: 150, placa: norm(b.p_placa) }
-        : table === 'rpc/constancia_de_cobro' ? { ...cnd, metodo: 'en_linea' }
+      const orden = { monto: 150, placa: 'LIM001', vence: '2099-01-07' };
+      const cuerpo = table === 'rpc/solicitar_constancia' ? { token: TOKEN_CND, monto: 150, placa: norm(b.p_placa), vence: '2099-01-07' }
+        : table === 'rpc/orden_constancia_de_placa' ? orden
+        : table === 'rpc/constancia_de_cobro' ? (cndEstado === 'pendiente' ? { ...orden, pagada: false, orden_vencida: false }
+          : cndEstado === 'vencida' ? { pagada: true, vencida: true, folio: cnd.folio, placa: 'LIM001', vigente_hasta: '2020-01-31' }
+          : { ...cnd, metodo: 'en_linea' })
         : { ...cnd, placa: norm(b.p_placa), metodo: b.p_metodo, cajero: ADMIN.nombre };
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(cuerpo) });
     }
@@ -538,6 +544,12 @@ function check(name, errors, extra) {
     check('Caja cobra e imprime la constancia de no adeudo', errors, /150/.test(cndCaja.costo) && /Sin adeudos/.test(cndCaja.estado) && cobroCnd && cobroCnd.p_placa === 'LIM-001' && cobroCnd.p_metodo === 'efectivo'
       && cndHtml.includes('CND-26-ABCDEF') && cndHtml.includes('Derechos pagados') && cndHtml.includes('/verificar?t=' + TOKEN_CND) ? null : JSON.stringify({ cndCaja, cobroCnd, cndHtml: cndHtml.slice(0, 120) }));
 
+    // Caja escanea el QR de la orden de pago del ciudadano
+    await page.evaluate(t => handleQRResult(location.origin + '/verificar?c=' + t), TOKEN_CND); await page.waitForTimeout(1200);
+    const cndQR = await page.evaluate(() => ({ abierto: document.getElementById('modal-constancia').classList.contains('open'), placa: $('cnd-placa').value, estado: $('cnd-estado').textContent }));
+    await page.evaluate(() => closeModal('modal-constancia'));
+    check('Caja escanea la orden de pago de la constancia', errors, cndQR.abierto && cndQR.placa === 'LIM001' && /orden de pago/.test(cndQR.estado) ? null : JSON.stringify(cndQR));
+
     // QR de la boleta: apunta a /verificar?t=<token>
     const qrUrl = await page.evaluate(id => urlVerificacion(id), TOKEN);
     check('QR de verificación', errors, qrUrl === BASE + '/verificar?t=' + TOKEN ? null : qrUrl);
@@ -808,6 +820,15 @@ function check(name, errors, extra) {
     await page.waitForTimeout(1200);
     txt = await page.textContent('#card');
     check('verificar: credencial falsa', errors, /no es válida/.test(txt) ? null : 'texto: ' + txt.slice(0, 120));
+    const verOrden = {};
+    for (const e of ['pendiente', 'pagada', 'vencida']) {
+      cndEstado = e;
+      await page.goto(BASE + '/verificar?c=' + TOKEN_CND); await page.waitForTimeout(1200);
+      verOrden[e] = (await page.textContent('#card')).replace(/\s+/g, ' ');
+    }
+    cndEstado = 'pagada';
+    check('verificar: orden de pago, constancia lista y vencida', errors, /Orden de pago pendiente/.test(verOrden.pendiente) && /\$150/.test(verOrden.pendiente)
+      && /Tu constancia está lista/.test(verOrden.pagada) && /CND-26-ABCDEF/.test(verOrden.pagada) && /Constancia vencida/.test(verOrden.vencida) && /ya no es válida/.test(verOrden.vencida) ? null : JSON.stringify(verOrden).slice(0, 400));
     await page.close();
 
     // 2b. Responsivo: en teléfono, tableta y escritorio ninguna vista ni ventana
@@ -896,7 +917,19 @@ function check(name, errors, extra) {
     check('sin cuenta de Mercado Pago el botón sale desactivado con leyenda', errors, sinCuenta.hay && sinCuenta.desactivado && sinCuenta.leyenda.includes('no está disponible') ? null : JSON.stringify(sinCuenta));
     await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
     const cndSin = await page.evaluate(() => { const c = document.querySelector('.bloque.constancia'); const b = c?.querySelector('.btn-pagar'); return { hay: !!c, desactivado: !!b?.disabled, t: c?.textContent.replace(/\s+/g, ' ') || '' }; });
-    check('constancia con costo: sin Mercado Pago, se paga en Caja', errors, cndSin.hay && cndSin.desactivado && /\$150/.test(cndSin.t) && /pagarla en la Caja/.test(cndSin.t) ? null : JSON.stringify(cndSin));
+    check('constancia con costo: sin Mercado Pago, se paga en Caja', errors, cndSin.hay && cndSin.desactivado && /\$150/.test(cndSin.t) && /págala en la Caja/.test(cndSin.t) ? null : JSON.stringify(cndSin));
+    // Orden de pago con QR para pagar la constancia en Caja (constancias_orden.sql)
+    cndEstado = 'pendiente';
+    await page.click('.bloque.constancia .btn-caja'); await page.waitForTimeout(900);
+    const orden = await page.evaluate(() => { const o = document.querySelector('.orden-pago'); return { qr: !!o?.querySelector('img'), t: o?.textContent.replace(/\s+/g, ' ') || '' }; });
+    const [popOrden] = await Promise.all([page.context().waitForEvent('page', { timeout: 5000 }).catch(() => null), page.click('.orden-pago .btn-sec')]);
+    await page.waitForTimeout(600);
+    const ordenHtml = popOrden ? await popOrden.content().catch(() => '') : ''; if (popOrden) await popOrden.close().catch(() => {});
+    check('orden de pago de la constancia para Caja', errors, orden.qr && /\$150/.test(orden.t) && /Caja antes del/.test(orden.t) && ordenHtml.includes('Orden de pago') && ordenHtml.includes('/verificar?c=' + TOKEN_CND) ? null : JSON.stringify({ orden, ordenHtml: ordenHtml.slice(0, 120) }));
+    await page.goto(BASE + '/consulta?q=LIM-001'); await page.waitForTimeout(1500);
+    const ordenPrevia = await page.evaluate(() => !!document.querySelector('.bloque.constancia .orden-pago img'));
+    check('la orden pendiente se vuelve a mostrar en el mismo teléfono', errors, ordenPrevia ? null : 'no la mostró');
+    cndEstado = 'pagada';
     await page.close();
     mpConectado = true;
     ({ page, errors } = await newPage(browser));

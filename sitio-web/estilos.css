@@ -430,6 +430,12 @@ b, strong { color: var(--tinta); }
 .constancia-caja .costo { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px dashed var(--borde); border-bottom: 1px dashed var(--borde); padding: .5rem 0; }
 .constancia-caja .costo span { font-size: .85rem; color: var(--gris); }
 .constancia-caja .costo b { font-family: var(--display); font-weight: 900; font-size: 1.4rem; }
+.btn-caja { width: 100%; margin-top: .2rem; }
+.orden-pago { border: 2px dashed var(--borde); border-radius: 12px; padding: 1rem; text-align: center; background: #fff; display: grid; gap: .35rem; justify-items: center; }
+.orden-pago img { margin: .3rem 0; }
+.orden-tit { font-family: var(--display); font-weight: 800; font-size: .76rem; letter-spacing: .12em; text-transform: uppercase; color: var(--gris); }
+.orden-monto { font-family: var(--display); font-weight: 900; font-size: 1.9rem; line-height: 1; }
+.orden-pago p { font-size: .86rem; }
 .btn-constancia[disabled] { background: #C9CDD2; color: #5F6770; cursor: not-allowed; }
 .link-btn { background: none; border: 0; color: var(--ac); font-weight: 700; text-decoration: underline; padding: 0; }
 
