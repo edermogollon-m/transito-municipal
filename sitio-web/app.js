@@ -117,7 +117,7 @@ function pintarMarca(d) {
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-copiar]');
-  if (b) navigator.clipboard?.writeText(b.dataset.copiar).then(() => avisar('CLABE copiada')).catch(() => avisar(b.dataset.copiar));
+  if (b) navigator.clipboard?.writeText(b.dataset.copiar).then(() => avisar(b.dataset.aviso || 'CLABE copiada')).catch(() => avisar(b.dataset.copiar));
 });
 
 function tramosDescuento() {
@@ -178,18 +178,23 @@ function plazos(r) {
   return { dias, lim, tramo, tramos, hoy: Math.round(r.monto * (1 - (tramo?.pct || 0) / 100)), descHasta: tramo ? enDias(tramo.dias) : null, limite: enDias(lim), vencida: r.estado === 'vencida' || dias > lim };
 }
 const pareceFolio = q => /^[A-Z]{2,5}-?\d{2}-?[2-9A-Z]{6}$/i.test(q.trim()) || /^INF-/i.test(q.trim());
+// En una página pública solo se muestran las iniciales del infractor
+const iniciales = n => String(n || '').trim().split(/\s+/).filter(Boolean).map(p => p[0].toUpperCase() + '.').join(' ') || '—';
+
+let _ultimos = [], _ultimaQ = '', _historial = false;
 
 async function buscar() {
   const q = $('q').value.trim();
   if (q.replace(/[^A-Za-z0-9]/g, '').length < 3) { $('q').focus(); avisar('Escribe tu placa o el folio de tu boleta'); return; }
   const caja = $('resultado'), btn = $('btn-buscar');
+  if (q !== _ultimaQ) _historial = false;
   caja.hidden = false; $('zona-resultado').hidden = false; btn.disabled = true;
   caja.innerHTML = `<div class="res-panel"><div class="cargando"><div class="rueda"></div>Buscando ${esc(q.toUpperCase())}…</div></div>`;
   $('zona-resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
   history.replaceState(null, '', '?q=' + encodeURIComponent(q));
   await _listo;
   let datos;
-  try { datos = await rpc('consulta_ciudadana', { p_q: q, p_historial: false }); }
+  try { datos = await rpc('consulta_ciudadana', { p_q: q, p_historial: _historial }); }
   catch (_) {
     // Si el servidor falla no se puede decir "sin adeudos": sería información falsa
     caja.innerHTML = `<div class="res-panel"><div class="estado-vacio"><div class="sello-ok sello-alerta">${icono('alerta', 36)}</div>
@@ -198,18 +203,22 @@ async function buscar() {
     btn.disabled = false; return;
   }
   btn.disabled = false;
-  caja.innerHTML = `<div class="res-panel">${datos?.length ? conMultas(q, datos) : sinMultas(q)}</div>`;
+  _ultimos = datos || []; _ultimaQ = q;
+  caja.innerHTML = `<div class="res-panel">${_ultimos.length ? conMultas(q, _ultimos) : sinMultas(q)}</div>`;
 }
+// Incluir las multas pagadas y canceladas (historial) sin salir de la página
+function verHistorial(si) { _historial = !!si; buscar(); }
+const interruptorHistorial = () => `<label class="interruptor"><input type="checkbox"${_historial ? ' checked' : ''} onchange="verHistorial(this.checked)"><span></span>Incluir multas pagadas</label>`;
 
 function sinMultas(q) {
   const placa = q.toUpperCase();
-  return `<div class="res-cabeza"><span class="res-placa">${esc(placa)}</span><span class="res-conteo"><b>Sin adeudos</b>al día de hoy</span></div>
+  return `<div class="res-cabeza"><span class="res-placa">${esc(placa)}</span><span class="res-conteo"><b>${_historial ? 'Sin registros' : 'Sin adeudos'}</b>al día de hoy</span></div>
     <div class="estado-vacio"><div class="sello-ok">${icono('ok', 36)}</div>
-      <h3>No tienes infracciones por pagar</h3>
-      <p><b>${esc(placa)}</b> no tiene multas pendientes. Revisa que la placa o el folio estén bien escritos.</p>
+      <h3>${_historial ? 'No encontramos infracciones' : 'No tienes infracciones por pagar'}</h3>
+      <p>${_historial ? `No hay infracciones registradas para <b>${esc(placa)}</b>.` : `<b>${esc(placa)}</b> no tiene multas pendientes.`} Revisa que la placa o el folio estén bien escritos.</p>
       ${pareceFolio(q) ? '' : bloqueConstancia(q)}
     </div>
-    <div class="res-pie"><span>¿Quieres ver también las multas pagadas?</span><a href="${SIS}/consulta?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">Ver historial completo</a></div>`;
+    <div class="res-pie">${interruptorHistorial()}</div>`;
 }
 
 function conMultas(q, datos) {
@@ -221,14 +230,43 @@ function conMultas(q, datos) {
   const conDesc = pl.filter(p => p.tramo);
   const primerCorte = conDesc.length ? new Date(Math.min(...conDesc.map(p => p.descHasta.getTime()))) : null;
   const placas = [...new Set(datos.map(r => r.placa))];
-  return `<div class="res-cabeza"><span class="res-placa">${esc(placas.length === 1 ? placas[0] : q.toUpperCase())}</span>
-      <span class="res-conteo"><b>${porPagar.length ? `${porPagar.length} por pagar` : 'Nada por pagar'}</b>${datos.length} ${datos.length === 1 ? 'infracción activa' : 'infracciones activas'}</span></div>
+  const unaPlaca = placas.length === 1 ? placas[0] : '';
+  return `<div class="res-cabeza"><span class="res-placa">${esc(unaPlaca || q.toUpperCase())}</span>
+      <span class="res-conteo"><b>${porPagar.length ? `${porPagar.length} por pagar` : 'Nada por pagar'}</b>${datos.length} ${datos.length === 1 ? 'infracción' : 'infracciones'}${_historial ? ' en total' : datos.length === 1 ? ' activa' : ' activas'}</span></div>
     ${porPagar.length ? `<div class="res-total"><small>${conDesc.length ? 'Total si pagas hoy' : 'Total a pagar'}</small>
       <div class="cifra">${pesos(totalHoy)}</div>
       ${conDesc.length ? `<div class="ahorro">${icono('ok', 18)}<span>Ahorras <b>${pesos(totalLleno - totalHoy)}</b> por pronto pago. ${conDesc.length === porPagar.length ? 'Aplica' : 'El primer descuento vence'} hasta el <b>${fechaLarga(primerCorte)}</b>.</span></div>` : ''}
-    </div>` : `<div class="res-total"><div class="nota-inf info">${icono('alerta', 17)}<span>${enRevision.length ? 'Tus infracciones están en revisión: no pagues por ahora.' : 'No tienes adeudos.'}</span></div></div>`}
+    </div>` : `<div class="res-total"><div class="nota-inf ${enRevision.length ? 'info' : 'ok'}">${icono(enRevision.length ? 'alerta' : 'ok', 17)}<span>${enRevision.length ? 'Tus infracciones están en revisión: no pagues por ahora.' : 'No tienes adeudos.'}</span></div></div>`}
+    ${!porPagar.length && !enRevision.length && unaPlaca ? `<div class="res-constancia">${bloqueConstancia(unaPlaca)}</div>` : ''}
+    <div class="res-sub"><span>Detalle</span>${interruptorHistorial()}</div>
     <div class="res-lista">${datos.map(tarjeta).join('')}</div>
-    <div class="res-pie"><span>¿Dudas sobre tu multa? Revisa <a href="#tramite-recurso">cómo inconformarte</a>.</span><a href="${SIS}/consulta?q=${encodeURIComponent(q)}" target="_blank" rel="noopener">Ver detalle completo</a></div>`;
+    ${ayuda(porPagar, pl)}
+    ${unaPlaca ? `<div class="res-pie"><span>${icono('campana', 18)} Recibe un aviso en tu celular si le levantan una multa a esta placa.</span><a href="${SIS}/consulta?q=${encodeURIComponent(unaPlaca)}" target="_blank" rel="noopener">Activar avisos</a></div>` : ''}`;
+}
+
+// Cómo pagar, transferencia e inconformidad, plegados para no saturar
+function ayuda(porPagar, pl) {
+  const bloques = [];
+  if (porPagar.length) bloques.push(['tarjeta', 'Cómo pagar en ventanilla', `<ol class="pasos">
+      <li><span>Acude a <b>${esc(SITIO.caja.nombre)}</b>${SITIO.caja.domicilio ? `, ${esc(SITIO.caja.domicilio)}` : ''}${SITIO.caja.horario ? `. ${esc(SITIO.caja.horario)}` : ''}.</span></li>
+      <li><span>Da tu placa o el folio de la boleta.</span></li>
+      <li><span>Paga y conserva tu recibo: trae un código QR para comprobar que es auténtico.</span></li></ol>`]);
+  if (porPagar.length && _info.pago_clabe) bloques.push(['documento', 'Pagar por transferencia', `
+      <dl class="datos-banco">
+        ${_info.pago_banco ? `<div><dt>Banco</dt><dd>${esc(_info.pago_banco)}</dd></div>` : ''}
+        ${_info.pago_beneficiario ? `<div><dt>Beneficiario</dt><dd>${esc(_info.pago_beneficiario)}</dd></div>` : ''}
+        <div class="ancho"><dt>CLABE</dt><dd class="clabe"><code>${esc(_info.pago_clabe)}</code><button class="link-btn" type="button" data-copiar="${esc(_info.pago_clabe)}">Copiar</button></dd></div>
+      </dl>
+      <p class="ayuda-tit">Haz una transferencia por cada multa, por el monto de hoy:</p>
+      <ul class="montos-hoy">${porPagar.map((r, i) => `<li><code>${esc(r.folio || '—')}</code><b>${pesos(pl[i].hoy)}</b></li>`).join('')}</ul>
+      <ol class="pasos">
+        <li><span>Escribe el <b>folio</b> de la boleta como referencia o concepto.</span></li>
+        <li><span>Envía tu comprobante a ${_info.correo ? `<a href="mailto:${esc(_info.correo)}">${esc(_info.correo)}</a>` : 'la Dirección de Tránsito'}. Cuando la Tesorería confirme el depósito, aparecerá como pagada.</span></li>
+      </ol>
+      <p class="ayuda-nota">El descuento se respeta con la fecha de tu transferencia.</p>`]);
+  bloques.push(['balanza', '¿No estás de acuerdo con la infracción?', `<p>${esc(_info.leyenda_recurso || 'Contra la boleta procede el recurso de revocación en los términos de la legislación aplicable. Acude a la Dirección de Tránsito para orientarte.')}</p>
+      <p class="ayuda-nota"><a href="#tramite-recurso">Ver cómo presentar el recurso paso a paso</a></p>`]);
+  return `<div class="res-ayuda">${bloques.map(([ico, t, html]) => `<details><summary>${icono(ico, 20)}<b>${t}</b></summary><div class="ayuda-cuerpo">${html}</div></details>`).join('')}</div>`;
 }
 
 function tarjeta(r) {
@@ -247,16 +285,88 @@ function tarjeta(r) {
   let nota = '';
   if (activa && p.vencida) nota = `<div class="nota-inf mal">${icono('alerta', 17)}<span>Pasó la fecha límite (${fechaLarga(p.limite)}). Regulariza cuanto antes.</span></div>`;
   else if (activa && r.grave) nota = `<div class="nota-inf gris">${icono('alerta', 17)}<span>Por su gravedad, esta multa se paga completa.</span></div>`;
-  else if (r.estado === 'impugnada') nota = `<div class="nota-inf info">${icono('alerta', 17)}<span>Está en revisión. <b>No pagues por ahora.</b></span></div>`;
+  else if (r.estado === 'impugnada') nota = `<div class="nota-inf info">${icono('alerta', 17)}<span>Está en revisión. <b>No pagues por ahora.</b> Si no procede, volverá a quedar pendiente.</span></div>`;
+  else if (r.estado === 'pagada') nota = `<div class="nota-inf ok">${icono('ok', 17)}<span>Pagada. No tienes adeudo por este folio.</span></div>`;
+  else if (r.estado === 'cancelada') nota = `<div class="nota-inf gris">${icono('alerta', 17)}<span>Cancelada: no requiere pago.</span></div>`;
   const pago = activa ? `<button type="button" class="btn-pagar"${_pagoEnLinea ? ` onclick="pagar(${Number(r.id)}, ${esc(JSON.stringify(r.placa))}, this)"` : ' disabled'}>${icono('tarjeta', 20)} Pagar en línea ${pesos(p.tramo ? p.hoy : r.monto)}</button>
     <div class="pagar-nota">${_pagoEnLinea ? 'Tarjeta, OXXO o SPEI con Mercado Pago.' : 'Por ahora el pago en línea no está disponible: paga en la Tesorería.'}</div>` : '';
+  const id = Number(r.id);
   return `<article class="inf ${estado}">
     <div class="inf-top">
       <div><div class="inf-motivo">${esc(r.tipo)}</div>
         <div class="inf-meta"><code>${esc(r.folio || '—')}</code> · ${fechaLarga(new Date(r.fecha))}</div>
         <span class="chip ${estado}">${nombres[estado] || esc(estado)}</span></div>
       <div class="inf-monto"><b>${pesos(activa && p.tramo ? p.hoy : r.monto)}</b>${activa && p.tramo ? `<s>${pesos(r.monto)}</s>` : ''}</div>
-    </div>${barra}${nota}${pago}</article>`;
+    </div>${barra}${nota}${pago}
+    <div class="inf-pestanas" role="group" aria-label="Más información">
+      ${r.estado !== 'cancelada' ? `<button type="button" class="inf-pestana" aria-expanded="false" onclick="panelInf(this, ${id}, 'pq')">¿Por qué me multaron?</button>` : ''}
+      <button type="button" class="inf-pestana" aria-expanded="false" onclick="panelInf(this, ${id}, 'detalle')">Ver detalle</button>
+    </div>
+    <div class="inf-panel" hidden></div></article>`;
+}
+
+// Un solo panel por tarjeta: "¿Por qué me multaron?" o "Ver detalle"
+async function panelInf(btn, id, cual) {
+  const tarjetaEl = btn.closest('.inf'), panel = tarjetaEl.querySelector('.inf-panel');
+  const abierto = btn.getAttribute('aria-expanded') === 'true';
+  tarjetaEl.querySelectorAll('.inf-pestana').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  if (abierto) { panel.hidden = true; return; }
+  btn.setAttribute('aria-expanded', 'true'); panel.hidden = false;
+  const r = _ultimos.find(x => Number(x.id) === id) || {};
+  if (cual === 'detalle') { panel.innerHTML = htmlDetalle(r); return; }
+  panel.innerHTML = '<div class="pq-cargando"><div class="rueda-chica"></div>Cargando explicación…</div>';
+  let e = _explicaciones[id];
+  if (!e) {
+    try { e = _explicaciones[id] = await rpc('explicar_infraccion', { p_id: id, p_q: _ultimaQ }); }
+    catch (_) { if (btn.getAttribute('aria-expanded') === 'true') panel.innerHTML = '<div class="pq-cargando">No se pudo cargar la explicación. Intenta de nuevo.</div>'; return; }
+  }
+  if (btn.getAttribute('aria-expanded') === 'true') panel.innerHTML = htmlPorQue(e || {}, r);
+}
+const _explicaciones = {};
+
+function htmlDetalle(r) {
+  const enlace = `${location.origin}${location.pathname}?q=${encodeURIComponent(r.placa || '')}`;
+  return `<dl class="inf-datos">
+      <div><dt>Placa</dt><dd><code>${esc(r.placa)}</code></dd></div>
+      <div><dt>Infractor</dt><dd>${esc(iniciales(r.infractor))}</dd></div>
+      ${r.ubicacion ? `<div class="ancho"><dt>Lugar</dt><dd>${esc(r.ubicacion)}</dd></div>` : ''}
+      ${r.fundamento ? `<div class="ancho"><dt>Fundamento legal</dt><dd>${esc(r.fundamento)}</dd></div>` : ''}
+    </dl>
+    <div class="inf-btns">
+      <button class="btn-chico" type="button" data-copiar="${esc(r.folio || '')}" data-aviso="Folio copiado">Copiar folio</button>
+      <a class="btn-chico" href="https://wa.me/?text=${encodeURIComponent(`Consulta de infracciones de la placa ${r.placa}: ${enlace}`)}" target="_blank" rel="noopener">${icono('whatsapp', 16)} Compartir</a>
+    </div>`;
+}
+
+// La falta en palabras sencillas (rpc explicar_infraccion, igual que /consulta)
+function htmlPorQue(e, r) {
+  const gravedad = { 'Leve': 'ok', 'Grave': 'pend', 'Muy Grave': 'mal' }[e.clasificacion] || 'gris';
+  const uma = Number(e.uma) || 0;
+  const rango = e.cuotas_min != null && uma
+    ? `El Reglamento fija para esta falta de <b>${esc(e.cuotas_min)} a ${esc(e.cuotas_max)} UMA</b> (de ${pesos(Math.floor(e.cuotas_min * uma))} a ${pesos(Math.floor(e.cuotas_max * uma))}).`
+    : '';
+  let tabla = '';
+  if (r && (r.estado === 'pendiente' || r.estado === 'vencida')) {
+    const p = plazos(r), filas = [];
+    p.tramos.forEach(t => {
+      const monto = Math.round(r.monto * (1 - t.pct / 100));
+      filas.push({ cuando: `Hasta el ${fechaLarga(new Date(new Date(r.fecha).getTime() + t.dias * 86400000))}`, monto, nota: `${t.pct}% de descuento`, hoy: p.tramo === t, paso: p.dias > t.dias });
+    });
+    filas.push({ cuando: `Hasta el ${fechaLarga(p.limite)}`, monto: r.monto, nota: 'Monto completo', hoy: !p.tramo && !p.vencida, paso: p.vencida });
+    filas.push({ cuando: 'Después de esa fecha', monto: r.monto, nota: 'Vencida: la Tesorería puede cobrarla por la vía fiscal', hoy: p.vencida, paso: false });
+    tabla = `<div class="pq-sec"><h4>Cuánto pagas según cuándo pagues</h4>
+      <div class="pq-tabla">${filas.map(f => `<div class="pq-fila${f.hoy ? ' hoy' : ''}${f.paso ? ' paso' : ''}">
+        <span>${f.cuando}${f.hoy ? ' <b class="pq-hoy">Hoy</b>' : ''}<small>${f.nota}</small></span><strong>${pesos(f.monto)}</strong></div>`).join('')}</div></div>`;
+  }
+  const arts = (e.articulos || []).filter(a => a.texto);
+  return `<div class="pq-sec"><h4>Qué pasó</h4><p>${esc(e.conducta || r?.tipo || '')}</p>
+      ${e.clasificacion ? `<span class="chip ${gravedad}">Falta ${esc(e.clasificacion.toLowerCase())}</span>` : ''}</div>
+    ${e.por_que ? `<div class="pq-sec"><h4>Por qué es importante</h4><p>${esc(e.por_que)}</p></div>` : ''}
+    ${rango ? `<div class="pq-sec"><h4>Cuánto cuesta</h4><p>${rango}${r?.monto != null ? ` Tu multa quedó en <b>${pesos(r.monto)}</b>.` : ''}</p></div>` : ''}
+    ${tabla}
+    ${arts.length || e.fundamento ? `<details class="pq-ley"><summary>Qué dice el Reglamento</summary>
+      ${e.fundamento ? `<p class="pq-fund">${esc(e.fundamento)}</p>` : ''}
+      ${arts.map(a => `<p><b>Artículo ${esc(a.numero)}.</b> ${esc(a.texto)}</p>`).join('')}</details>` : ''}`;
 }
 
 // Pago con Mercado Pago (el monto lo calcula el servidor). Al terminar,
