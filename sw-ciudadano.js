@@ -1,8 +1,8 @@
 // Service worker del portal ciudadano (/consulta instalado como app).
 // Recibe los avisos al celular que manda la función "push" (ciudadano.sql)
 // y deja abrir la consulta sin internet con la última versión guardada.
-const CACHE = 'consulta-v2';
-const BASICOS = ['/consulta', '/ciudadano.js', '/js/constancia.js', '/marca.js', '/config.js', '/supabase.js', '/manifest-ciudadano.json', '/icono-ciudadano-192.png'];
+const CACHE = 'consulta-v3';
+const BASICOS = ['/consulta', '/ciudadano.js', '/js/constancia.js', '/js/placa-mx.js', '/marca.js', '/config.js', '/supabase.js', '/manifest-ciudadano.json', '/icono-ciudadano-192.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(BASICOS)).catch(() => {}).then(() => self.skipWaiting()));

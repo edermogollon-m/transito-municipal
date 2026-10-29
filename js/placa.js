@@ -419,7 +419,8 @@ function aceptarPlacaLeida(alterna) { usarPlacaLeida(alterna ? _lector.alterna :
 
 async function usarPlacaLeida(placa, confirmada) {
   cerrarLectorPlaca();
-  $('inf-placa').value = placa;
+  $('inf-placa').value = formatoPlaca(placa);
+  aplicarFormatoPlaca($('inf-placa'));
   const st = $('placa-ocr-status');
   if (st) { st.textContent = confirmada ? `Placa ${placa} confirmada.` : `Leída: ${placa}. Revisa que coincida con la placa del vehículo.`; st.style.color = 'var(--green)'; }
   await checkPlacaHistory();
@@ -462,8 +463,8 @@ async function checkPlacaHistory() {
 
   // Consultar historial completo y padrón vehicular en paralelo
   const [{ data }, { data: veh }] = await Promise.all([
-    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,boleta').eq('placa', placa).order('fecha',{ascending:false}),
-    _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').eq('placa', placa).maybeSingle()
+    _sb.from('infracciones').select('id,folio,fecha,tipo,estado,monto,boleta').in('placa', variantesPlaca(placa)).order('fecha',{ascending:false}),
+    _sb.from('vehiculos').select('propietario,marca,modelo,color,telefono').in('placa', variantesPlaca(placa)).limit(1).maybeSingle()
   ]);
 
   // Auto-completar campos del formulario si están vacíos

@@ -225,7 +225,13 @@ async function newPage(browser, { dbDown = false, tz } = {}) {
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify({ constancia_costo: 150, municipio: 'Prueba', estado: 'Ver.', correo: '', leyenda_recurso: '', escudo: ESCUDO, logo: '', color: '#7A1F3D', institucion: 'H. Ayuntamiento de Prueba', domicilio_transito: XSS, ut_domicilio: 'Palacio Municipal, planta baja', ut_telefono: '235 000 0000', ut_correo: 'transparencia@prueba.gob.mx', privacidad_actualizado: '2026-10-01' }) });
     let rows = TABLES[table] || [];
     // Filtros simples col=eq.valor (los demás se ignoran: la prueba no valida consultas)
-    for (const [k, v] of u.searchParams) if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
+    for (const [k, v] of u.searchParams) {
+      if (v.startsWith('eq.') && rows.length && k in rows[0]) rows = rows.filter(r => String(r[k]) === v.slice(3));
+      if (v.startsWith('in.(') && rows.length && k in rows[0]) {
+        const lista = v.slice(4, -1).split(',').map(x => x.replace(/^"|"$/g, ''));
+        rows = rows.filter(r => lista.includes(String(r[k])));
+      }
+    }
     if (table === 'rpc/historial_conductor') {
       const lic = norm(JSON.parse(req.postData() || '{}').p_licencia);
       return r.fulfill({ status: 200, headers: json, body: JSON.stringify(TABLES.infracciones.filter(i => norm(i.licencia) === lic)) });
@@ -501,6 +507,14 @@ function check(name, errors, extra) {
         .filter(t => !h.toLowerCase().includes(t.toLowerCase()));
       check(fn + ': boleta conforme al art. 327', errors, falta.length ? 'falta: ' + falta.join(', ') : null);
     }
+
+    // Formato de placa mexicana al salir de la casilla, con el tipo de vehículo debajo
+    const fmt = await page.evaluate(() => ['abc123d', 'xb 1234 c', 'a123b', 'zz'].map(v => {
+      const el = $('inf-placa'); el.value = v; el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      return el.value + '|' + (el.closest('.form-field').querySelector('.placa-tipo')?.textContent || '');
+    }));
+    await page.evaluate(() => { $('inf-placa').value = 'ABC-123-D'; });
+    check('formato de placa mexicana', errors, fmt[0] === 'ABC-123-D|Automóvil particular' && fmt[1] === 'XB-1234-C|Camión de carga particular' && fmt[2] === 'A123B|Motocicleta' && /no reconocido/.test(fmt[3]) ? null : JSON.stringify(fmt));
 
     // La infracción de la misma boleta no cuenta como adeudo anterior (agravante e)
     TABLES.infracciones.push(...withIds({ placa: 'GRP-001', infractor: 'X', tipo: 'Otro', monto: 100, estado: 'pendiente', boleta: 'B-9', fecha: new Date().toISOString() }));

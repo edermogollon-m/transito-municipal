@@ -95,7 +95,7 @@ async function submitGrua(e) {
   const id = $('grua-id').value;
   const n = Date.now();
   const payload = {
-    placa: $('grua-placa').value.trim().toUpperCase(),
+    placa: formatoPlaca($('grua-placa').value),
     propietario: $('grua-propietario').value.trim(),
     motivo: $('grua-motivo').value.trim(),
     oficial: $('grua-oficial').value.trim(),
@@ -120,7 +120,7 @@ async function submitGrua(e) {
 
   // WhatsApp automático al propietario (solo en retención nueva)
   if (!id) {
-    const { data: vehWa } = await _sb.from('vehiculos').select('telefono,propietario').eq('placa', payload.placa).maybeSingle();
+    const { data: vehWa } = await _sb.from('vehiculos').select('telefono,propietario').in('placa', variantesPlaca(payload.placa)).limit(1).maybeSingle();
     if (vehWa?.telefono) {
       const tel = vehWa.telefono.replace(/\D/g,'');
       const msg = `Estimado/a ${vehWa.propietario||payload.propietario}, su vehículo de placas ${payload.placa} ha sido retirado al corralón municipal.\n\n` +

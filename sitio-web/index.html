@@ -73,7 +73,7 @@
       <form class="consulta" id="consulta" role="search" onsubmit="event.preventDefault(); buscar();">
         <label class="placa-mx" for="q">
           <span class="placa-edo" data-estado-placa>VERACRUZ</span>
-          <input id="q" name="q" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
+          <input id="q" name="q" data-placa type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
                  maxlength="20" placeholder="ABC-123-D" aria-label="Placa o folio de la boleta"/>
           <span class="placa-pie">MÉXICO</span>
         </label>
@@ -259,6 +259,7 @@
 
 <div class="aviso-flotante" id="toast" role="status" aria-live="polite"></div>
 
+<script src="placa-mx.js"></script>
 <script src="datos.js"></script>
 <script src="app.js"></script>
 </body>
